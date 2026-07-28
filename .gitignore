@@ -1,0 +1,18 @@
+# Elixir / Phoenix (api builds inside Docker; volumes may mirror these on host)
+api/_build/
+api/deps/
+api/.elixir_ls/
+api/*.ez
+erl_crash.dump
+
+# Node / Vite
+web/node_modules/
+web/dist/
+npm-debug.log*
+
+# Environment & editor
+.env
+.env.*
+*.local
+.DS_Store
+Thumbs.db

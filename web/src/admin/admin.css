@@ -1,0 +1,182 @@
+/* ============================================================
+   Blastek dashboard — reskinned to the Bungee/Blastek design
+   system. Instead of restyling every page, we remap the app's
+   semantic CSS variables inside the `.adm` scope, so all shared
+   components (cards, buttons, tables, tiles, chart…) inherit the
+   Bungee look. Plus a fresh sidebar shell + a few overrides.
+   ============================================================ */
+@import url("https://fonts.googleapis.com/css2?family=Chivo+Mono:wght@400;500;700&family=Fredoka:wght@500;600;700&family=Inter:ital,opsz,wght@0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700&display=swap");
+
+.adm {
+  /* Bungee palette */
+  --ink: #1e1e1e;
+  --paper: #ffffff;
+  --panel: #eef0f6;
+  --line: #d0d8e4;
+  --line-soft: #e4e8f0;
+  --gray: #5a6271;
+  --muted: #8a919b;
+  --mono: "Chivo Mono", ui-monospace, Consolas, monospace;
+
+  /* remap the app's semantic tokens → everything reskins by inheritance */
+  --font-display: "Inter", -apple-system, "Segoe UI", system-ui, sans-serif;
+  --font-ui: "Inter", -apple-system, "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Chivo Mono", ui-monospace, Consolas, monospace;
+
+  --bg: #ffffff;
+  --surface: #f5f7fa;
+  --surface-hover: #eef0f6;
+  --surface-2: #e6eaf2;
+  --fg: #1e1e1e;
+  --fg-2: #5a6271;
+  --fg-3: #8a919b;
+  --border: #e4e8f0;
+  --border-strong: #d0d8e4;
+  --card: #ffffff;
+
+  --accent: #1e1e1e;        /* primary/accent buttons → ink */
+  --accent-ink: #ffffff;
+  --brand-gold-warm: #333333; /* button hover + focus ring */
+  --brand-ink: #1e1e1e;       /* nav-active / chip-active bg */
+  --brand-cream: #ffffff;     /* on-ink text */
+  --brand-gold: #ffffff;      /* on-ink icon */
+  --brand-maroon: #b23b3b;    /* danger text */
+
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-xl: none;
+  --shadow-glow-gold: 0 0 0 3px rgba(30, 30, 30, 0.12);
+
+  --r-md: 10px;
+  --r-lg: 16px;
+  --r-xl: 20px;
+
+  background: #fff;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- sidebar shell ---------- */
+.adm.app { background: #fff; }
+
+.adm .adm-side {
+  width: 252px;
+  flex: none;
+  background: #fff;
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  padding: 22px 18px;
+}
+.adm .adm-brand {
+  font-family: "Fredoka", var(--font-ui);
+  font-weight: 600;
+  font-size: 25px;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  padding: 2px 8px 24px;
+}
+.adm .adm-nav { display: flex; flex-direction: column; gap: 2px; }
+.adm .adm-nav a {
+  display: flex;
+  align-items: baseline;
+  gap: 11px;
+  padding: 11px 13px;
+  border-radius: 12px;
+  color: var(--gray);
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+.adm .adm-nav a .n { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.adm .adm-nav a:hover { background: var(--panel); color: var(--ink); }
+.adm .adm-nav a.active { background: var(--ink); color: #fff; }
+.adm .adm-nav a.active .n { color: rgba(255, 255, 255, 0.55); }
+
+.adm .adm-side .spacer { flex: 1; }
+.adm .adm-user {
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  padding: 0 8px 12px;
+  line-height: 1.5;
+}
+.adm .adm-foot-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  justify-content: flex-start;
+  padding: 10px 13px;
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: none;
+  color: var(--gray);
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+.adm .adm-foot-btn:hover { background: var(--panel); color: var(--ink); }
+
+.adm .adm-main { flex: 1; overflow: auto; padding: clamp(20px, 3vw, 40px); background: #fff; }
+
+/* ---------- a few Bungee-flavour overrides on shared components ---------- */
+.adm .page-head h1 { font-size: clamp(24px, 3vw, 34px); letter-spacing: -0.025em; font-weight: 600; }
+.adm .btn { border-radius: 999px; font-weight: 500; }
+.adm .btn-sm { border-radius: 999px; }
+.adm .chip { border-radius: 999px; }
+.adm .card { border-radius: var(--r-lg); }
+
+/* status badges → neutral, on-brand chips (kept legible per state) */
+.adm .badge {
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 10.5px;
+}
+
+/* stat tiles read like the Bungee metrics */
+.adm .tile .v { font-family: var(--mono); letter-spacing: -0.01em; }
+.adm .tile .l { color: var(--gray); }
+
+/* mono micro-labels feel */
+.adm .eyebrow { font-family: var(--mono); }
+
+/* ---- active venue + role (multi-tenant sidebar) ------------------ */
+.adm .adm-venue {
+  padding: 0 8px 18px;
+  margin-top: -14px;
+}
+
+.adm .adm-venue-name,
+.adm .adm-venue select {
+  width: 100%;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.adm .adm-venue select {
+  appearance: none;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.adm .adm-venue select:hover { border-color: var(--muted); }
+
+.adm .adm-venue-role {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-top: 6px;
+  padding-left: 2px;
+}
