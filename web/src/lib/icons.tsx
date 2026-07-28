@@ -1,0 +1,53 @@
+// Lucide-style stroke icons, inlined so the app works offline.
+// The 4-point sparkle is the brand mark — filled, single tone, used sparingly.
+
+const PATHS: Record<string, string> = {
+  calendar: 'M8 2v4 M16 2v4 M3 10h18 M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z',
+  user: 'M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2 M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0z',
+  users: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0z M22 21v-2a4 4 0 0 0-3-3.87 M16 3.13a4 4 0 0 1 0 7.75',
+  scissors: 'M9 6a3 3 0 1 1-6 0 3 3 0 0 1 6 0z M8.12 8.12 12 12 M20 4 8.12 15.88 M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0z M14.8 14.8 20 20',
+  card: 'M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z M2 10h20',
+  banknote: 'M4 6h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z M14 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0z M6 12h.01 M18 12h.01',
+  chart: 'M3 3v16a2 2 0 0 0 2 2h16 M18 17V9 M13 17V5 M8 17v-3',
+  plus: 'M5 12h14 M12 5v14',
+  check: 'M20 6 9 17l-5-5',
+  star: 'm12 2 3.1 6.3 6.9 1-5 4.8 1.2 6.9-6.2-3.2-6.2 3.2L7 14.1l-5-4.8 6.9-1z',
+  alert: 'm21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3z M12 9v4 M12 17h.01',
+  left: 'm15 18-6-6 6-6',
+  right: 'm9 18 6-6-6-6',
+  external: 'M15 3h6v6 M10 14 21 3 M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6',
+  sun: 'M12 2v2 M12 20v2 M4.93 4.93l1.41 1.41 M17.66 17.66l1.41 1.41 M2 12h2 M20 12h2 M4.93 19.07l1.41-1.41 M17.66 6.34l1.41-1.41 M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0z',
+  moon: 'M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z',
+};
+
+export function Icon({ name, size = 20 }: { name: string; size?: number }) {
+  return (
+    <svg
+      className="ic" width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d={PATHS[name] ?? ''} />
+    </svg>
+  );
+}
+
+export function Sparkle({ size = 18 }: { size?: number }) {
+  return (
+    <svg className="ic spark" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 1c.9 6.4 4.4 9.9 11 11-6.6 1.1-10.1 4.6-11 11-.9-6.4-4.4-9.9-11-11 6.6-1.1 10.1-4.6 11-11z" />
+    </svg>
+  );
+}
+
+export function StarRow({ rating, size = 13 }: { rating: number; size?: number }) {
+  return (
+    <span className="stars">
+      {[0, 1, 2, 3, 4].map((i) => (
+        <span key={i} style={i < Math.round(rating) ? undefined : { opacity: 0.3 }}>
+          <Icon name="star" size={size} />
+        </span>
+      ))}
+    </span>
+  );
+}
