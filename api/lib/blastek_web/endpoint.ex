@@ -1,5 +1,13 @@
 defmodule BlastekWeb.Endpoint do
   use Phoenix.Endpoint, otp_app: :blastek
+  use Absinthe.Phoenix.Endpoint
+
+  # GraphQL subscriptions. `check_origin: false` matches the API's CORS posture
+  # (it is a token-authenticated API consumed from separate origins), and the
+  # socket itself authenticates every connection.
+  socket "/socket", BlastekWeb.UserSocket,
+    websocket: [check_origin: false],
+    longpoll: false
 
   # The session will be stored in the cookie and signed,
   # this means its contents can be read but not tampered with.

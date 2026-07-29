@@ -12,15 +12,16 @@ defmodule Blastek.Fixtures do
   """
   def venue_fixture(name) do
     slug = Venues.slugify(name)
-    {:ok, venue} = Venues.create_venue(%{name: name, slug: slug, status: "active",
-      city: "Casablanca"})
+
+    {:ok, venue} =
+      Venues.create_venue(%{name: name, slug: slug, status: "active", city: "Casablanca"})
 
     {:ok, category} = Salon.create_category(venue.id, %{name: "Hair", sort: 1})
 
     {:ok, service} =
       Salon.create_service(
         venue.id,
-        %{category_id: category.id, name: "#{name} cut", duration_min: 60, price: 200.0},
+        %{category_id: category.id, name: "#{name} cut", duration_min: 60, price_cents: 20_000},
         nil
       )
 
@@ -33,8 +34,11 @@ defmodule Blastek.Fixtures do
       )
 
     {:ok, client} =
-      Salon.create_client(venue.id, %{first_name: "Client", last_name: name,
-        email: "client-#{slug}@example.com"})
+      Salon.create_client(venue.id, %{
+        first_name: "Client",
+        last_name: name,
+        email: "client-#{slug}@example.com"
+      })
 
     %{venue: venue, category: category, service: service, staff: staff, client: client}
   end

@@ -43,6 +43,7 @@ defmodule Blastek.MixProject do
       {:bandit, "~> 1.5"},
       {:absinthe, "~> 1.7"},
       {:absinthe_plug, "~> 1.5"},
+      {:absinthe_phoenix, "~> 2.0"},
       {:cors_plug, "~> 3.0"},
       {:pbkdf2_elixir, "~> 2.2"}
     ]

@@ -40,8 +40,13 @@ defmodule Blastek.BookingTest do
   end
 
   test "booking the same slot twice is refused", %{v: v, client_id: client_id, date: date} do
-    args = %{service_ids: [v.service.id], staff_id: "any", date: date, start_min: 600,
-      client_id: client_id}
+    args = %{
+      service_ids: [v.service.id],
+      staff_id: "any",
+      date: date,
+      start_min: 600,
+      client_id: client_id
+    }
 
     assert {:ok, _} = Salon.book(v.venue.id, args)
     assert {:error, msg} = Salon.book(v.venue.id, args)
@@ -54,13 +59,20 @@ defmodule Blastek.BookingTest do
     # The sandbox connection is shared so spawned tasks see the same data.
     Ecto.Adapters.SQL.Sandbox.mode(Repo, {:shared, self()})
 
-    args = %{service_ids: [v.service.id], staff_id: "any", date: date, start_min: 600,
-      client_id: client_id}
+    args = %{
+      service_ids: [v.service.id],
+      staff_id: "any",
+      date: date,
+      start_min: 600,
+      client_id: client_id
+    }
 
     results =
       1..20
       |> Task.async_stream(fn _ -> Salon.book(v.venue.id, args) end,
-        max_concurrency: 20, timeout: 30_000)
+        max_concurrency: 20,
+        timeout: 30_000
+      )
       |> Enum.map(fn {:ok, result} -> result end)
 
     successes = Enum.count(results, &match?({:ok, _}, &1))
@@ -86,17 +98,21 @@ defmodule Blastek.BookingTest do
       staff_id: v.staff.id,
       service_id: v.service.id,
       date: date,
-      price: 200.0
+      price_cents: 20_000
     }
 
     assert {:ok, _} =
              %Blastek.Salon.Appointment{}
-             |> Blastek.Salon.Appointment.changeset(Map.merge(base, %{start_min: 600, end_min: 660}))
+             |> Blastek.Salon.Appointment.changeset(
+               Map.merge(base, %{start_min: 600, end_min: 660})
+             )
              |> Repo.insert()
 
     assert {:error, changeset} =
              %Blastek.Salon.Appointment{}
-             |> Blastek.Salon.Appointment.changeset(Map.merge(base, %{start_min: 630, end_min: 690}))
+             |> Blastek.Salon.Appointment.changeset(
+               Map.merge(base, %{start_min: 630, end_min: 690})
+             )
              |> Repo.insert()
 
     assert "That time was just taken — please pick another slot." in errors_on(changeset).start_min
@@ -128,14 +144,16 @@ defmodule Blastek.BookingTest do
   test "an appointment cannot be checked out twice", %{v: v, date: date} do
     appt = appointment_fixture(v, %{date: date, start_min: 600})
 
-    assert {:ok, sale} = Salon.checkout(v.venue.id, [appt.id], 10.0, "cash")
-    assert sale.total == 210.0
+    assert {:ok, sale} = Salon.checkout(v.venue.id, [appt.id], 1_000, "cash")
+    assert sale.total_cents == 21_000
 
-    assert {:error, msg} = Salon.checkout(v.venue.id, [appt.id], 0.0, "cash")
+    assert {:error, msg} = Salon.checkout(v.venue.id, [appt.id], 0, "cash")
     assert msg =~ "already been checked out"
 
     assert Repo.aggregate(
-             from(s in Blastek.Salon.Sale, where: s.venue_id == ^v.venue.id), :count) == 1
+             from(s in Blastek.Salon.Sale, where: s.venue_id == ^v.venue.id),
+             :count
+           ) == 1
   end
 
   test "booking refs are unique across many bookings", %{v: v, client_id: client_id, date: date} do

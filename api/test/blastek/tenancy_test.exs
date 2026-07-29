@@ -48,7 +48,7 @@ defmodule Blastek.TenancyTest do
       assert [only] = Salon.list_appointments(a.venue.id, from, to)
       assert only.id == appt_a.id
 
-      {:ok, _sale} = Salon.checkout(a.venue.id, [appt_a.id], 0.0, "cash")
+      {:ok, _sale} = Salon.checkout(a.venue.id, [appt_a.id], 0, "cash")
 
       assert [_] = Salon.list_sales(a.venue.id, from)
       assert [] == Salon.list_sales(b.venue.id, from)
@@ -56,23 +56,23 @@ defmodule Blastek.TenancyTest do
 
     test "reports count only the venue's own data", %{a: a, b: b} do
       appt = appointment_fixture(a)
-      {:ok, _} = Salon.checkout(a.venue.id, [appt.id], 10.0, "card")
+      {:ok, _} = Salon.checkout(a.venue.id, [appt.id], 1_000, "card")
 
       report_a = Salon.report_summary(a.venue.id, 30)
       report_b = Salon.report_summary(b.venue.id, 30)
 
       assert report_a.sales_count == 1
       assert report_b.sales_count == 0
-      assert report_b.revenue == 0.0
+      assert report_b.revenue_cents == 0
     end
 
     test "client stats are computed per venue", %{a: a} do
       appt = appointment_fixture(a)
-      {:ok, _} = Salon.checkout(a.venue.id, [appt.id], 0.0, "cash")
+      {:ok, _} = Salon.checkout(a.venue.id, [appt.id], 0, "cash")
 
       stats = Salon.client_stats(a.venue.id, a.client.id)
       assert stats.appt_count == 1
-      assert stats.total_spent == 200.0
+      assert stats.total_spent_cents == 20_000
     end
   end
 
@@ -124,7 +124,7 @@ defmodule Blastek.TenancyTest do
 
     test "checkout ignores another venue's appointments", %{a: a, b: b} do
       appt_b = appointment_fixture(b)
-      assert {:error, _} = Salon.checkout(a.venue.id, [appt_b.id], 0.0, "cash")
+      assert {:error, _} = Salon.checkout(a.venue.id, [appt_b.id], 0, "cash")
     end
 
     test "availability only offers the venue's own staff", %{a: a, b: b} do

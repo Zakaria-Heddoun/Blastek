@@ -14,7 +14,15 @@ alias Blastek.Accounts
 alias Blastek.Venues
 
 alias Blastek.Salon.{
-  Category, Service, Staff, StaffHour, Client, Appointment, Sale, SaleItem, Review
+  Category,
+  Service,
+  Staff,
+  StaffHour,
+  Client,
+  Appointment,
+  Sale,
+  SaleItem,
+  Review
 }
 
 if Repo.aggregate(Venues.Venue, :count) > 0 do
@@ -51,8 +59,12 @@ else
       for {key, cat, name, desc, dur, price} <- config.services, into: %{} do
         {key,
          Repo.insert!(%Service{
-           category_id: cats[cat], name: name, description: desc,
-           duration_min: dur, price: price * 1.0, venue_id: vid
+           category_id: cats[cat],
+           name: name,
+           description: desc,
+           duration_min: dur,
+           price_cents: price * 100,
+           venue_id: vid
          }).id}
       end
 
@@ -89,14 +101,22 @@ else
     client_ids =
       for {first, last, allergy} <- config.clients do
         email =
-          String.downcase("#{String.replace(first, " ", "")}.#{String.replace(last, " ", "")}@example.com")
+          String.downcase(
+            "#{String.replace(first, " ", "")}.#{String.replace(last, " ", "")}@example.com"
+          )
 
         phone = "+212 6 #{ri.(10, 99)} #{ri.(10, 99)} #{ri.(10, 99)} #{ri.(10, 99)}"
         created = NaiveDateTime.add(now, -ri.(5, 90) * 86_400, :second)
 
         Repo.insert!(%Client{
-          first_name: first, last_name: last, email: email, phone: phone,
-          allergies: allergy, venue_id: vid, inserted_at: created, updated_at: created
+          first_name: first,
+          last_name: last,
+          email: email,
+          phone: phone,
+          allergies: allergy,
+          venue_id: vid,
+          inserted_at: created,
+          updated_at: created
         }).id
       end
 
@@ -135,8 +155,11 @@ else
                     true -> "cancelled"
                   end
 
-                :rand.uniform() < 0.5 -> "confirmed"
-                true -> "booked"
+                :rand.uniform() < 0.5 ->
+                  "confirmed"
+
+                true ->
+                  "booked"
               end
 
             source = if :rand.uniform() < 0.45, do: "online", else: "walk-in"
@@ -147,28 +170,43 @@ else
 
             appt =
               Repo.insert!(%Appointment{
-                booking_ref: ref, client_id: pick.(client_ids), staff_id: staff_id,
-                service_id: service.id, date: date, start_min: start_min, end_min: end_min,
-                status: status, price: service.price, source: source, venue_id: vid,
-                inserted_at: created, updated_at: created
+                booking_ref: ref,
+                client_id: pick.(client_ids),
+                staff_id: staff_id,
+                service_id: service.id,
+                date: date,
+                start_min: start_min,
+                end_min: end_min,
+                status: status,
+                price_cents: service.price_cents,
+                source: source,
+                venue_id: vid,
+                inserted_at: created,
+                updated_at: created
               })
 
             if status == "completed" do
               tip_rate = pick.([0, 0, 0.10, 0.15, 0.15, 0.20])
-              tip = Float.round(service.price * tip_rate, 2)
+              tip_cents = round(service.price_cents * tip_rate)
               sold_at = NaiveDateTime.new!(date, Time.from_seconds_after_midnight(end_min * 60))
 
               sale =
                 Repo.insert!(%Sale{
-                  client_id: appt.client_id, subtotal: service.price, tip: tip,
-                  total: service.price + tip, venue_id: vid,
+                  client_id: appt.client_id,
+                  subtotal_cents: service.price_cents,
+                  tip_cents: tip_cents,
+                  total_cents: service.price_cents + tip_cents,
+                  venue_id: vid,
                   payment_method: pick.(["card", "card", "card", "cash"]),
-                  inserted_at: sold_at, updated_at: sold_at
+                  inserted_at: sold_at,
+                  updated_at: sold_at
                 })
 
               Repo.insert!(%SaleItem{
-                sale_id: sale.id, appointment_id: appt.id,
-                description: service.name, amount: service.price
+                sale_id: sale.id,
+                appointment_id: appt.id,
+                description: service.name,
+                amount_cents: service.price_cents
               })
             end
 
@@ -184,8 +222,12 @@ else
       at = NaiveDateTime.add(now, -(3 + i * 9) * 86_400, :second)
 
       Repo.insert!(%Review{
-        client_name: name, rating: rating, comment: comment, venue_id: vid,
-        inserted_at: at, updated_at: at
+        client_name: name,
+        rating: rating,
+        comment: comment,
+        venue_id: vid,
+        inserted_at: at,
+        updated_at: at
       })
     end)
 
@@ -208,20 +250,25 @@ else
       day_range: -35..10,
       categories: [{"Hair", 1}, {"Barbering", 2}, {"Nails", 3}, {"Massage & Spa", 4}],
       services: [
-        {:cut, "Hair", "Women's cut & style", "Consultation, shampoo, precision cut and finish", 60, 250},
+        {:cut, "Hair", "Women's cut & style", "Consultation, shampoo, precision cut and finish",
+         60, 250},
         {:blow, "Hair", "Blow dry & finish", "Wash and professional blow-out", 45, 150},
         {:color, "Hair", "Full color", "Single-process color, root to tip", 120, 600},
         {:balayage, "Hair", "Balayage", "Hand-painted highlights with toner", 150, 900},
-        {:highlights, "Hair", "Partial highlights", "Foil highlights on the top section", 120, 700},
+        {:highlights, "Hair", "Partial highlights", "Foil highlights on the top section", 120,
+         700},
         {:fade, "Barbering", "Skin fade", "Clipper fade with detailed finish", 45, 120},
-        {:mens, "Barbering", "Classic men's cut", "Scissor or clipper cut with hot towel", 30, 100},
+        {:mens, "Barbering", "Classic men's cut", "Scissor or clipper cut with hot towel", 30,
+         100},
         {:beard, "Barbering", "Beard trim & shape", "Trim, line-up and conditioning oil", 30, 70},
         {:combo, "Barbering", "Cut & beard combo", "Full cut plus beard sculpting", 60, 160},
         {:mani, "Nails", "Classic manicure", "Shape, cuticle care and polish", 45, 120},
         {:gel, "Nails", "Gel manicure", "Long-wear gel polish manicure", 60, 180},
         {:pedi, "Nails", "Spa pedicure", "Soak, exfoliation and polish", 60, 200},
-        {:swedish, "Massage & Spa", "Swedish massage — 60 min", "Full-body relaxation massage", 60, 400},
-        {:deep, "Massage & Spa", "Deep tissue massage — 60 min", "Targeted pressure for tension relief", 60, 450},
+        {:swedish, "Massage & Spa", "Swedish massage — 60 min", "Full-body relaxation massage",
+         60, 400},
+        {:deep, "Massage & Spa", "Deep tissue massage — 60 min",
+         "Targeted pressure for tension relief", 60, 450},
         {:facial, "Massage & Spa", "Express facial", "Cleanse, exfoliate and hydrate", 30, 200}
       ],
       staff: [
@@ -242,21 +289,35 @@ else
       end,
       clients: [
         {"Leila", "Bennani", "Sensitive scalp — avoid ammonia color"},
-        {"Youssef", "El Fassi", ""}, {"Sara", "Alaoui", ""}, {"Mehdi", "Berrada", ""},
+        {"Youssef", "El Fassi", ""},
+        {"Sara", "Alaoui", ""},
+        {"Mehdi", "Berrada", ""},
         {"Imane", "Chraibi", "Allergic to acrylates (no acrylic nails)"},
-        {"Omar", "Sqalli", ""}, {"Kenza", "Lahlou", ""}, {"Amine", "Tahiri", ""},
-        {"Hajar", "Benkirane", ""}, {"Karim", "Ziani", ""}, {"Amal", "Drissi", "Latex allergy"},
-        {"Anas", "Bouzoubaa", ""}, {"Charlotte", "Moreau", ""}, {"Adam", "El Mansouri", ""},
-        {"Nour", "Kadiri", ""}, {"Hicham", "Bennis", ""}, {"Ghita", "Amrani", ""},
+        {"Omar", "Sqalli", ""},
+        {"Kenza", "Lahlou", ""},
+        {"Amine", "Tahiri", ""},
+        {"Hajar", "Benkirane", ""},
+        {"Karim", "Ziani", ""},
+        {"Amal", "Drissi", "Latex allergy"},
+        {"Anas", "Bouzoubaa", ""},
+        {"Charlotte", "Moreau", ""},
+        {"Adam", "El Mansouri", ""},
+        {"Nour", "Kadiri", ""},
+        {"Hicham", "Bennis", ""},
+        {"Ghita", "Amrani", ""},
         {"Daniel", "Costa", ""}
       ],
       reviews: [
-        {"Leila B.", 5, "Yasmine gave me the best cut I have had in years. Booking online took two minutes."},
-        {"Hajar B.", 5, "Salma understood exactly what I wanted. The balayage matches the reference photo."},
+        {"Leila B.", 5,
+         "Yasmine gave me the best cut I have had in years. Booking online took two minutes."},
+        {"Hajar B.", 5,
+         "Salma understood exactly what I wanted. The balayage matches the reference photo."},
         {"Mehdi B.", 5, "Reda is fast, precise, and the hot towel finish is a great touch."},
-        {"Imane C.", 4, "Lovely gel manicure and they actually noted my acrylate allergy. One star off for the wait."},
+        {"Imane C.", 4,
+         "Lovely gel manicure and they actually noted my acrylate allergy. One star off for the wait."},
         {"Omar S.", 5, "Deep tissue massage with Nadia fixed my desk-job shoulders."},
-        {"Ghita A.", 5, "Spotless salon, calm atmosphere, and the reminders meant I did not forget my appointment."},
+        {"Ghita A.", 5,
+         "Spotless salon, calm atmosphere, and the reminders meant I did not forget my appointment."},
         {"Adam E.", 4, "Solid skin fade. Slightly pricey but worth it."},
         {"Nour K.", 5, "The express facial is the best value in Gauthier."},
         {"Daniel C.", 5, "Booked same-day and got in an hour later. Great experience."},
@@ -298,9 +359,14 @@ else
       # Open every day except Sunday; Ilyas off Tuesday.
       working: fn key, wd -> wd != 0 and not (key == :ilyas and wd == 2) end,
       clients: [
-        {"Rachid", "Alami", ""}, {"Bilal", "Naciri", ""}, {"Simo", "Cherkaoui", ""},
-        {"Walid", "Fassi", ""}, {"Tarik", "Ouali", ""}, {"Zakaria", "Hakimi", ""},
-        {"Nabil", "Saidi", "Sensitive skin — no alcohol aftershave"}, {"Marouane", "Idrissi", ""}
+        {"Rachid", "Alami", ""},
+        {"Bilal", "Naciri", ""},
+        {"Simo", "Cherkaoui", ""},
+        {"Walid", "Fassi", ""},
+        {"Tarik", "Ouali", ""},
+        {"Zakaria", "Hakimi", ""},
+        {"Nabil", "Saidi", "Sensitive skin — no alcohol aftershave"},
+        {"Marouane", "Idrissi", ""}
       ],
       reviews: [
         {"Rachid A.", 5, "Best fade in Agdal, and Hamza never rushes."},
@@ -328,8 +394,10 @@ if Repo.aggregate(Accounts.User, :count) == 0 do
   # Owner of Le Salon Anfa.
   {:ok, owner} =
     Accounts.sign_up(%{
-      email: "owner@salonanfa.ma", password: "blastek123",
-      first_name: "Yasmine", last_name: "El Amrani"
+      email: "owner@salonanfa.ma",
+      password: "blastek123",
+      first_name: "Yasmine",
+      last_name: "El Amrani"
     })
 
   {:ok, _} = Venues.add_member(anfa.id, owner.id, "owner")
@@ -337,8 +405,10 @@ if Repo.aggregate(Accounts.User, :count) == 0 do
   # Owner of the second venue — proves the two dashboards are isolated.
   {:ok, barber} =
     Accounts.sign_up(%{
-      email: "owner@barbercorner.ma", password: "blastek123",
-      first_name: "Hamza", last_name: "Ouazzani"
+      email: "owner@barbercorner.ma",
+      password: "blastek123",
+      first_name: "Hamza",
+      last_name: "Ouazzani"
     })
 
   {:ok, _} = Venues.add_member(corner.id, barber.id, "owner")
@@ -346,8 +416,10 @@ if Repo.aggregate(Accounts.User, :count) == 0 do
   # A customer with no venue access.
   {:ok, _} =
     Accounts.sign_up(%{
-      email: "leila.bennani@example.com", password: "blastek123",
-      first_name: "Leila", last_name: "Bennani"
+      email: "leila.bennani@example.com",
+      password: "blastek123",
+      first_name: "Leila",
+      last_name: "Bennani"
     })
 
   IO.puts("""

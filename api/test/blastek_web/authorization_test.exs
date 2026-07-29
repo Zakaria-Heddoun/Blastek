@@ -23,8 +23,13 @@ defmodule BlastekWeb.AuthorizationTest do
 
     case memberships do
       [m | _] ->
-        %{current_user: user, memberships: memberships, membership: m,
-          current_venue: m.venue, venue_id: m.venue_id}
+        %{
+          current_user: user,
+          memberships: memberships,
+          membership: m,
+          current_venue: m.venue,
+          venue_id: m.venue_id
+        }
 
       [] ->
         %{current_user: user, memberships: []}
@@ -40,7 +45,7 @@ defmodule BlastekWeb.AuthorizationTest do
 
   describe "signed-out callers" do
     test "cannot read dashboard data" do
-      assert {:ok, %{errors: [%{message: msg}]}} = run("{ clients { id } }", %{})
+      assert {:ok, %{errors: [%{message: msg}]}} = run("{ clients { items { id } } }", %{})
       assert msg =~ "signed in"
     end
 
@@ -71,12 +76,12 @@ defmodule BlastekWeb.AuthorizationTest do
       ctx = context_for(user)
 
       for query <- [
-            "{ clients { id } }",
+            "{ clients { items { id } } }",
             "{ services { id } }",
             "{ staff { id } }",
-            "{ sales(from: \"2020-01-01\") { id } }",
-            "{ reportSummary { revenue } }",
-            "{ appointments(from: \"2020-01-01\", to: \"2030-01-01\") { id } }"
+            "{ sales(from: \"2020-01-01\") { items { id } } }",
+            "{ reportSummary { revenueCents } }",
+            "{ appointments(from: \"#{Date.utc_today()}\", to: \"#{Date.add(Date.utc_today(), 7)}\") { id } }"
           ] do
         assert error_message(run(query, ctx)) =~ ~r/do not manage a venue|signed in/,
                "expected #{query} to be refused"
@@ -93,17 +98,23 @@ defmodule BlastekWeb.AuthorizationTest do
       %{user: user} = member_fixture(a.venue, "staff", "staff@example.com")
       ctx = context_for(user)
 
-      assert error_message(run("{ clients { id } }", ctx)) =~ "role does not allow"
-      assert error_message(run("{ sales(from: \"2020-01-01\") { id } }", ctx)) =~ "role does not allow"
-      assert error_message(run("{ reportSummary { revenue } }", ctx)) =~ "role does not allow"
+      assert error_message(run("{ clients { items { id } } }", ctx)) =~ "role does not allow"
+
+      assert error_message(run("{ sales(from: \"2020-01-01\") { items { id } } }", ctx)) =~
+               "role does not allow"
+
+      assert error_message(run("{ reportSummary { revenueCents } }", ctx)) =~
+               "role does not allow"
     end
 
     test "staff can read the calendar", %{a: a} do
       %{user: user} = member_fixture(a.venue, "staff", "staff2@example.com")
 
       assert {:ok, %{data: %{"appointments" => _}}} =
-               run("{ appointments(from: \"2020-01-01\", to: \"2030-01-01\") { id } }",
-                 context_for(user))
+               run(
+                 "{ appointments(from: \"#{Date.utc_today()}\", to: \"#{Date.add(Date.utc_today(), 7)}\") { id } }",
+                 context_for(user)
+               )
     end
 
     test "a staff member linked to a calendar column sees only their own appointments", %{a: a} do
@@ -122,8 +133,10 @@ defmodule BlastekWeb.AuthorizationTest do
       {:ok, _} = Venues.add_member(a.venue.id, user.id, "staff", a.staff.id)
 
       assert {:ok, %{data: %{"appointments" => appts}}} =
-               run("{ appointments(from: \"2020-01-01\", to: \"2030-01-01\") { id staff { id } } }",
-                 context_for(user))
+               run(
+                 "{ appointments(from: \"#{Date.utc_today()}\", to: \"#{Date.add(Date.utc_today(), 7)}\") { id staff { id } } }",
+                 context_for(user)
+               )
 
       assert Enum.map(appts, & &1["id"]) == [to_string(own.id)]
     end
@@ -132,8 +145,10 @@ defmodule BlastekWeb.AuthorizationTest do
       %{user: user} = member_fixture(a.venue, "receptionist", "recep@example.com")
       ctx = context_for(user)
 
-      assert {:ok, %{data: %{"clients" => _}}} = run("{ clients { id } }", ctx)
-      assert error_message(run("{ reportSummary { revenue } }", ctx)) =~ "role does not allow"
+      assert {:ok, %{data: %{"clients" => _}}} = run("{ clients { items { id } } }", ctx)
+
+      assert error_message(run("{ reportSummary { revenueCents } }", ctx)) =~
+               "role does not allow"
 
       mutation = ~s|mutation { createCategory(name: "New") { id } }|
       assert error_message(run(mutation, ctx)) =~ "role does not allow"
@@ -154,8 +169,10 @@ defmodule BlastekWeb.AuthorizationTest do
       %{user: user} = member_fixture(a.venue, "owner", "owner@example.com")
 
       assert {:ok, %{data: %{"updateVenue" => %{"name" => "Renamed"}}}} =
-               run(~s|mutation { updateVenue(input: {name: "Renamed"}) { id name } }|,
-                 context_for(user))
+               run(
+                 ~s|mutation { updateVenue(input: {name: "Renamed"}) { id name } }|,
+                 context_for(user)
+               )
     end
   end
 
@@ -193,7 +210,9 @@ defmodule BlastekWeb.AuthorizationTest do
     test "the venue is taken from the session, not from arguments", %{ctx: ctx, b: b} do
       # There is no venue argument to forge on dashboard fields; confirm that
       # supplying one is a schema error rather than an access path.
-      assert {:ok, %{errors: errors}} = run(~s|{ services(venueId: "#{b.venue.id}") { id } }|, ctx)
+      assert {:ok, %{errors: errors}} =
+               run(~s|{ services(venueId: "#{b.venue.id}") { id } }|, ctx)
+
       assert Enum.any?(errors, &(&1.message =~ "Unknown argument"))
     end
   end
@@ -239,6 +258,72 @@ defmodule BlastekWeb.AuthorizationTest do
     end
   end
 
+  describe "credential rate limiting" do
+    setup do
+      Blastek.RateLimit.reset()
+      on_exit(&Blastek.RateLimit.reset/0)
+      :ok
+    end
+
+    test "repeated failed logins for one identity are cut off" do
+      user_fixture("grind@example.com")
+
+      login = fn ->
+        run(
+          ~s|mutation { login(email: "grind@example.com", password: "wrong-guess") { token } }|,
+          %{client_ip: "10.0.0.1"}
+        )
+      end
+
+      # The budget is spent on wrong guesses...
+      for _ <- 1..8 do
+        assert error_message(login.()) =~ "Invalid email or password"
+      end
+
+      # ...and the next attempt is refused before the password is even checked.
+      assert error_message(login.()) =~ "Too many attempts"
+    end
+
+    test "a correct password is still refused once the budget is spent" do
+      user_fixture("locked@example.com")
+
+      for _ <- 1..9 do
+        run(
+          ~s|mutation { login(email: "locked@example.com", password: "nope") { token } }|,
+          %{client_ip: "10.0.0.2"}
+        )
+      end
+
+      # Otherwise an attacker learns the password was right from the error text.
+      assert error_message(
+               run(
+                 ~s|mutation { login(email: "locked@example.com", password: "blastek123") { token } }|,
+                 %{client_ip: "10.0.0.2"}
+               )
+             ) =~ "Too many attempts"
+    end
+
+    test "one identity's exhausted budget does not lock out another" do
+      user_fixture("victim@example.com")
+      user_fixture("bystander@example.com")
+
+      for _ <- 1..9 do
+        run(
+          ~s|mutation { login(email: "victim@example.com", password: "nope") { token } }|,
+          %{client_ip: "10.0.0.3"}
+        )
+      end
+
+      assert {:ok, %{data: %{"login" => %{"token" => token}}}} =
+               run(
+                 ~s|mutation { login(email: "bystander@example.com", password: "blastek123") { token } }|,
+                 %{client_ip: "10.0.0.4"}
+               )
+
+      assert is_binary(token)
+    end
+  end
+
   describe "platform admin" do
     test "adminVenues lists every venue regardless of status; others are refused", %{a: a, b: b} do
       {:ok, _} = Venues.update_venue(b.venue, %{status: "suspended"})
@@ -271,8 +356,13 @@ defmodule BlastekWeb.AuthorizationTest do
       for venue <- [a.venue, b.venue] do
         m = pick.(venue.slug)
 
-        ctx = %{current_user: user, memberships: memberships, membership: m,
-          current_venue: m.venue, venue_id: m.venue_id}
+        ctx = %{
+          current_user: user,
+          memberships: memberships,
+          membership: m,
+          current_venue: m.venue,
+          venue_id: m.venue_id
+        }
 
         assert {:ok, %{data: %{"services" => [service]}}} = run("{ services { id } }", ctx)
 

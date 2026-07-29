@@ -97,8 +97,10 @@ defmodule Blastek.Repo.Migrations.CreateVenues do
     )
     """
 
-    create unique_index(:appointments, [:booking_ref], name: :appointments_booking_ref_index,
-      where: "booking_ref <> ''")
+    create unique_index(:appointments, [:booking_ref],
+             name: :appointments_booking_ref_index,
+             where: "booking_ref <> ''"
+           )
 
     # ---- double-booking invariant (B4) -----------------------------------
     # The availability check is advisory; this is the guarantee. Cancelled and
@@ -142,8 +144,10 @@ defmodule Blastek.Repo.Migrations.CreateVenues do
 
     execute "UPDATE clients c SET user_id = u.id FROM users u WHERE u.client_id = c.id"
 
-    create unique_index(:clients, [:venue_id, :user_id], name: :clients_venue_user_index,
-      where: "user_id IS NOT NULL")
+    create unique_index(:clients, [:venue_id, :user_id],
+             name: :clients_venue_user_index,
+             where: "user_id IS NOT NULL"
+           )
 
     alter table(:users) do
       remove :client_id

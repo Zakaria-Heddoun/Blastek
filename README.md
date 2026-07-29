@@ -110,6 +110,33 @@ Two invariants are enforced by the database rather than by application checks:
 Customers have one account and a **separate client record per venue**, because
 their notes, allergies and history belong to the salon they visit.
 
+## Platform conventions
+
+**Money is integer centimes, everywhere.** Fields carry their unit in the name
+(`priceCents`, `totalCents`, `revenueCents`) and the API never sends a float —
+0.10 has no exact float representation, so sums drift, which is tolerable on a
+demo dashboard and illegal on an invoice. The UI converts at the edges only:
+`fmtMAD(cents)` to display, `madToCents(mad)` to submit. CI fails the build if
+the old float accessors reappear.
+
+**Errors are structured.** Every GraphQL error carries a `code`
+(`validation`, `not_found`, `forbidden`, `conflict`, `rate_limited`,
+`unauthenticated`) and validation errors also carry the `field` they belong to,
+so forms attach each message to the input that caused it instead of printing one
+concatenated string.
+
+**Lists are paginated.** `clients` and `sales` return `{ items, totalCount }`
+with a server-clamped page size (50 default, 200 max). The calendar is bounded
+by a 92-day range cap instead, since a date range is its natural limit.
+
+**Requests are rate limited.** 300/minute per IP for the API as a whole, plus a
+much stricter budget on credential checks (8 per identity per 15 min, 40 per IP
+per hour) counted *before* the password is verified.
+
+**Subscriptions** are available over `/socket` — `appointmentChanged` pushes a
+venue's calendar changes to its own team, scoped by topic so no tenant can
+listen to another.
+
 ## Try this flow
 
 1. Open the marketplace (`/`) → **Book now** → the venue directory lists both venues.

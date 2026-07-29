@@ -19,7 +19,7 @@ export interface Service {
   name: string;
   description: string;
   durationMin: number;
-  price: number;
+  priceCents: number;
   active: boolean;
   staffIds: string[];
 }
@@ -51,7 +51,7 @@ export interface Client {
   notes: string;
   createdAt?: string;
   apptCount?: number;
-  totalSpent?: number;
+  totalSpentCents?: number;
   appointments?: Appointment[];
 }
 
@@ -62,7 +62,7 @@ export interface Appointment {
   startMin: number;
   endMin: number;
   status: string;
-  price: number;
+  priceCents: number;
   notes: string;
   source: string;
   client: Client;
@@ -75,14 +75,14 @@ export interface Appointment {
 export interface SaleItem {
   id: string;
   description: string;
-  amount: number;
+  amountCents: number;
 }
 
 export interface Sale {
   id: string;
-  subtotal: number;
-  tip: number;
-  total: number;
+  subtotalCents: number;
+  tipCents: number;
+  totalCents: number;
   paymentMethod: string;
   createdAt: string;
   client: Client;
@@ -152,12 +152,12 @@ export interface BookingResult {
 
 export interface ReportSummary {
   days: number;
-  revenue: number;
-  tips: number;
+  revenueCents: number;
+  tipsCents: number;
   salesCount: number;
   appointments: { completed: number; noShows: number; cancelled: number; online: number; total: number };
   newClients: number;
-  revenueByDay: { day: string; revenue: number }[];
-  topServices: { name: string; count: number; revenue: number }[];
-  topStaff: { name: string; color: string; count: number; revenue: number }[];
+  revenueByDay: { day: string; revenueCents: number }[];
+  topServices: { name: string; count: number; revenueCents: number }[];
+  topStaff: { name: string; color: string; count: number; revenueCents: number }[];
 }

@@ -7,15 +7,15 @@ import { useAppData } from './AdminLayout';
 import { Modal, StatusBadge, useToast } from '../components/ui';
 import { Icon } from '../lib/icons';
 import {
-  addDays, fmtDateLong, fmtDateShort, fmtDur, fmtMoney, fmtTime,
-  mondayOf, todayStr, WEEKDAYS,
+  addDays, fmtDateLong, fmtDateShort, fmtDur, fmtMAD, fmtTime,
+  centsToMad, madToCents, mondayOf, todayStr, WEEKDAYS,
 } from '../lib/format';
 
 const DAY_START = 480, DAY_END = 1200;
 const PX_MIN = 64 / 60;
 
 export const APPT_FIELDS = `fragment ApptFields on Appointment {
-  id bookingRef date startMin endMin status price notes source
+  id bookingRef date startMin endMin status priceCents notes source
   client { id firstName lastName allergies }
   service { id name durationMin }
   staff { id name color }
@@ -259,7 +259,7 @@ function NewApptModal({ preset, onClose, onDone }:
         <div><label>Service</label>
           <select value={serviceId} onChange={(e) => setServiceId(e.target.value)}>
             {list.map((sv) => (
-              <option key={sv.id} value={sv.id}>{sv.name} · {fmtDur(sv.durationMin)} · {fmtMoney(sv.price)}</option>
+              <option key={sv.id} value={sv.id}>{sv.name} · {fmtDur(sv.durationMin)} · {fmtMAD(sv.priceCents)}</option>
             ))}
           </select>
         </div>
@@ -290,7 +290,8 @@ function ApptDetailModal({ appt: a, onClose, onDone, onCheckout }:
   const [date, setDate] = useState(a.date);
   const [startMin, setStartMin] = useState(a.startMin);
   const [staffId, setStaffId] = useState(a.staff.id);
-  const [price, setPrice] = useState(a.price);
+  // Edited in MAD, sent as centimes.
+  const [priceMad, setPriceMad] = useState(centsToMad(a.priceCents));
   const [notes, setNotes] = useState(a.notes);
   const [err, setErr] = useState('');
 
@@ -299,9 +300,9 @@ function ApptDetailModal({ appt: a, onClose, onDone, onCheckout }:
   const patch = async (vars: Record<string, unknown>, msg: string) => {
     try {
       await gql(
-        `mutation($id: ID!, $status: String, $date: Date, $startMin: Int, $staffId: ID, $price: Float, $notes: String) {
+        `mutation($id: ID!, $status: String, $date: Date, $startMin: Int, $staffId: ID, $priceCents: Int, $notes: String) {
           updateAppointment(id: $id, status: $status, date: $date, startMin: $startMin,
-            staffId: $staffId, price: $price, notes: $notes) { id } }`,
+            staffId: $staffId, priceCents: $priceCents, notes: $notes) { id } }`,
         { id: a.id, ...vars });
       toast(msg);
       onDone();
@@ -318,7 +319,7 @@ function ApptDetailModal({ appt: a, onClose, onDone, onCheckout }:
       <div style={{ margin: '10px 0 4px' }}>
         <StatusBadge status={a.status} />{' '}
         {a.source === 'online' && <span className="badge online">online · {a.bookingRef}</span>}{' '}
-        <b style={{ marginLeft: 6 }}>{fmtMoney(a.price)}</b>
+        <b style={{ marginLeft: 6 }}>{fmtMAD(a.priceCents)}</b>
       </div>
       <div className="mutetext">{fmtDateLong(a.date)} · {fmtTime(a.startMin)} – {fmtTime(a.endMin)}</div>
       <div className="grid2">
@@ -334,7 +335,8 @@ function ApptDetailModal({ appt: a, onClose, onDone, onCheckout }:
           </select>
         </div>
         <div><label>Price</label>
-          <input type="number" step="0.01" value={price} onChange={(e) => setPrice(Number(e.target.value))} />
+          <input type="number" step="0.01" min="0" value={priceMad}
+            onChange={(e) => setPriceMad(Number(e.target.value))} />
         </div>
       </div>
       <label>Notes</label>
@@ -349,7 +351,9 @@ function ApptDetailModal({ appt: a, onClose, onDone, onCheckout }:
         </span>
         <span style={{ display: 'flex', gap: 8 }}>
           <button className="btn" onClick={onClose}>Close</button>
-          <button className="btn" onClick={() => patch({ date, startMin, staffId, price, notes }, 'Appointment updated')}>Save changes</button>
+          <button className="btn" onClick={() => patch(
+            { date, startMin, staffId, priceCents: madToCents(priceMad), notes },
+            'Appointment updated')}>Save changes</button>
           {a.status === 'booked' &&
             <button className="btn" onClick={() => patch({ status: 'confirmed' }, 'Confirmed')}>Confirm</button>}
           {open && <button className="btn btn-primary" onClick={onCheckout}>Check out</button>}
@@ -363,8 +367,9 @@ function ApptDetailModal({ appt: a, onClose, onDone, onCheckout }:
 function CheckoutModal({ appts, onClose, onDone }:
   { appts: Appointment[]; onClose: () => void; onDone: () => void }) {
   const toast = useToast();
-  const subtotal = appts.reduce((s, x) => s + x.price, 0);
-  const [tip, setTip] = useState(0);
+  // All amounts here are centimes; only the custom-tip input is in MAD.
+  const subtotalCents = appts.reduce((s, x) => s + x.priceCents, 0);
+  const [tipCents, setTipCents] = useState(0);
   const [tipChip, setTipChip] = useState(0);
   const [custom, setCustom] = useState('');
   const [method, setMethod] = useState('card');
@@ -373,10 +378,11 @@ function CheckoutModal({ appts, onClose, onDone }:
   const pay = async () => {
     try {
       await gql(
-        `mutation($ids: [ID!]!, $tip: Float, $method: String) {
-          checkout(appointmentIds: $ids, tip: $tip, paymentMethod: $method) { id total } }`,
-        { ids: appts.map((x) => x.id), tip, method });
-      toast(`Sale completed — ${fmtMoney(subtotal + tip)}`);
+        `mutation($ids: [ID!]!, $tipCents: Int, $method: String) {
+          checkout(appointmentIds: $ids, tipCents: $tipCents, paymentMethod: $method) {
+            id totalCents } }`,
+        { ids: appts.map((x) => x.id), tipCents, method });
+      toast(`Sale completed — ${fmtMAD(subtotalCents + tipCents)}`);
       onDone();
     } catch (e) { setErr((e as Error).message); }
   };
@@ -391,7 +397,7 @@ function CheckoutModal({ appts, onClose, onDone }:
             <div className="grow"><b>{x.service.name}</b>
               <div className="fainttext">{fmtTime(x.startMin)} · {x.staff.name}</div>
             </div>
-            <div className="num">{fmtMoney(x.price)}</div>
+            <div className="num">{fmtMAD(x.priceCents)}</div>
           </div>
         ))}
       </div>
@@ -399,12 +405,20 @@ function CheckoutModal({ appts, onClose, onDone }:
       <div className="chip-row">
         {[0, 10, 15, 20].map((p) => (
           <button key={p} className={`chip ${tipChip === p && custom === '' ? 'active' : ''}`}
-            onClick={() => { setTipChip(p); setCustom(''); setTip(Math.round(subtotal * p) / 100); }}>
+            onClick={() => {
+              setTipChip(p);
+              setCustom('');
+              setTipCents(Math.round((subtotalCents * p) / 100));
+            }}>
             {p === 0 ? 'No tip' : `${p}%`}
           </button>
         ))}
-        <input type="number" placeholder="Custom MAD" style={{ width: 120 }} value={custom}
-          onChange={(e) => { setCustom(e.target.value); setTip(Math.max(0, Number(e.target.value || 0))); }} />
+        <input type="number" placeholder="Custom MAD" min="0" step="0.01" style={{ width: 120 }}
+          value={custom}
+          onChange={(e) => {
+            setCustom(e.target.value);
+            setTipCents(Math.max(0, madToCents(e.target.value)));
+          }} />
       </div>
       <label>Payment method</label>
       <div className="chip-row">
@@ -414,9 +428,11 @@ function CheckoutModal({ appts, onClose, onDone }:
           <Icon name="banknote" size={15} /> Cash</button>
       </div>
       <div className="summary-card" style={{ position: 'static', padding: '14px 0 0' }}>
-        <div className="line"><span>Subtotal</span><b>{fmtMoney(subtotal)}</b></div>
-        <div className="line"><span>Tip</span><b>{fmtMoney(tip)}</b></div>
-        <div className="line total"><span>Total</span><span>{fmtMoney(subtotal + tip)}</span></div>
+        <div className="line"><span>Subtotal</span><b>{fmtMAD(subtotalCents)}</b></div>
+        <div className="line"><span>Tip</span><b>{fmtMAD(tipCents)}</b></div>
+        <div className="line total">
+          <span>Total</span><span>{fmtMAD(subtotalCents + tipCents)}</span>
+        </div>
       </div>
       <div className="err">{err}</div>
       <div className="actions">

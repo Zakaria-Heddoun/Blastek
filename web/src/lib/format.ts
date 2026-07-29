@@ -3,10 +3,24 @@
 
 export const pad2 = (n: number) => String(n).padStart(2, '0');
 
-export const fmtMoney = (n: number) =>
-  `${Number.isInteger(n)
-    ? n.toLocaleString('en-US')
-    : n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MAD`;
+/**
+ * Formats integer centimes as MAD. Money crosses the API as centimes so it
+ * never passes through a float — display is the only place it becomes a
+ * decimal. Whole dirhams drop the ".00", which is how prices are written here.
+ */
+export const fmtMAD = (cents: number) => {
+  const mad = (cents ?? 0) / 100;
+  return `${Number.isInteger(mad)
+    ? mad.toLocaleString('en-US')
+    : mad.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MAD`;
+};
+
+/** Centimes from a MAD amount typed by a human ("249.50" → 24950). */
+export const madToCents = (mad: number | string) =>
+  Math.round(Number(mad || 0) * 100);
+
+/** MAD as a plain number, for prefilling numeric inputs. */
+export const centsToMad = (cents: number) => (cents ?? 0) / 100;
 
 export const fmtTime = (min: number, clock12 = false) => {
   const h = Math.floor(min / 60), m = min % 60;

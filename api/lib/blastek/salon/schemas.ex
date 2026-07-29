@@ -30,7 +30,7 @@ defmodule Blastek.Salon.Service do
     field :name, :string
     field :description, :string, default: ""
     field :duration_min, :integer
-    field :price, :float
+    field :price_cents, :integer
     field :active, :boolean, default: true
     field :venue_id, :id
     belongs_to :category, Blastek.Salon.Category
@@ -42,10 +42,18 @@ defmodule Blastek.Salon.Service do
 
   def changeset(service, attrs) do
     service
-    |> cast(attrs, [:name, :description, :duration_min, :price, :active, :category_id, :venue_id])
-    |> validate_required([:name, :duration_min, :price, :category_id, :venue_id])
+    |> cast(attrs, [
+      :name,
+      :description,
+      :duration_min,
+      :price_cents,
+      :active,
+      :category_id,
+      :venue_id
+    ])
+    |> validate_required([:name, :duration_min, :price_cents, :category_id, :venue_id])
     |> validate_number(:duration_min, greater_than: 0)
-    |> validate_number(:price, greater_than_or_equal_to: 0)
+    |> validate_number(:price_cents, greater_than_or_equal_to: 0)
   end
 end
 
@@ -111,11 +119,21 @@ defmodule Blastek.Salon.Client do
 
   def changeset(client, attrs) do
     client
-    |> cast(attrs, [:first_name, :last_name, :email, :phone, :allergies, :notes,
-        :venue_id, :user_id])
+    |> cast(attrs, [
+      :first_name,
+      :last_name,
+      :email,
+      :phone,
+      :allergies,
+      :notes,
+      :venue_id,
+      :user_id
+    ])
     |> validate_required([:first_name, :venue_id])
-    |> unique_constraint([:venue_id, :user_id], name: :clients_venue_user_index,
-      message: "already has a client record at this venue")
+    |> unique_constraint([:venue_id, :user_id],
+      name: :clients_venue_user_index,
+      message: "already has a client record at this venue"
+    )
   end
 end
 
@@ -129,7 +147,7 @@ defmodule Blastek.Salon.Appointment do
     field :start_min, :integer
     field :end_min, :integer
     field :status, :string, default: "booked"
-    field :price, :float
+    field :price_cents, :integer
     field :notes, :string, default: ""
     field :source, :string, default: "walk-in"
     field :venue_id, :id
@@ -139,13 +157,33 @@ defmodule Blastek.Salon.Appointment do
     timestamps(type: :naive_datetime)
   end
 
-  @fields [:booking_ref, :date, :start_min, :end_min, :status, :price, :notes, :source,
-           :client_id, :staff_id, :service_id, :venue_id]
+  @fields [
+    :booking_ref,
+    :date,
+    :start_min,
+    :end_min,
+    :status,
+    :price_cents,
+    :notes,
+    :source,
+    :client_id,
+    :staff_id,
+    :service_id,
+    :venue_id
+  ]
   def changeset(appt, attrs) do
     appt
     |> cast(attrs, @fields)
-    |> validate_required([:date, :start_min, :end_min, :price, :client_id, :staff_id,
-        :service_id, :venue_id])
+    |> validate_required([
+      :date,
+      :start_min,
+      :end_min,
+      :price_cents,
+      :client_id,
+      :staff_id,
+      :service_id,
+      :venue_id
+    ])
     |> validate_inclusion(:status, ~w(booked confirmed started completed cancelled no_show))
     |> unique_constraint(:booking_ref, name: :appointments_booking_ref_index)
     |> exclusion_constraint(:start_min,
@@ -160,9 +198,9 @@ defmodule Blastek.Salon.Sale do
   import Ecto.Changeset
 
   schema "sales" do
-    field :subtotal, :float
-    field :tip, :float, default: 0.0
-    field :total, :float
+    field :subtotal_cents, :integer
+    field :tip_cents, :integer, default: 0
+    field :total_cents, :integer
     field :payment_method, :string, default: "card"
     field :venue_id, :id
     belongs_to :client, Blastek.Salon.Client
@@ -172,8 +210,16 @@ defmodule Blastek.Salon.Sale do
 
   def changeset(sale, attrs) do
     sale
-    |> cast(attrs, [:subtotal, :tip, :total, :payment_method, :client_id, :venue_id])
-    |> validate_required([:subtotal, :total, :venue_id])
+    |> cast(attrs, [
+      :subtotal_cents,
+      :tip_cents,
+      :total_cents,
+      :payment_method,
+      :client_id,
+      :venue_id
+    ])
+    |> validate_required([:subtotal_cents, :total_cents, :venue_id])
+    |> validate_number(:tip_cents, greater_than_or_equal_to: 0)
   end
 end
 
@@ -185,7 +231,7 @@ defmodule Blastek.Salon.SaleItem do
     belongs_to :sale, Blastek.Salon.Sale
     belongs_to :appointment, Blastek.Salon.Appointment
     field :description, :string
-    field :amount, :float
+    field :amount_cents, :integer
   end
 end
 

@@ -3,6 +3,7 @@ defmodule BlastekWeb.Router do
 
   pipeline :api do
     plug :accepts, ["json"]
+    plug BlastekWeb.RateLimitPlug
     plug BlastekWeb.AuthContext
   end
 

@@ -12,10 +12,12 @@ defmodule Blastek.Application do
       Blastek.Repo,
       {DNSCluster, query: Application.get_env(:blastek, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Blastek.PubSub},
-      # Start a worker by calling: Blastek.Worker.start_link(arg)
-      # {Blastek.Worker, arg},
+      # Owns the rate-limit ETS table; must be up before requests are served.
+      Blastek.RateLimit,
       # Start to serve requests, typically the last entry
-      BlastekWeb.Endpoint
+      BlastekWeb.Endpoint,
+      # Subscription registry — must start after the endpoint it hangs off.
+      {Absinthe.Subscription, BlastekWeb.Endpoint}
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

@@ -7,7 +7,7 @@ import type { BookingResult, Slot } from '../lib/types';
 import { STEPS, useVenue } from './MarketLayout';
 import { useAuth } from '../lib/auth';
 import { Icon, Sparkle } from '../lib/icons';
-import { addDays, fmtDateLong, fmtDateShort, fmtDur, fmtMoney, fmtTime, initials, todayStr, WEEKDAYS } from '../lib/format';
+import { addDays, fmtDateLong, fmtDateShort, fmtDur, fmtMAD, fmtTime, initials, todayStr, WEEKDAYS } from '../lib/format';
 
 export default function BookingFlow() {
   const { venue: v, slug, booking } = useVenue();
@@ -24,7 +24,7 @@ export default function BookingFlow() {
   const selected = booking.services
     .map((id) => v.services.find((s) => s.id === id)!)
     .filter(Boolean);
-  const totalPrice = selected.reduce((s, x) => s + x.price, 0);
+  const totalPrice = selected.reduce((s, x) => s + x.priceCents, 0);
   const totalDur = selected.reduce((s, x) => s + x.durationMin, 0);
 
   const eligible = useMemo(() => v.staff.filter((st) =>
@@ -60,7 +60,7 @@ export default function BookingFlow() {
           book(venueSlug: $venue, serviceIds: $ids, staffId: $staff, date: $date,
             startMin: $startMin, notes: $notes) {
             bookingRef date startMin endMin staffName
-            appointments { id price service { name } }
+            appointments { id priceCents service { name } }
           } }`,
         {
           venue: slug,
@@ -90,7 +90,7 @@ export default function BookingFlow() {
           </div>
           {result.appointments.map((a) => (
             <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0' }}>
-              <span>{a.service.name}</span><b>{fmtMoney(a.price)}</b>
+              <span>{a.service.name}</span><b>{fmtMAD(a.priceCents)}</b>
             </div>
           ))}
         </div>
@@ -116,13 +116,13 @@ export default function BookingFlow() {
       {selected.map((s) => (
         <div key={s.id} className="line">
           <span>{s.name}<br /><span className="fainttext">{fmtDur(s.durationMin)}</span></span>
-          <b>{fmtMoney(s.price)}</b>
+          <b>{fmtMAD(s.priceCents)}</b>
         </div>
       ))}
       {selected.length === 0 && <div className="fainttext" style={{ padding: '8px 0' }}>No services selected yet</div>}
       {extra}
       {selected.length > 0 && (
-        <div className="line total"><span>Total ({fmtDur(totalDur)})</span><span>{fmtMoney(totalPrice)}</span></div>
+        <div className="line total"><span>Total ({fmtDur(totalDur)})</span><span>{fmtMAD(totalPrice)}</span></div>
       )}
       <button className="btn btn-primary cta" disabled={!enabled} onClick={onCta}>{cta}</button>
     </div>
@@ -161,7 +161,7 @@ export default function BookingFlow() {
                             {fmtDur(s.durationMin)}{s.description ? ` · ${s.description}` : ''}
                           </div>
                         </div>
-                        <span className="price">{fmtMoney(s.price)}</span>
+                        <span className="price">{fmtMAD(s.priceCents)}</span>
                         <span className="pick">
                           <Icon name={booking.services.includes(s.id) ? 'check' : 'plus'} size={15} />
                         </span>

@@ -5,9 +5,43 @@
 // opposed to a request the server understood and rejected.
 export class ConnectionError extends Error {}
 
+export interface GqlErrorDetail {
+  message: string;
+  /** Machine-readable kind: validation | not_found | forbidden | conflict | … */
+  code?: string;
+  /** Set on validation errors — the input field that failed, camelCased. */
+  field?: string;
+}
+
+/**
+ * A request the server understood and rejected. Carries the structured details
+ * so a form can put each message next to the input that caused it, instead of
+ * dumping one concatenated string above the form.
+ */
+export class GqlError extends Error {
+  readonly details: GqlErrorDetail[];
+
+  constructor(details: GqlErrorDetail[]) {
+    super(details.map((d) => d.message).join('; '));
+    this.name = 'GqlError';
+    this.details = details;
+  }
+
+  get code() { return this.details[0]?.code; }
+
+  /** Field name → first message for that field. */
+  get fieldErrors(): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const d of this.details) {
+      if (d.field && !(d.field in out)) out[d.field] = d.message;
+    }
+    return out;
+  }
+}
+
 interface GqlResponse<T> {
   data?: T;
-  errors?: { message: string }[];
+  errors?: GqlErrorDetail[];
 }
 
 // Which venue dashboard requests act on. The server only honours it when the
@@ -41,7 +75,10 @@ export async function gql<T>(query: string, variables: Record<string, unknown> =
   }
 
   const json: GqlResponse<T> | null = await res.json().catch(() => null);
-  if (json?.errors?.length) throw new Error(json.errors.map((e) => e.message).join('; '));
+  if (json?.errors?.length) throw new GqlError(json.errors);
+  if (res.status === 429) {
+    throw new GqlError([{ message: 'Too many requests — please slow down.', code: 'rate_limited' }]);
+  }
   if (res.status >= 500) throw new ConnectionError(`The server is unavailable (${res.status})`);
   if (!res.ok) throw new Error(`Request failed (${res.status})`);
   if (json?.data == null) throw new ConnectionError('The server returned a malformed response');

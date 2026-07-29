@@ -15,8 +15,15 @@ defmodule Blastek.Salon do
   alias Blastek.Venues
 
   alias Blastek.Salon.{
-    Category, Service, Staff, StaffHour,
-    Client, Appointment, Sale, SaleItem, Review
+    Category,
+    Service,
+    Staff,
+    StaffHour,
+    Client,
+    Appointment,
+    Sale,
+    SaleItem,
+    Review
   }
 
   @slot_step 15
@@ -87,7 +94,13 @@ defmodule Blastek.Salon do
 
       default_hours =
         for wd <- 0..6,
-            do: %{staff_id: staff.id, weekday: wd, working: wd != 0, start_min: 540, end_min: 1080}
+            do: %{
+              staff_id: staff.id,
+              weekday: wd,
+              working: wd != 0,
+              start_min: 540,
+              end_min: 1080
+            }
 
       Repo.insert_all(StaffHour, default_hours)
       apply_staff_details(venue_id, staff, hours, service_ids)
@@ -127,9 +140,7 @@ defmodule Blastek.Salon do
 
   def list_clients(venue_id, query_text, opts \\ []) do
     term = "%#{String.downcase(query_text || "")}%"
-    # Generous defaults preserve today's "show everything" pages; real
-    # pagination (with totalCount in the payload) lands in E2-T1.
-    limit = opts[:limit] || 200
+    limit = opts[:limit] || 50
     offset = opts[:offset] || 0
 
     Repo.all(
@@ -148,8 +159,13 @@ defmodule Blastek.Salon do
     from c in scope(Client, venue_id),
       where:
         like(
-          fragment("lower(? || ' ' || ? || ' ' || ? || ' ' || ?)",
-            c.first_name, c.last_name, c.email, c.phone),
+          fragment(
+            "lower(? || ' ' || ? || ' ' || ? || ' ' || ?)",
+            c.first_name,
+            c.last_name,
+            c.email,
+            c.phone
+          ),
           ^term
         )
   end
@@ -158,8 +174,11 @@ defmodule Blastek.Salon do
     get_scoped!(Repo, Client, id, venue_id)
     |> Repo.preload(
       appointments:
-        {from(a in Appointment, order_by: [desc: a.date, desc: a.start_min], limit: 50,
-           preload: ^@appt_preloads), []}
+        {from(a in Appointment,
+           order_by: [desc: a.date, desc: a.start_min],
+           limit: 50,
+           preload: ^@appt_preloads
+         ), []}
     )
   end
 
@@ -184,12 +203,12 @@ defmodule Blastek.Salon do
         from s in scope(Sale, venue_id),
           where: s.client_id in ^client_ids,
           group_by: s.client_id,
-          select: {s.client_id, coalesce(sum(s.total), 0.0)}
+          select: {s.client_id, coalesce(sum(s.total_cents), 0)}
       )
       |> Map.new()
 
     Map.new(client_ids, fn id ->
-      {id, %{appt_count: Map.get(counts, id, 0), total_spent: Map.get(spend, id, 0.0)}}
+      {id, %{appt_count: Map.get(counts, id, 0), total_spent_cents: Map.get(spend, id, 0)}}
     end)
   end
 
@@ -254,9 +273,7 @@ defmodule Blastek.Salon do
       {:error, _changeset} = error ->
         raced =
           user_id &&
-            Repo.one(
-              from c in scope(Client, venue_id), where: c.user_id == ^user_id, limit: 1
-            )
+            Repo.one(from c in scope(Client, venue_id), where: c.user_id == ^user_id, limit: 1)
 
         if raced, do: {:ok, raced}, else: error
     end
@@ -314,7 +331,7 @@ defmodule Blastek.Salon do
         date: args.date,
         start_min: start_min,
         end_min: end_min,
-        price: service.price,
+        price_cents: service.price_cents,
         notes: args[:notes] || "",
         source: "walk-in"
       })
@@ -332,7 +349,7 @@ defmodule Blastek.Salon do
       staff_id: args[:staff_id] || appt.staff_id,
       start_min: args[:start_min] || appt.start_min,
       notes: args[:notes] || appt.notes,
-      price: args[:price] || appt.price
+      price_cents: args[:price_cents] || appt.price_cents
     }
 
     next = Map.put(next, :end_min, next.start_min + (appt.end_min - appt.start_min))
@@ -343,8 +360,9 @@ defmodule Blastek.Salon do
 
     # A cancelled/no-show appointment does not occupy its slot, so bringing one
     # back to life must re-check the slot even when nothing moved.
-    reactivated = appt.status in ["cancelled", "no_show"] and
-      next.status not in ["cancelled", "no_show"]
+    reactivated =
+      appt.status in ["cancelled", "no_show"] and
+        next.status not in ["cancelled", "no_show"]
 
     with {:ok, _staff} <- fetch_staff(venue_id, next.staff_id),
          :ok <- maybe_check_clash(venue_id, appt, next, moved or reactivated) do
@@ -488,8 +506,11 @@ defmodule Blastek.Salon do
         )
 
       now = NaiveDateTime.local_now()
-      min_start = if Date.compare(date, NaiveDateTime.to_date(now)) == :eq,
-        do: now.hour * 60 + now.minute, else: -1
+
+      min_start =
+        if Date.compare(date, NaiveDateTime.to_date(now)) == :eq,
+          do: now.hour * 60 + now.minute,
+          else: -1
 
       hour.start_min
       |> Stream.iterate(&(&1 + @slot_step))
@@ -574,7 +595,7 @@ defmodule Blastek.Salon do
             date: args.date,
             start_min: cursor,
             end_min: cursor + service.duration_min,
-            price: service.price,
+            price_cents: service.price_cents,
             notes: args[:notes] || "",
             source: "online"
           })
@@ -612,7 +633,7 @@ defmodule Blastek.Salon do
 
   ## ---------- checkout & sales ----------
 
-  def checkout(venue_id, appointment_ids, tip, payment_method) do
+  def checkout(venue_id, appointment_ids, tip_cents, payment_method) do
     appts =
       Repo.all(
         from a in scope(Appointment, venue_id),
@@ -630,13 +651,13 @@ defmodule Blastek.Salon do
         {:error, "This appointment has already been checked out."}
 
       true ->
-        do_checkout(venue_id, appts, tip, payment_method)
+        do_checkout(venue_id, appts, tip_cents, payment_method)
     end
   end
 
-  defp do_checkout(venue_id, appts, tip, payment_method) do
-    subtotal = Enum.sum(Enum.map(appts, & &1.price))
-    tip = tip || 0.0
+  defp do_checkout(venue_id, appts, tip_cents, payment_method) do
+    subtotal_cents = Enum.sum(Enum.map(appts, & &1.price_cents))
+    tip_cents = tip_cents || 0
 
     Repo.transaction(fn ->
       {:ok, sale} =
@@ -644,9 +665,9 @@ defmodule Blastek.Salon do
         |> Sale.changeset(%{
           venue_id: venue_id,
           client_id: hd(appts).client_id,
-          subtotal: subtotal,
-          tip: tip,
-          total: subtotal + tip,
+          subtotal_cents: subtotal_cents,
+          tip_cents: tip_cents,
+          total_cents: subtotal_cents + tip_cents,
           payment_method: payment_method || "card"
         })
         |> Repo.insert()
@@ -656,11 +677,12 @@ defmodule Blastek.Salon do
           sale_id: sale.id,
           appointment_id: a.id,
           description: a.service.name,
-          amount: a.price
+          amount_cents: a.price_cents
         })
 
         Repo.update_all(from(x in Appointment, where: x.id == ^a.id),
-          set: [status: "completed"])
+          set: [status: "completed"]
+        )
       end
 
       Repo.preload(sale, [:items, :client])
@@ -668,7 +690,7 @@ defmodule Blastek.Salon do
   end
 
   def list_sales(venue_id, from_date, opts \\ []) do
-    limit = opts[:limit] || 400
+    limit = opts[:limit] || 50
     offset = opts[:offset] || 0
 
     Repo.all(
@@ -698,8 +720,8 @@ defmodule Blastek.Salon do
         from s in scope(Sale, venue_id),
           where: fragment("?::date", s.inserted_at) >= ^cutoff,
           select: %{
-            revenue: coalesce(sum(s.total), 0.0),
-            tips: coalesce(sum(s.tip), 0.0),
+            revenue_cents: coalesce(sum(s.total_cents), 0),
+            tips_cents: coalesce(sum(s.tip_cents), 0),
             sales_count: count(s.id)
           }
       )
@@ -723,7 +745,7 @@ defmodule Blastek.Salon do
           where: fragment("?::date", s.inserted_at) >= ^cutoff,
           group_by: fragment("?::date", s.inserted_at),
           order_by: fragment("?::date", s.inserted_at),
-          select: %{day: fragment("?::date", s.inserted_at), revenue: sum(s.total)}
+          select: %{day: fragment("?::date", s.inserted_at), revenue_cents: sum(s.total_cents)}
       )
 
     top_services =
@@ -733,9 +755,13 @@ defmodule Blastek.Salon do
           on: s.id == si.sale_id and s.venue_id == ^venue_id,
           where: fragment("?::date", s.inserted_at) >= ^cutoff,
           group_by: si.description,
-          order_by: [desc: sum(si.amount)],
+          order_by: [desc: sum(si.amount_cents)],
           limit: 6,
-          select: %{name: si.description, count: count(si.id), revenue: sum(si.amount)}
+          select: %{
+            name: si.description,
+            count: count(si.id),
+            revenue_cents: sum(si.amount_cents)
+          }
       )
 
     top_staff =
@@ -744,8 +770,13 @@ defmodule Blastek.Salon do
           join: st in assoc(a, :staff),
           where: a.status == "completed" and a.date >= ^cutoff,
           group_by: [st.id, st.name, st.color],
-          order_by: [desc: sum(a.price)],
-          select: %{name: st.name, color: st.color, count: count(a.id), revenue: sum(a.price)}
+          order_by: [desc: sum(a.price_cents)],
+          select: %{
+            name: st.name,
+            color: st.color,
+            count: count(a.id),
+            revenue_cents: sum(a.price_cents)
+          }
       )
 
     new_clients =
@@ -756,8 +787,8 @@ defmodule Blastek.Salon do
 
     %{
       days: days,
-      revenue: totals.revenue,
-      tips: totals.tips,
+      revenue_cents: totals.revenue_cents,
+      tips_cents: totals.tips_cents,
       sales_count: totals.sales_count,
       appointments: appt_stats,
       new_clients: new_clients,
@@ -814,7 +845,9 @@ defmodule Blastek.Salon do
       stats: %{
         bookings:
           Repo.aggregate(
-            from(a in scope(Appointment, venue_id), where: a.status == "completed"), :count),
+            from(a in scope(Appointment, venue_id), where: a.status == "completed"),
+            :count
+          ),
         professionals: Repo.aggregate(from(s in scope(Staff, venue_id), where: s.active), :count),
         services: Repo.aggregate(from(s in scope(Service, venue_id), where: s.active), :count)
       }

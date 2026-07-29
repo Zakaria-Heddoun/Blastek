@@ -8,11 +8,11 @@ import { useAuth } from '../lib/auth';
 import { Icon } from '../lib/icons';
 import { StatusBadge, useToast } from '../components/ui';
 import MarketTopbar from './MarketTopbar';
-import { fmtDateLong, fmtMoney, fmtTime, todayStr } from '../lib/format';
+import { fmtDateLong, fmtMAD, fmtTime, todayStr } from '../lib/format';
 import './market.css';
 
 const MY = `{ myAppointments {
-  id date startMin endMin status price bookingRef
+  id date startMin endMin status priceCents bookingRef
   service { name } staff { name }
   venue { id slug name city }
 } }`;
@@ -63,7 +63,7 @@ export default function Account() {
         </div>
       </div>
       <StatusBadge status={a.status} />
-      <span className="price">{fmtMoney(a.price)}</span>
+      <span className="price">{fmtMAD(a.priceCents)}</span>
       {cancellable && (
         <button className="btn btn-sm" onClick={() => cancel(a.id)}>Cancel</button>
       )}

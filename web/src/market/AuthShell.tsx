@@ -5,6 +5,7 @@ import { useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { GqlError } from '../lib/gql';
 import { IMG } from './assets';
 import '../bungee/bungee.css';
 import './home.css';
@@ -34,23 +35,37 @@ export function safeNext(raw: string | null): string {
 export function useAuthForm(onSubmit: (f: AuthFields) => Promise<void>) {
   const [f, setF] = useState(EMPTY);
   const [err, setErr] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   // Enter fires even while the submit button is disabled, and two keydowns can
   // land before a `busy` state update is visible — the ref closes that window.
   const inFlight = useRef(false);
 
-  const set = (k: keyof AuthFields) => (e: React.ChangeEvent<HTMLInputElement>) =>
+  const set = (k: keyof AuthFields) => (e: React.ChangeEvent<HTMLInputElement>) => {
     setF((prev) => ({ ...prev, [k]: e.target.value }));
+    // Editing a field clears the complaint about it.
+    setFieldErrors((prev) => (k in prev ? omit(prev, k) : prev));
+  };
 
   const submit = async () => {
     if (inFlight.current) return;
     inFlight.current = true;
     setErr('');
+    setFieldErrors({});
     setBusy(true);
     try {
       await onSubmit(f);
     } catch (e) {
-      setErr((e as Error).message);
+      if (e instanceof GqlError) {
+        const fields = e.fieldErrors;
+        setFieldErrors(fields);
+        // Only surface the summary for errors no field claimed, so a message
+        // is never shown twice.
+        const unclaimed = e.details.filter((d) => !d.field).map((d) => d.message);
+        setErr(unclaimed.join('; ') || (Object.keys(fields).length ? '' : e.message));
+      } else {
+        setErr((e as Error).message);
+      }
     } finally {
       inFlight.current = false;
       setBusy(false);
@@ -61,7 +76,12 @@ export function useAuthForm(onSubmit: (f: AuthFields) => Promise<void>) {
     if (e.key === 'Enter') submit();
   };
 
-  return { f, set, err, setErr, busy, submit, onKey };
+  return { f, set, err, setErr, fieldErrors, busy, submit, onKey };
+}
+
+function omit(obj: Record<string, string>, key: string) {
+  const { [key]: _dropped, ...rest } = obj;
+  return rest;
 }
 
 export type AuthForm = ReturnType<typeof useAuthForm>;
@@ -75,8 +95,10 @@ export function AuthField({
   placeholder?: string;
   form: AuthForm;
 }) {
+  const fieldError = form.fieldErrors[name];
+
   return (
-    <div className="auth-field">
+    <div className={`auth-field${fieldError ? ' has-error' : ''}`}>
       <label>{label}</label>
       <input
         type={type}
@@ -84,7 +106,9 @@ export function AuthField({
         value={form.f[name]}
         onChange={form.set(name)}
         onKeyDown={form.onKey}
+        aria-invalid={fieldError ? true : undefined}
       />
+      {fieldError && <span className="auth-field-err">{fieldError}</span>}
     </div>
   );
 }

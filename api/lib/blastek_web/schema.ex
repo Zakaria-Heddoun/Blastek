@@ -18,7 +18,11 @@ defmodule BlastekWeb.Schema do
   alias Blastek.Accounts
   alias Blastek.Salon
   alias Blastek.Venues
-  alias BlastekWeb.Schema.{RequireAdmin, RequireAuth, RequireMember}
+  alias BlastekWeb.Schema.{RateLimitAuth, RequireAdmin, RequireAuth, RequireMember}
+
+  # A quarter is more than any calendar view needs and keeps one request from
+  # pulling a venue's entire history.
+  @max_calendar_days 92
 
   ## ---------- objects ----------
 
@@ -41,7 +45,7 @@ defmodule BlastekWeb.Schema do
     field :name, :string
     field :description, :string
     field :duration_min, :integer
-    field :price, :float
+    field :price_cents, :integer
     field :active, :boolean
 
     field :staff_ids, list_of(:id) do
@@ -87,8 +91,8 @@ defmodule BlastekWeb.Schema do
       resolve(&stat(&1, &2, &3, :appt_count))
     end
 
-    field :total_spent, :float do
-      resolve(&stat(&1, &2, &3, :total_spent))
+    field :total_spent_cents, :integer do
+      resolve(&stat(&1, &2, &3, :total_spent_cents))
     end
 
     field :appointments, list_of(:appointment) do
@@ -105,7 +109,7 @@ defmodule BlastekWeb.Schema do
     field :start_min, :integer
     field :end_min, :integer
     field :status, :string
-    field :price, :float
+    field :price_cents, :integer
     field :notes, :string
     field :source, :string
     field :client, :client
@@ -122,14 +126,14 @@ defmodule BlastekWeb.Schema do
     field :id, :id
     field :appointment_id, :id
     field :description, :string
-    field :amount, :float
+    field :amount_cents, :integer
   end
 
   object :sale do
     field :id, :id
-    field :subtotal, :float
-    field :tip, :float
-    field :total, :float
+    field :subtotal_cents, :integer
+    field :tip_cents, :integer
+    field :total_cents, :integer
     field :payment_method, :string
 
     field :created_at, :naive_datetime do
@@ -145,6 +149,18 @@ defmodule BlastekWeb.Schema do
     field :client_name, :string
     field :rating, :integer
     field :comment, :string
+  end
+
+  @desc "One page of clients. `totalCount` is the size of the whole filtered set."
+  object :client_page do
+    field :items, non_null(list_of(non_null(:client)))
+    field :total_count, non_null(:integer)
+  end
+
+  @desc "One page of sales."
+  object :sale_page do
+    field :items, non_null(list_of(non_null(:sale)))
+    field :total_count, non_null(:integer)
   end
 
   object :venue_hour do
@@ -223,20 +239,20 @@ defmodule BlastekWeb.Schema do
 
   object :day_revenue do
     field :day, :date
-    field :revenue, :float
+    field :revenue_cents, :integer
   end
 
   object :top_entry do
     field :name, :string
     field :color, :string
     field :count, :integer
-    field :revenue, :float
+    field :revenue_cents, :integer
   end
 
   object :report_summary do
     field :days, :integer
-    field :revenue, :float
-    field :tips, :float
+    field :revenue_cents, :integer
+    field :tips_cents, :integer
     field :sales_count, :integer
     field :appointments, :appt_stats
     field :new_clients, :integer
@@ -364,19 +380,36 @@ defmodule BlastekWeb.Schema do
       middleware(RequireMember, "staff")
 
       resolve(fn %{from: f, to: t}, %{context: ctx} ->
-        {:ok, Salon.list_appointments(ctx.venue_id, f, t, own_staff_scope(ctx))}
+        # The calendar shows a day or a week; a range is the natural bound here,
+        # so cap the span rather than paginate rows.
+        cond do
+          Date.compare(f, t) == :gt ->
+            {:error, "`from` must not be after `to`."}
+
+          Date.diff(t, f) > @max_calendar_days ->
+            {:error, "Date range is too wide (max 92 days)."}
+
+          true ->
+            {:ok, Salon.list_appointments(ctx.venue_id, f, t, own_staff_scope(ctx))}
+        end
       end)
     end
 
-    field :clients, list_of(:client) do
+    @desc "Clients of the active venue, paginated."
+    field :clients, non_null(:client_page) do
       arg(:q, :string)
-      arg(:limit, :integer)
-      arg(:offset, :integer)
+      arg(:limit, :integer, default_value: 50)
+      arg(:offset, :integer, default_value: 0)
       middleware(RequireMember, "receptionist")
 
       resolve(fn args, %{context: ctx} ->
+        page = page_args(args)
+
         {:ok,
-         Salon.list_clients(ctx.venue_id, args[:q], limit: args[:limit], offset: args[:offset])}
+         %{
+           items: Salon.list_clients(ctx.venue_id, args[:q], page),
+           total_count: Salon.count_clients(ctx.venue_id, args[:q])
+         }}
       end)
     end
 
@@ -389,15 +422,21 @@ defmodule BlastekWeb.Schema do
       end)
     end
 
-    field :sales, list_of(:sale) do
+    @desc "Sales of the active venue since a date, paginated."
+    field :sales, non_null(:sale_page) do
       arg(:from, non_null(:date))
-      arg(:limit, :integer)
-      arg(:offset, :integer)
+      arg(:limit, :integer, default_value: 50)
+      arg(:offset, :integer, default_value: 0)
       middleware(RequireMember, "manager")
 
       resolve(fn args, %{context: ctx} ->
+        page = page_args(args)
+
         {:ok,
-         Salon.list_sales(ctx.venue_id, args.from, limit: args[:limit], offset: args[:offset])}
+         %{
+           items: Salon.list_sales(ctx.venue_id, args.from, page),
+           total_count: Salon.count_sales(ctx.venue_id, args.from)
+         }}
       end)
     end
 
@@ -466,6 +505,7 @@ defmodule BlastekWeb.Schema do
           |> Map.update!(:staff_id, &to_int/1)
           |> Map.update!(:service_id, &to_int/1)
           |> then(&Salon.create_appointment(ctx.venue_id, &1))
+          |> broadcast()
           |> format_errors()
         end)
       end)
@@ -477,7 +517,7 @@ defmodule BlastekWeb.Schema do
       arg(:date, :date)
       arg(:start_min, :integer)
       arg(:staff_id, :id)
-      arg(:price, :float)
+      arg(:price_cents, :integer)
       arg(:notes, :string)
 
       middleware(RequireMember, "receptionist")
@@ -486,7 +526,7 @@ defmodule BlastekWeb.Schema do
         found(fn ->
           {id, rest} = Map.pop(args, :id)
           rest = Map.update(rest, :staff_id, nil, &int_or_nil/1)
-          Salon.update_appointment(ctx.venue_id, id, rest) |> format_errors()
+          Salon.update_appointment(ctx.venue_id, id, rest) |> broadcast() |> format_errors()
         end)
       end)
     end
@@ -525,7 +565,7 @@ defmodule BlastekWeb.Schema do
       arg(:name, non_null(:string))
       arg(:description, :string)
       arg(:duration_min, non_null(:integer))
-      arg(:price, non_null(:float))
+      arg(:price_cents, non_null(:integer))
       arg(:staff_ids, list_of(non_null(:id)))
 
       middleware(RequireMember, "manager")
@@ -544,7 +584,7 @@ defmodule BlastekWeb.Schema do
       arg(:name, :string)
       arg(:description, :string)
       arg(:duration_min, :integer)
-      arg(:price, :float)
+      arg(:price_cents, :integer)
       arg(:active, :boolean)
       arg(:staff_ids, list_of(non_null(:id)))
 
@@ -614,13 +654,18 @@ defmodule BlastekWeb.Schema do
 
     field :checkout, :sale do
       arg(:appointment_ids, non_null(list_of(non_null(:id))))
-      arg(:tip, :float)
+      arg(:tip_cents, :integer)
       arg(:payment_method, :string)
 
       middleware(RequireMember, "receptionist")
 
       resolve(fn args, %{context: ctx} ->
-        Salon.checkout(ctx.venue_id, ids(args.appointment_ids), args[:tip], args[:payment_method])
+        Salon.checkout(
+          ctx.venue_id,
+          ids(args.appointment_ids),
+          args[:tip_cents],
+          args[:payment_method]
+        )
         |> format_errors()
       end)
     end
@@ -644,6 +689,7 @@ defmodule BlastekWeb.Schema do
           |> Map.update!(:service_ids, &ids/1)
           |> Map.put(:client_id, client_id)
           |> then(&Salon.book(venue.id, &1))
+          |> broadcast_booking()
           |> format_errors()
         end
       end)
@@ -658,6 +704,8 @@ defmodule BlastekWeb.Schema do
 
       @desc "Creating a business account: the venue is created with the user as its owner."
       arg(:business_name, :string)
+
+      middleware(RateLimitAuth)
 
       resolve(fn args, _ ->
         result =
@@ -680,6 +728,8 @@ defmodule BlastekWeb.Schema do
     field :login, :auth_payload do
       arg(:email, non_null(:string))
       arg(:password, non_null(:string))
+
+      middleware(RateLimitAuth)
 
       resolve(fn %{email: email, password: password}, _ ->
         with {:ok, user} <- Accounts.authenticate(email, password) do
@@ -727,6 +777,67 @@ defmodule BlastekWeb.Schema do
     end
   end
 
+  ## ---------- subscriptions ----------
+
+  subscription do
+    @desc """
+    Appointments changing in the active venue — a new online booking, a
+    cancellation, a checkout. Lets an open calendar stay current without
+    polling, and is the transport the walk-in queue (F1.9) will use.
+    """
+    field :appointment_changed, :appointment do
+      # Subscriptions authorize in `config`, not middleware: the topic *is* the
+      # authorization decision, and it has to be made once at subscribe time
+      # rather than per delivered event.
+      config(fn _args, %{context: context} ->
+        case context do
+          %{current_user: _, membership: %{role: role}, venue_id: venue_id} ->
+            if Venues.role_at_least?(role, "staff"),
+              do: {:ok, topic: "venue:#{venue_id}"},
+              else: {:error, "Your role does not allow this action."}
+
+          %{current_user: _} ->
+            # No venue means no topic; a shared fallback topic here would leak
+            # other tenants' bookings.
+            {:error, "Select which venue to manage."}
+
+          _ ->
+            {:error, "You must be signed in."}
+        end
+      end)
+    end
+  end
+
+  # Publishes an appointment change to that venue's subscribers. Called after
+  # the write commits, so a subscriber that immediately re-queries cannot
+  # observe a state older than the event. Failures are swallowed: a dropped
+  # notification must never fail the booking that caused it.
+  defp publish_appointment(%{venue_id: venue_id} = appointment) do
+    Absinthe.Subscription.publish(BlastekWeb.Endpoint, appointment,
+      appointment_changed: "venue:#{venue_id}"
+    )
+
+    :ok
+  rescue
+    _ -> :ok
+  end
+
+  defp broadcast({:ok, appointment} = result) do
+    publish_appointment(appointment)
+    result
+  end
+
+  defp broadcast(other), do: other
+
+  # A booking creates several appointments under one reference; the calendar
+  # needs each of them.
+  defp broadcast_booking({:ok, %{appointments: appointments}} = result) do
+    Enum.each(appointments, &publish_appointment/1)
+    result
+  end
+
+  defp broadcast_booking(other), do: other
+
   ## ---------- helpers ----------
 
   @doc false
@@ -738,7 +849,17 @@ defmodule BlastekWeb.Schema do
   defp found(fun) do
     fun.()
   rescue
-    Ecto.NoResultsError -> {:error, "Not found."}
+    Ecto.NoResultsError -> {:error, %{message: "Not found.", code: "not_found"}}
+  end
+
+  @max_page 200
+
+  # Clamps client-supplied paging so one request cannot ask for the whole table.
+  defp page_args(args) do
+    [
+      limit: args |> Map.get(:limit, 50) |> min(@max_page) |> max(1),
+      offset: args |> Map.get(:offset, 0) |> max(0)
+    ]
   end
 
   # Staff-level members only see their own column on the calendar.
@@ -756,7 +877,7 @@ defmodule BlastekWeb.Schema do
 
   defp stat(_client, _args, _res, key), do: {:ok, zero(key)}
 
-  defp zero(:total_spent), do: 0.0
+  defp zero(:total_spent_cents), do: 0
   defp zero(_), do: 0
 
   @doc false
@@ -773,16 +894,61 @@ defmodule BlastekWeb.Schema do
   defp loaded_or(%Ecto.Association.NotLoaded{}, default), do: default
   defp loaded_or(value, _), do: value
 
+  # Errors carry `code` and (for validation) `field` alongside the message, so a
+  # client can attach the message to the input that caused it and branch on the
+  # kind of failure instead of pattern-matching English prose.
   defp format_errors({:ok, value}), do: {:ok, value}
 
   defp format_errors({:error, %Ecto.Changeset{} = cs}) do
-    msg =
-      cs.errors
-      |> Enum.map(fn {field, {m, _}} -> "#{field} #{m}" end)
-      |> Enum.join(", ")
+    errors =
+      cs
+      |> Ecto.Changeset.traverse_errors(&interpolate/1)
+      |> Enum.flat_map(fn {field, messages} ->
+        Enum.map(messages, fn message ->
+          %{
+            message: "#{humanize(field)} #{message}",
+            code: "validation",
+            field: camelize(field)
+          }
+        end)
+      end)
 
-    {:error, msg}
+    {:error, errors}
   end
 
-  defp format_errors({:error, reason}), do: {:error, to_string(reason)}
+  defp format_errors({:error, list}) when is_list(list), do: {:error, list}
+  defp format_errors({:error, %{message: _} = structured}), do: {:error, structured}
+
+  defp format_errors({:error, reason}) do
+    message = to_string(reason)
+    {:error, %{message: message, code: code_for(message)}}
+  end
+
+  # Ecto stores messages as templates ("should be at least %{count} character(s)").
+  defp interpolate({message, opts}) do
+    Enum.reduce(opts, message, fn {key, value}, acc ->
+      String.replace(acc, "%{#{key}}", to_string(value))
+    end)
+  end
+
+  defp humanize(field) do
+    field |> to_string() |> String.replace("_", " ") |> String.capitalize()
+  end
+
+  defp camelize(field) do
+    [first | rest] = field |> to_string() |> String.split("_")
+    Enum.join([first | Enum.map(rest, &String.capitalize/1)])
+  end
+
+  # Best-effort classification of the context layer's plain-string errors.
+  # New code should return a structured error directly.
+  defp code_for(message) do
+    cond do
+      message =~ ~r/not found|unknown/i -> "not_found"
+      message =~ ~r/just taken|overlaps|already/i -> "conflict"
+      message =~ ~r/not authorized|does not allow|signed in/i -> "forbidden"
+      message =~ ~r/too many/i -> "rate_limited"
+      true -> "error"
+    end
+  end
 end
