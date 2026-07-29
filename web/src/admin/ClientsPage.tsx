@@ -4,16 +4,20 @@ import { gql } from '../lib/gql';
 import type { Client } from '../lib/types';
 import { Modal, StatusBadge, useToast } from '../components/ui';
 import { Icon } from '../lib/icons';
-import { fmtDateShort, fmtMoney, fmtTime, initials } from '../lib/format';
+import { fmtDateShort, fmtMAD, fmtTime, initials } from '../lib/format';
+import Pager, { PAGE_SIZE } from '../components/Pager';
 
-const LIST = `query($q: String) {
-  clients(q: $q) { id firstName lastName email phone allergies apptCount totalSpent }
+const LIST = `query($q: String, $limit: Int, $offset: Int) {
+  clients(q: $q, limit: $limit, offset: $offset) {
+    totalCount
+    items { id firstName lastName email phone allergies apptCount totalSpentCents }
+  }
 }`;
 
 const DETAIL = `query($id: ID!) {
   client(id: $id) {
-    id firstName lastName email phone allergies notes createdAt apptCount totalSpent
-    appointments { id date startMin status price service { name } staff { name } }
+    id firstName lastName email phone allergies notes createdAt apptCount totalSpentCents
+    appointments { id date startMin status priceCents service { name } staff { name } }
   }
 }`;
 
@@ -21,13 +25,17 @@ export default function ClientsPage() {
   const toast = useToast();
   const [q, setQ] = useState('');
   const [rows, setRows] = useState<Client[]>([]);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<Client | null>(null);
   const [showNew, setShowNew] = useState(false);
 
-  const load = async (query = q) => {
-    const d = await gql<{ clients: Client[] }>(LIST, { q: query });
-    setRows(d.clients);
+  const load = async (query = q, from = offset) => {
+    const d = await gql<{ clients: { items: Client[]; totalCount: number } }>(
+      LIST, { q: query, limit: PAGE_SIZE, offset: from });
+    setRows(d.clients.items);
+    setTotal(d.clients.totalCount);
   };
 
   const show = async (id: string) => {
@@ -36,10 +44,14 @@ export default function ClientsPage() {
     setDetail(d.client);
   };
 
+  // A new search starts from the first page — otherwise a narrow result set
+  // lands on an offset past its end and looks empty.
   useEffect(() => {
-    const t = setTimeout(() => load(), 200);
+    const t = setTimeout(() => { setOffset(0); load(q, 0); }, 200);
     return () => clearTimeout(t);
   }, [q]);
+
+  const goTo = (next: number) => { setOffset(next); load(q, next); };
 
   const saveProfile = async () => {
     if (!detail) return;
@@ -80,12 +92,13 @@ export default function ClientsPage() {
                     <div className="fainttext">{c.phone}{c.phone && c.email ? ' · ' : ''}{c.email}</div>
                   </td>
                   <td className="num">{c.apptCount}</td>
-                  <td className="num">{fmtMoney(c.totalSpent ?? 0)}</td>
+                  <td className="num">{fmtMAD(c.totalSpentCents ?? 0)}</td>
                 </tr>
               ))}
               {rows.length === 0 && <tr><td colSpan={3} className="empty">No clients found</td></tr>}
             </tbody>
           </table>
+          <Pager offset={offset} limit={PAGE_SIZE} totalCount={total} onChange={goTo} />
         </div>
         <div className="card pad">
           {!detail ? (
@@ -98,7 +111,7 @@ export default function ClientsPage() {
                   <h2>{detail.firstName} {detail.lastName}</h2>
                   <div className="fainttext">
                     Client since {detail.createdAt?.slice(0, 10)} · {detail.appointments?.length} appointments ·{' '}
-                    {fmtMoney(detail.totalSpent ?? 0)} spent
+                    {fmtMAD(detail.totalSpentCents ?? 0)} spent
                   </div>
                 </div>
               </div>
@@ -135,7 +148,7 @@ export default function ClientsPage() {
                       <div className="fainttext">with {a.staff.name}</div>
                     </div>
                     <StatusBadge status={a.status} />
-                    <div className="num" style={{ width: 80 }}>{fmtMoney(a.price)}</div>
+                    <div className="num" style={{ width: 80 }}>{fmtMAD(a.priceCents)}</div>
                   </div>
                 ))}
                 {!detail.appointments?.length && <div className="empty">No appointments yet</div>}

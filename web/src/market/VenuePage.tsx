@@ -4,7 +4,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useVenue } from './MarketLayout';
 import { IMG } from './assets';
 import { Icon, StarRow } from '../lib/icons';
-import { fmtDur, fmtMoney, fmtTime, initials, WEEKDAYS_FULL } from '../lib/format';
+import { fmtDur, fmtMAD, fmtTime, initials, WEEKDAYS_FULL } from '../lib/format';
 
 export default function VenuePage() {
   const { venue: v, slug, booking } = useVenue();
@@ -74,7 +74,7 @@ export default function VenuePage() {
                     {s.description &&
                       <div className="mutetext" style={{ marginTop: 4, fontSize: 13 }}>{s.description}</div>}
                   </div>
-                  <span className="price">{fmtMoney(s.price)}</span>
+                  <span className="price">{fmtMAD(s.priceCents)}</span>
                   <button className="btn svc-book" onClick={() => startFlow(s.id)}>Book</button>
                 </div>
               ))}

@@ -5,7 +5,7 @@ import type { Service } from '../lib/types';
 import { useAppData } from './AdminLayout';
 import { Modal, useToast } from '../components/ui';
 import { Icon } from '../lib/icons';
-import { fmtDur, fmtMoney } from '../lib/format';
+import { centsToMad, fmtDur, fmtMAD, madToCents } from '../lib/format';
 
 export default function CatalogPage() {
   const { categories, services, staff, refresh } = useAppData();
@@ -37,7 +37,7 @@ export default function CatalogPage() {
                       <div className="fainttext">{s.description}</div>
                     </td>
                     <td>{fmtDur(s.durationMin)}</td>
-                    <td className="num">{fmtMoney(s.price)}</td>
+                    <td className="num">{fmtMAD(s.priceCents)}</td>
                     <td>
                       <span className="chip-row">
                         {staff.filter((st) => st.serviceIds.includes(s.id)).map((st) => (
@@ -71,7 +71,9 @@ function ServiceModal({ service, onClose, onDone }:
     description: service?.description ?? '',
     categoryId: service?.categoryId ?? categories[0]?.id ?? '',
     durationMin: service?.durationMin ?? 60,
-    price: service?.price ?? 200,
+    // Held as MAD because that is what the owner types; converted to centimes
+    // at the API boundary.
+    priceMad: service ? centsToMad(service.priceCents) : 200,
     active: service?.active ?? true,
   });
   const [staffIds, setStaffIds] = useState<string[]>(
@@ -81,20 +83,24 @@ function ServiceModal({ service, onClose, onDone }:
   const save = async () => {
     try {
       if (!f.name.trim()) throw new Error('Name is required');
+      const { priceMad, ...rest } = f;
+      const vars = { ...rest, priceCents: madToCents(priceMad), staffIds };
+
       if (service) {
         await gql(
           `mutation($id: ID!, $categoryId: ID, $name: String, $description: String,
-            $durationMin: Int, $price: Float, $active: Boolean, $staffIds: [ID!]) {
+            $durationMin: Int, $priceCents: Int, $active: Boolean, $staffIds: [ID!]) {
             updateService(id: $id, categoryId: $categoryId, name: $name, description: $description,
-              durationMin: $durationMin, price: $price, active: $active, staffIds: $staffIds) { id } }`,
-          { id: service.id, ...f, staffIds });
+              durationMin: $durationMin, priceCents: $priceCents, active: $active,
+              staffIds: $staffIds) { id } }`,
+          { id: service.id, ...vars });
       } else {
         await gql(
           `mutation($categoryId: ID!, $name: String!, $description: String,
-            $durationMin: Int!, $price: Float!, $staffIds: [ID!]) {
+            $durationMin: Int!, $priceCents: Int!, $staffIds: [ID!]) {
             createService(categoryId: $categoryId, name: $name, description: $description,
-              durationMin: $durationMin, price: $price, staffIds: $staffIds) { id } }`,
-          { ...f, staffIds });
+              durationMin: $durationMin, priceCents: $priceCents, staffIds: $staffIds) { id } }`,
+          vars);
       }
       toast('Service saved');
       onDone();
@@ -120,7 +126,8 @@ function ServiceModal({ service, onClose, onDone }:
         </div>
       </div>
       <label>Price (MAD)</label>
-      <input type="number" step="0.01" value={f.price} onChange={(e) => setF({ ...f, price: Number(e.target.value) })} />
+      <input type="number" step="0.01" min="0" value={f.priceMad}
+        onChange={(e) => setF({ ...f, priceMad: Number(e.target.value) })} />
       <label>Performed by</label>
       <div className="checkgrid">
         {staff.filter((s) => s.active).map((st) => (

@@ -5,7 +5,10 @@ config :blastek, Blastek.Repo,
   username: "postgres",
   password: "postgres",
   hostname: System.get_env("DB_HOST", "localhost"),
-  port: String.to_integer(System.get_env("DB_PORT", if(System.get_env("DB_HOST"), do: "5432", else: "5433"))),
+  port:
+    String.to_integer(
+      System.get_env("DB_PORT", if(System.get_env("DB_HOST"), do: "5432", else: "5433"))
+    ),
   database: "blastek_dev",
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,

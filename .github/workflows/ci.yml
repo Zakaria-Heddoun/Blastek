@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'epic-*']
+  pull_request:
+
+# A new push to the same branch makes the in-flight run obsolete.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: API (Elixir)
+    runs-on: ubuntu-latest
+
+    services:
+      db:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      MIX_ENV: test
+      DB_HOST: localhost
+      DB_PORT: '5432'
+
+    defaults:
+      run:
+        working-directory: api
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.18'
+          otp-version: '27'
+
+      - name: Cache deps and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            api/deps
+            api/_build
+          key: ${{ runner.os }}-mix-${{ hashFiles('api/mix.lock') }}
+          restore-keys: ${{ runner.os }}-mix-
+
+      - run: mix deps.get
+
+      # Warnings are errors here so they cannot accumulate unnoticed.
+      - name: Compile
+        run: mix compile --warnings-as-errors
+
+      - name: Check formatting
+        run: mix format --check-formatted
+
+      - name: Migrations are reversible
+        run: |
+          mix ecto.create
+          mix ecto.migrate
+          mix ecto.rollback --all
+          mix ecto.migrate
+
+      - name: Test
+        run: mix test
+
+  web:
+    name: Web (TypeScript)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+
+      - name: Typecheck and build
+        run: npm run build
+
+      # Money must not travel as a float: the API speaks centimes, and a stray
+      # `fmtMoney`/`.price` is how a 100x pricing bug gets reintroduced.
+      - name: Guard against float money
+        run: |
+          if grep -rnE "fmtMoney|\.price\b|\.totalSpent\b|\.subtotal\b|\.amount\b" src --include=*.ts --include=*.tsx; then
+            echo "::error::Money must be handled in centimes (priceCents/fmtMAD). See lib/format.ts."
+            exit 1
+          fi

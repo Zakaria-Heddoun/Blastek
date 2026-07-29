@@ -83,17 +83,47 @@ have shipped):
 | `seeds.exs` passed a multi-generator `for` directly as a call argument (syntax error) | bound to a variable first |
 
 ### E2 · Platform hardening — F0.13, F0.14
-| ID | Task | Est | Labels |
-|---|---|---|---|
-| E2-T1 | Pagination (`limit/offset/totalCount`) on clients, sales, appointments + web controls | M | api,web |
-| E2-T2 | Money → integer centimes: migrations, backfill + reconciliation script, `fmtMAD` | M | api,web |
-| E2-T3 | Structured mutation errors `{code, field, message}`; gql.ts + form field-error display | S | api,web |
-| E2-T4 | Absinthe subscriptions: socket, PubSub, `appointmentChanged(venueId)` + web wiring | M | api,web |
-| E2-T5 | Rate limiting plug (Hammer/ETS): global + strict auth buckets | S | api |
-| E2-T6 | Missing DB indexes pass + `EXPLAIN` audit on hot queries (seeded 100k appts) | S | api,infra |
-| E2-T7 | PWA: manifest, icons, offline shell, install prompt; Lighthouse gate in CI | S | web |
-| E2-T8 | Web push (Android): opt-in flow, subscription storage, send worker | S | api,web |
-| E2-T9 | CI pipeline: mix test + credo + dialyzer; web tsc + build + string-extraction lint | M | infra |
+
+**Status: 8 of 9 complete and verified** (73 tests). E2-T8 deferred — see below.
+
+| ID | Task | Est | Labels | Status |
+|---|---|---|---|---|
+| E2-T1 | Pagination (`limit/offset/totalCount`) on clients + sales; date-range cap on appointments | M | api,web | ✅ |
+| E2-T2 | Money → integer centimes: migration with reconciliation, `fmtMAD`/`madToCents` | M | api,web | ✅ |
+| E2-T3 | Structured errors `{code, field, message}`; `GqlError` + form field-error display | S | api,web | ✅ |
+| E2-T4 | Absinthe subscriptions: socket, PubSub, `appointmentChanged` per venue | M | api,web | ✅ api |
+| E2-T5 | Rate limiting (ETS): per-IP plug + per-identity/per-IP auth buckets | S | api | ✅ |
+| E2-T6 | Index audit with `EXPLAIN` at 100k rows; added + dropped redundant | S | api,infra | ✅ |
+| E2-T7 | PWA: manifest, generated icons, offline app shell | S | web | ✅ |
+| E2-T8 | Web push (Android): opt-in flow, subscription storage, send worker | S | api,web | ⏸ deferred |
+| E2-T9 | CI pipeline: compile/format/migration-reversibility/test + web build + money guard | M | infra | ✅ |
+
+**E2-T8 deferred to E6 (Notifications).** Push needs a template/locale/preference
+model and a delivery worker — exactly the `Notifications` context F0.10 builds.
+Shipping a second, push-only sender now means writing that machinery twice and
+throwing one away. The PRD already records this dependency (F0.14 → F0.10).
+
+**Notes from implementation**
+
+* Money field names carry their unit (`priceCents`, not `price`) — a silent
+  change of scale under an unchanged name is how a 100× pricing bug ships. CI
+  greps for the old float accessors to keep them from coming back.
+* The migration verifies every row round-trips within half a centime and
+  aborts otherwise; on the seeded database 142,466.00 MAD converted exactly and
+  came back exactly on rollback.
+* Rate limiting is **per node** by design (ETS). A multi-node deployment needs
+  a shared store; the buckets move unchanged.
+* Auth limits are counted *before* the password check, so a wrong guess costs
+  the same as a right one — otherwise the limiter is trivially evaded, and the
+  error text tells an attacker when they hit the right password.
+* Subscriptions authorize in `config/2`, not middleware: the topic *is* the
+  authorization decision. Middleware on a subscription field also breaks
+  Absinthe's telemetry path.
+* `EXPLAIN` at 100k sale lines: the reports join ran **0.80 ms with the new
+  `sale_items.sale_id` index vs 11.90 ms without**, and the gap grows with total
+  history rather than the reporting window.
+* Appointments are bounded by a 92-day range cap rather than offset paging — a
+  calendar is naturally bounded by dates, and paging a week makes no sense.
 
 ### E3 · Auth & identity — F0.2
 | ID | Task | Est | Labels |

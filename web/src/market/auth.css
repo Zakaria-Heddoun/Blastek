@@ -143,3 +143,12 @@
   .auth-media { display: none; }
   .auth-form-col { padding-top: clamp(96px, 22vw, 140px); }
 }
+
+/* field-level validation messages (structured GraphQL errors) */
+.auth-field.has-error input { border-bottom-color: #c0392b; }
+.auth-field-err {
+  display: block;
+  color: #c0392b;
+  font-size: 12px;
+  margin-top: 6px;
+}

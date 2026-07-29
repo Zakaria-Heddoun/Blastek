@@ -24,7 +24,8 @@ defmodule Blastek.Venues.Venue do
     |> validate_required([:name])
     |> maybe_put_slug()
     |> validate_format(:slug, ~r/^[a-z0-9]+(-[a-z0-9]+)*$/,
-      message: "may only contain lowercase letters, numbers and dashes")
+      message: "may only contain lowercase letters, numbers and dashes"
+    )
     |> validate_inclusion(:status, @statuses)
     |> unique_constraint(:slug, name: :venues_slug_index, message: "is already taken")
   end
@@ -32,8 +33,11 @@ defmodule Blastek.Venues.Venue do
   # Slug is derived from the name on create and immutable afterwards (SEO).
   defp maybe_put_slug(changeset) do
     case {get_field(changeset, :slug), get_field(changeset, :name)} do
-      {nil, name} when is_binary(name) -> put_change(changeset, :slug, Blastek.Venues.slugify(name))
-      _ -> changeset
+      {nil, name} when is_binary(name) ->
+        put_change(changeset, :slug, Blastek.Venues.slugify(name))
+
+      _ ->
+        changeset
     end
   end
 end
@@ -61,7 +65,8 @@ defmodule Blastek.Venues.VenueMember do
     |> validate_required([:venue_id, :user_id, :role])
     |> validate_inclusion(:role, @roles)
     |> unique_constraint([:venue_id, :user_id],
-      message: "is already a member of this venue")
+      message: "is already a member of this venue"
+    )
   end
 end
 
@@ -130,8 +135,12 @@ defmodule Blastek.Venues do
 
   def add_member(venue_id, user_id, role, staff_id \\ nil) do
     %VenueMember{}
-    |> VenueMember.changeset(%{venue_id: venue_id, user_id: user_id, role: role,
-        staff_id: staff_id})
+    |> VenueMember.changeset(%{
+      venue_id: venue_id,
+      user_id: user_id,
+      role: role,
+      staff_id: staff_id
+    })
     |> Repo.insert()
   end
 

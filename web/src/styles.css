@@ -537,3 +537,12 @@ body.light input[type="date"] { color-scheme: light; }
 .hours-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .hours-table td { padding: 5px 0; color: var(--fg-2); }
 .hours-table tr.today td { color: var(--fg); font-weight: 600; }
+
+/* ---- offset pager for long dashboard lists ---- */
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
+}
