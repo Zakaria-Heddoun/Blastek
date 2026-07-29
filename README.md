@@ -23,7 +23,7 @@ make sense across a fleet of machines — this is the same stack scaled to one P
 Requires Docker Desktop and Node.js.
 
 ```
-# 1. API + database (first boot compiles Elixir deps, ~2-3 min)
+# 1. API + database + object storage (first boot compiles Elixir deps, ~2-3 min)
 docker compose up -d
 
 # 2. Frontend
@@ -34,12 +34,13 @@ npm run dev
 
 Then open:
 
-- **Marketplace** → http://localhost:5173/ — landing, venue directory (`/venues`),
-  venue page (`/v/:slug`) and booking flow (this is the root app, same as
-  fresha.com being the consumer-facing site)
-- **Admin dashboard** → http://localhost:5173/dashboard — calendar, clients, catalog, team, sales, reports
+- **Marketplace** → http://localhost:5173/ — landing, search + venue directory
+  (`/venues`), venue page (`/v/:slug`) and booking flow (this is the root app,
+  same as fresha.com being the consumer-facing site)
+- **Admin dashboard** → http://localhost:5173/dashboard — calendar, clients, catalog, team, sales, reports, settings
   (Fresha's equivalent of partners.fresha.com)
 - **GraphQL playground** → http://localhost:4000/api/graphiql — explore the API directly
+- **MinIO console** → http://localhost:9001 (`blastek` / `blastek-dev-secret`) — venue photos land in the `blastek-media` bucket
 
 First boot seeds **two independent venues** so multi-tenancy is exercised from
 the start:
@@ -67,6 +68,42 @@ To reseed:
 docker compose exec api mix ecto.reset
 ```
 
+### Media storage
+
+Venue photos go to **MinIO** in dev. The browser uploads straight to the bucket
+through a presigned PUT — image bytes never pass through the API — and the
+server then fetches the file back to validate it and derive the thumb/card/hero
+variants. See [api/lib/blastek/media.ex](api/lib/blastek/media.ex).
+
+The adapter is chosen at boot by the presence of `S3_BUCKET`
+([api/config/runtime.exs](api/config/runtime.exs)):
+
+| Variable | Dev value | Purpose |
+|---|---|---|
+| `S3_BUCKET` | `blastek-media` | Set → S3 adapter; unset → filesystem adapter |
+| `S3_ENDPOINT_URL` | `http://minio:9000` | Where the **API** reaches storage |
+| `S3_PUBLIC_BASE_URL` | `http://localhost:9000` | Where the **browser** reaches it |
+| `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | `blastek` / `blastek-dev-secret` | Credentials |
+
+The two URLs are genuinely different hosts, and both matter: SigV4 signs the
+`Host` header, so a URL handed to a browser must be signed for the address the
+browser will actually call.
+
+Without `S3_BUCKET` the filesystem adapter writes to `api/priv/uploads` and
+serves it at `/uploads`. That is what CI and the test suite use, so the upload
+path stays covered with no object store running.
+
+### Search
+
+The venue directory is full-text searched over a per-venue `tsvector` that
+combines the venue's identity with the treatments it offers — so "fade rabat"
+finds the Rabat barber who does fades. Every write that changes either funnels
+through `Blastek.Discovery.reindex_venue/1`; `reindex_all/0` is the repair.
+
+```
+docker compose exec api mix run -e "IO.puts(Blastek.Discovery.reindex_all())"
+```
+
 ## Project layout
 
 | Piece | Where |
@@ -76,6 +113,8 @@ docker compose exec api mix ecto.reset
 | Authorization | [api/lib/blastek_web/auth_context.ex](api/lib/blastek_web/auth_context.ex) — `RequireMember` / `RequireAdmin` middleware |
 | GraphQL schema | [api/lib/blastek_web/schema.ex](api/lib/blastek_web/schema.ex) |
 | Migrations + seeds | [api/priv/repo/](api/priv/repo/) |
+| Discovery (search + geo) | [api/lib/blastek/discovery.ex](api/lib/blastek/discovery.ex), [api/lib/blastek/geocode.ex](api/lib/blastek/geocode.ex) |
+| Media (photos) | [api/lib/blastek/media.ex](api/lib/blastek/media.ex), [api/lib/blastek/storage.ex](api/lib/blastek/storage.ex) |
 | React frontend | [web/src/](web/src/) — admin in [web/src/admin/](web/src/admin/), marketplace in [web/src/market/](web/src/market/) |
 | Design system CSS | [web/src/styles.css](web/src/styles.css) (Blastek tokens: burgundy/ivory/gold, Sora/Inter/JetBrains Mono) |
 | Containers | [docker-compose.yml](docker-compose.yml) |

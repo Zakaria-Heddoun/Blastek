@@ -94,6 +94,7 @@ export interface Review {
   clientName: string;
   rating: number;
   comment: string;
+  createdAt?: string;
 }
 
 export interface VenueHour {
@@ -103,6 +104,49 @@ export interface VenueHour {
 }
 
 /** Identity of a venue, without its catalog — for lists and cross-links. */
+/** URLs of one photo's rendered sizes. Only `original` is always present. */
+export interface PhotoUrls {
+  original?: string;
+  thumb?: string;
+  card?: string;
+  hero?: string;
+}
+
+export interface Photo {
+  id: string;
+  alt?: string;
+  kind?: 'cover' | 'gallery';
+  sort?: number;
+  /** `pending` until the variant worker has run; `failed` if it was rejected. */
+  status?: 'pending' | 'ready' | 'failed';
+  width?: number | null;
+  height?: number | null;
+  urls?: PhotoUrls;
+}
+
+/** A presigned upload: PUT the file to `url`, replaying every header. */
+export interface UploadTicket {
+  photo: Photo;
+  url: string;
+  headers: { name: string; value: string }[];
+}
+
+export interface CityFacet {
+  city: string;
+  venueCount: number;
+}
+
+export interface CategoryFacet {
+  name: string;
+  serviceCount: number;
+}
+
+/** One page of search results; `totalCount` is the whole filtered set. */
+export interface VenuePage {
+  items: VenueSummary[];
+  totalCount: number;
+}
+
 export interface VenueSummary {
   id: string;
   slug: string;
@@ -112,6 +156,17 @@ export interface VenueSummary {
   tagline?: string;
   address?: string;
   phone?: string;
+  /** Listing-card stats; only present when the query asks for them. */
+  rating?: number;
+  reviewCount?: number;
+  priceFromCents?: number | null;
+  lat?: number | null;
+  lng?: number | null;
+  /** Only on a search that supplied `near` — a property of the query. */
+  distanceKm?: number | null;
+  coverUrl?: string | null;
+  photos?: Photo[];
+  womenOnly?: boolean;
 }
 
 export interface Venue {
@@ -119,6 +174,12 @@ export interface Venue {
   slug: string;
   city: string;
   status: string;
+  /** Null until the venue has been geocoded; the page falls back to an address card. */
+  lat?: number | null;
+  lng?: number | null;
+  amenities?: string[];
+  womenOnly?: boolean;
+  photos?: Photo[];
   settings: Settings;
   categories: Category[];
   services: Service[];

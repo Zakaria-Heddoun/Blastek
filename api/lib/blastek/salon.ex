@@ -39,6 +39,7 @@ defmodule Blastek.Salon do
     %Category{}
     |> Category.changeset(Map.put(attrs, :venue_id, venue_id))
     |> Repo.insert()
+    |> reindexed(venue_id)
   end
 
   def list_services(venue_id, opts \\ []) do
@@ -56,6 +57,7 @@ defmodule Blastek.Salon do
     |> Service.changeset(Map.put(attrs, :venue_id, venue_id))
     |> put_staff(venue_id, staff_ids)
     |> Repo.insert()
+    |> reindexed(venue_id)
   end
 
   def update_service(venue_id, id, attrs, staff_ids) do
@@ -63,7 +65,18 @@ defmodule Blastek.Salon do
     |> Service.changeset(attrs)
     |> put_staff(venue_id, staff_ids)
     |> Repo.update()
+    |> reindexed(venue_id)
   end
+
+  # The catalog is half of what a venue is findable by, so every catalog write
+  # refreshes the search document. One funnel instead of a `reindex_venue` call
+  # remembered at each site — the same reason writes go through `Scope`.
+  defp reindexed({:ok, _record} = result, venue_id) do
+    Blastek.Discovery.reindex_venue(venue_id)
+    result
+  end
+
+  defp reindexed(result, _venue_id), do: result
 
   defp put_staff(changeset, _venue_id, nil), do: changeset
 
@@ -800,6 +813,43 @@ defmodule Blastek.Salon do
 
   ## ---------- venue (public) ----------
 
+  @doc """
+  Rating, review count and cheapest active service for many venues at once.
+
+  Marketplace listings show these per card; resolved per venue it would be
+  3N queries for a results page, so the GraphQL layer batches ids through here.
+  """
+  def venue_cards_for(venue_ids) do
+    ratings =
+      Repo.all(
+        from r in Review,
+          where: r.venue_id in ^venue_ids,
+          group_by: r.venue_id,
+          select: {r.venue_id, {avg(r.rating), count(r.id)}}
+      )
+      |> Map.new()
+
+    price_from =
+      Repo.all(
+        from s in Service,
+          where: s.venue_id in ^venue_ids and s.active,
+          group_by: s.venue_id,
+          select: {s.venue_id, min(s.price_cents)}
+      )
+      |> Map.new()
+
+    Map.new(venue_ids, fn id ->
+      {avg, count} = Map.get(ratings, id, {nil, 0})
+
+      {id,
+       %{
+         rating: if(avg, do: avg |> Decimal.to_float() |> Float.round(1), else: 0.0),
+         review_count: count,
+         price_from_cents: Map.get(price_from, id)
+       }}
+    end)
+  end
+
   @doc "Public marketplace view of one venue."
   def venue_view(%Venues.Venue{} = venue) do
     venue_id = venue.id
@@ -830,6 +880,13 @@ defmodule Blastek.Salon do
       slug: venue.slug,
       city: venue.city,
       status: venue.status,
+      lat: venue.lat,
+      lng: venue.lng,
+      # Venue-declared facts, stored in the settings JSONB rather than as
+      # columns so a venue can list anything without a migration.
+      amenities: venue.settings |> Map.get("amenities", []) |> List.wrap(),
+      women_only: venue.settings |> Map.get("women_only", false) |> to_boolean(),
+      photos: Blastek.Media.list_photos(venue_id),
       settings: %{
         business_name: venue.name,
         business_tagline: venue.tagline,
@@ -853,6 +910,12 @@ defmodule Blastek.Salon do
       }
     }
   end
+
+  # Settings arrive from JSONB, where a flag may have been written as a boolean
+  # or as a string depending on which client wrote it.
+  defp to_boolean(true), do: true
+  defp to_boolean("true"), do: true
+  defp to_boolean(_), do: false
 
   @doc "Appointments belonging to a marketplace account, newest first, across venues."
   def list_my_appointments(client_ids) do

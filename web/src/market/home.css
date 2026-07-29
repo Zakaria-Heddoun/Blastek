@@ -41,3 +41,11 @@
 @media (prefers-reduced-motion: reduce) {
   .blastek-home .logos-marquee-track { animation: none; }
 }
+
+/* hero search bar sits under the wordmark on the homepage */
+.blastek-home .hero-search {
+  display: flex;
+  justify-content: center;
+  width: min(680px, 92vw);
+  margin: 0 auto;
+}

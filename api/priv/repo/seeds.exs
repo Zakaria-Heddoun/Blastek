@@ -45,6 +45,12 @@ else
         address: config.address,
         city: config.city,
         phone: config.phone,
+        lat: config.lat,
+        lng: config.lng,
+        settings: %{
+          "amenities" => config.amenities,
+          "women_only" => Map.get(config, :women_only, false)
+        },
         status: "active"
       })
 
@@ -245,6 +251,16 @@ else
       address: "27 Rue Aït Ourir, Gauthier, Casablanca",
       city: "Casablanca",
       phone: "+212 5 22 27 48 80",
+      # Gauthier, Casablanca.
+      lat: 33.5883,
+      lng: -7.6329,
+      amenities: [
+        "Instant confirmation",
+        "Pay at the venue",
+        "Card accepted",
+        "Wheelchair accessible",
+        "Near the tramway"
+      ],
       open_min: 540,
       close_min: 1080,
       day_range: -35..10,
@@ -336,6 +352,15 @@ else
       address: "12 Avenue de France, Agdal, Rabat",
       city: "Rabat",
       phone: "+212 5 37 67 12 45",
+      # Agdal, Rabat.
+      lat: 33.9905,
+      lng: -6.8498,
+      amenities: [
+        "Instant confirmation",
+        "Pay at the venue",
+        "Walk-ins welcome",
+        "Kid-friendly"
+      ],
       open_min: 600,
       close_min: 1200,
       day_range: -21..7,
@@ -421,6 +446,13 @@ if Repo.aggregate(Accounts.User, :count) == 0 do
       first_name: "Leila",
       last_name: "Bennani"
     })
+
+  # The catalog above is inserted with `Repo.insert!` for speed, which skips the
+  # reindex hook on `Salon.create_service/3`. Without this the seeded venues
+  # would be findable by name but not by the treatments they offer — the exact
+  # failure `reindex_all/0` exists to repair.
+  indexed = Blastek.Discovery.reindex_all()
+  IO.puts("Search index: #{indexed} venue document(s) built.\n")
 
   IO.puts("""
   Demo accounts (password: blastek123)

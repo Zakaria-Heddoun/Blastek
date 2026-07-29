@@ -4,9 +4,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { gql } from '../lib/gql';
+import type { VenueSummary } from '../lib/types';
 import { IMG } from './assets';
+import SearchBar from './SearchBar';
 import '../bungee/bungee.css';
 import './home.css';
+import './market.css';
 
 const BG = '/bungee'; // reuse the pixel-mosaic category icons from the Bungee assets
 
@@ -27,14 +31,12 @@ const CATEGORIES = ['Hair', 'Barbering', 'Nails', 'Spa'];
 // one half of the seamless marquee loop (rendered twice, scrolled -50%)
 const LOGO_SET = [...CATEGORIES, ...CATEGORIES, ...CATEGORIES];
 
-const VENUES = [
-  { name: 'Le Salon Anfa', area: 'Gauthier, Casablanca', rating: '4.9', img: IMG.salon1 },
-  { name: 'Riad Coiffure', area: 'Maârif, Casablanca', rating: '4.8', img: IMG.hair1 },
-  { name: 'Barber Corner', area: 'Agdal, Rabat', rating: '4.7', img: IMG.barber1 },
-  { name: 'Nova Nails', area: 'Guéliz, Marrakech', rating: '4.9', img: IMG.nails1 },
-  { name: 'Éclat Spa', area: 'Anfa, Casablanca', rating: '5.0', img: IMG.spa1 },
-  { name: 'Studio Lumière', area: 'Gauthier, Casablanca', rating: '4.8', img: IMG.hair2 },
-];
+// Stand-in cover imagery until venues upload their own photos (F0.6).
+const COVERS = [IMG.salon1, IMG.hair1, IMG.barber1, IMG.nails1, IMG.spa1, IMG.hair2];
+
+const FEATURED = `{
+  venues { id slug name city address rating reviewCount priceFromCents }
+}`;
 
 const SERVICES = [
   {
@@ -243,6 +245,15 @@ function Hero() {
         >
           Beauty &amp; wellness booking — Casablanca.
         </motion.p>
+
+        <motion.div
+          className="hero-search"
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.7, ease: 'easeOut', delay: 1.05 }}
+        >
+          <SearchBar />
+        </motion.div>
       </div>
 
       <motion.div
@@ -286,6 +297,17 @@ function Intro() {
 }
 
 function Venues() {
+  const [venues, setVenues] = useState<VenueSummary[] | null>(null);
+
+  useEffect(() => {
+    gql<{ venues: VenueSummary[] }>(FEATURED)
+      .then((d) => setVenues(d.venues))
+      // The homepage still reads fine without this section; no error UI.
+      .catch(() => setVenues([]));
+  }, []);
+
+  if (venues !== null && venues.length === 0) return null;
+
   return (
     <section className="wrap pad-y" id="venues">
       <div className="sec-head">
@@ -299,21 +321,24 @@ function Venues() {
       </div>
 
       <div className="works-grid">
-        {VENUES.map((v, i) => (
+        {(venues ?? []).slice(0, 6).map((v, i) => (
           <motion.div
-            key={v.name}
+            key={v.id}
             {...reveal}
             transition={{ ...reveal.transition, delay: (i % 2) * 0.08 }}
           >
-            <Link className="work" to="/venues">
+            <Link className="work" to={`/v/${v.slug}`}>
               <div className="work-thumb">
-                <img src={v.img} alt={v.name} loading="lazy" />
+                <img src={COVERS[i % COVERS.length]} alt={v.name} loading="lazy" />
               </div>
               <div className="work-meta">
                 <h3>
-                  {v.name} <span className="tag">— {v.area}</span>
+                  {v.name}
+                  {(v.address || v.city) && <span className="tag">— {v.address || v.city}</span>}
                 </h3>
-                <span className="work-date">★ {v.rating}</span>
+                <span className="work-date">
+                  {(v.reviewCount ?? 0) > 0 ? `★ ${v.rating?.toFixed(1)}` : 'New'}
+                </span>
               </div>
             </Link>
           </motion.div>

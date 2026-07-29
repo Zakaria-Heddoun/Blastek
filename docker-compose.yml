@@ -13,6 +13,41 @@ services:
       timeout: 3s
       retries: 20
 
+  # S3-compatible object storage for venue photos (E8-T1). The API talks to it
+  # at `minio:9000`; browsers read images from the published `localhost:9000`,
+  # which is why the S3 adapter keeps a separate public base URL.
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: blastek
+      MINIO_ROOT_PASSWORD: blastek-dev-secret
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Creates the media bucket and makes it world-readable, then exits. Photos are
+  # public by design — they are salon marketing shown to anonymous shoppers — so
+  # reads need no signing, only writes do.
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "
+      mc alias set local http://minio:9000 blastek blastek-dev-secret &&
+      mc mb --ignore-existing local/blastek-media &&
+      mc anonymous set download local/blastek-media
+      "
+
   api:
     image: elixir:1.18-alpine
     working_dir: /app
@@ -20,6 +55,12 @@ services:
     environment:
       DB_HOST: db
       MIX_ENV: dev
+      # Presence of S3_BUCKET is what selects the S3 storage adapter.
+      S3_BUCKET: blastek-media
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_PUBLIC_BASE_URL: http://localhost:9000
+      S3_ACCESS_KEY_ID: blastek
+      S3_SECRET_ACCESS_KEY: blastek-dev-secret
     ports:
       - "4000:4000"
     volumes:
@@ -31,9 +72,12 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      minio:
+        condition: service_healthy
 
 volumes:
   pgdata:
+  miniodata:
   api_deps:
   api_build:
   mix_home:

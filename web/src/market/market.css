@@ -132,23 +132,341 @@
 .mkt .hours-table td { padding: 7px 0; }
 .mkt .review-card { border-radius: var(--r-lg); }
 
-/* ---- venue directory (/venues) ---------------------------------- */
-.mkt .vlist { display: grid; gap: 12px; margin-top: 22px; padding-bottom: 40px; }
+/* ---------- venue page: header, reviews, location, info ---------- */
+.mkt .venue-top { padding-top: 18px; }
 
-.mkt .vlist-card {
+.mkt .crumbs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--fg-3);
+  margin-bottom: 14px;
+}
+.mkt .crumbs a { color: var(--fg-2); text-decoration: none; }
+.mkt .crumbs a:hover { color: var(--ink); text-decoration: underline; }
+.mkt .crumbs [aria-current] { color: var(--ink); font-weight: 500; }
+
+.mkt .venue-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+.mkt .venue-sub .stars { color: #e8a33d; display: inline-flex; }
+.mkt .dot-sep { color: var(--fg-3); }
+.mkt .open-now { color: #1c7c47; font-weight: 600; }
+.mkt .closed-now { color: #b4472e; font-weight: 600; }
+
+.mkt .linky {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-weight: 500;
+}
+.mkt .linky.block {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+.mkt .venue-actions { display: flex; gap: 8px; flex: none; }
+.mkt .icon-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: none;
+  color: var(--fg-2);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.mkt .icon-btn:hover { background: var(--panel); color: var(--ink); }
+
+.mkt .reviews-summary {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.mkt .reviews-score { font-size: 40px; font-weight: 600; letter-spacing: -0.03em; }
+.mkt .reviews-summary .stars { color: #e8a33d; display: inline-flex; }
+
+.mkt .reviews-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+.mkt .reviews-grid .review-card { margin-bottom: 0; }
+.mkt .review-card .who {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-weight: 400;
+}
+.mkt .review-card .who b { display: block; font-size: 14px; }
+.mkt .avatar.sm { width: 34px; height: 34px; font-size: 12px; flex: none; }
+
+/* Leaflet's own container styling lives in components/map.css; this only places
+   the map within the venue page. */
+.mkt .venue-map { margin-top: 16px; border-radius: 16px; }
+
+.mkt .venue-map-fallback {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--fg-2);
+}
+
+.mkt .venue-loc {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 18px 20px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.mkt .info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 28px;
+  margin-top: 28px;
+  padding-bottom: 48px;
+}
+
+.mkt .hour-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  margin-right: 9px;
+  background: var(--fg-3);
+  opacity: 0.45;
+}
+.mkt .hour-dot.on { background: #1c7c47; opacity: 1; }
+.mkt .hours-table tr.today td { font-weight: 600; }
+
+.mkt .amenities { list-style: none; padding: 0; margin: 0; }
+.mkt .amenities li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 0;
+  color: var(--fg-2);
+  font-size: 14px;
+}
+.mkt .amenities li .ic { color: #1c7c47; flex: none; }
+
+@media (max-width: 640px) {
+  .mkt .venue-head { flex-direction: column; }
+  .mkt .reviews-grid { grid-template-columns: 1fr; }
+}
+
+/* ---- venue directory / search results (/venues) ------------------ */
+.mkt .vlist-head { margin: 22px 0 4px; }
+.mkt .vlist-head h1 { font-size: 26px; }
+.mkt .vlist-head .vlist-count { font-weight: 400; color: var(--fg-3); }
+.mkt .vlist-head p { margin: 6px 0 0; }
+
+.mkt .vgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 20px;
+  margin-top: 22px;
+}
+
+.mkt .vcard {
+  display: block;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 16px;
+  overflow: hidden;
   background: var(--surface);
   color: inherit;
   text-decoration: none;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition: transform 0.15s ease, border-color 0.15s ease;
 }
 
-.mkt .vlist-card:hover { background: var(--surface-hover); border-color: var(--fg-3); }
-.mkt .vlist-card h3 { font-size: 17px; margin: 0 0 4px; }
-.mkt .vlist-card .fainttext { margin-top: 4px; }
+.mkt .vcard:hover { transform: translateY(-2px); border-color: var(--fg-3); }
+.mkt .vcard-thumb { aspect-ratio: 3 / 2; overflow: hidden; background: var(--surface-2); }
+.mkt .vcard-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.mkt .vcard-body { padding: 14px 16px 16px; }
+.mkt .vcard-body h3 { font-size: 16px; margin: 0 0 6px; }
+
+.mkt .vcard-rating { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.mkt .vcard-rating .stars { color: #e8a33d; display: inline-flex; }
+
+.mkt .vcard-where {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+  color: var(--fg-2);
+  font-size: 13px;
+}
+
+.mkt .vcard-price { margin-top: 8px; font-size: 13px; font-weight: 600; }
+
+/* ---- marketplace search ------------------------------------------ */
+.mkt-search {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #fff;
+  border: 1px solid var(--line, #d0d8e4);
+  border-radius: 999px;
+  padding: 6px 6px 6px 20px;
+  max-width: 680px;
+  box-shadow: 0 6px 24px rgba(20, 12, 14, 0.07);
+}
+
+.mkt-search-hero { margin: clamp(20px, 3vw, 32px) auto 0; width: 100%; }
+.mkt-search-inline { margin: 0 0 8px; box-shadow: none; }
+
+.mkt-search-field {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 6px 8px;
+  cursor: text;
+}
+
+.mkt-search-label {
+  font-family: var(--mono, ui-monospace), monospace;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #8a919b;
+}
+
+.mkt-search-field input {
+  border: 0;
+  background: none;
+  padding: 0;
+  font-size: 15px;
+  color: #1e1e1e;
+  width: 100%;
+  outline: none;
+}
+
+.mkt-search-field input::placeholder { color: #a9b0ba; }
+.mkt-search-divider { width: 1px; align-self: stretch; margin: 8px 0; background: var(--line, #d0d8e4); }
+
+.mkt-search-go {
+  flex: none;
+  width: 46px;
+  height: 46px;
+  border: 0;
+  border-radius: 999px;
+  background: #1e1e1e;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.mkt-search-go:hover { opacity: 0.85; }
+
+@media (max-width: 560px) {
+  .mkt-search { flex-wrap: wrap; border-radius: 20px; padding: 8px 8px 8px 16px; }
+  .mkt-search-divider { display: none; }
+  .mkt-search-field { flex-basis: 100%; }
+  .mkt-search-go { width: 100%; height: 42px; margin-top: 6px; }
+}
+
+/* ---------- search filters, view toggle, result extras (E8-T6) ---------- */
+
+.mkt .vlist-shell { padding-top: 24px; padding-bottom: 56px; }
+
+.mkt .vfilters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0 4px;
+}
+
+.mkt .vfilters select {
+  height: 36px;
+  padding: 0 30px 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  /* Native arrow is inconsistent across platforms; draw our own. */
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 16px) 15px, calc(100% - 11px) 15px;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.mkt .vfilter-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.mkt .vfilter-clear { color: var(--brand-maroon); }
+
+.mkt .vview {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.mkt .vview button {
+  height: 36px;
+  padding: 0 14px;
+  border: 0;
+  background: var(--surface);
+  color: var(--fg-2);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.mkt .vview button.active { background: var(--fg); color: var(--surface); }
+
+.mkt .vmap-note { margin: 8px 0 0; font-size: 12px; }
+
+/* Distance badge on a result card. */
+.mkt .vcard-thumb { position: relative; }
+.mkt .vcard-dist {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(20, 17, 15, 0.82);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+@media (max-width: 560px) {
+  .mkt .vfilters select,
+  .mkt .vfilter-check { flex: 1 1 46%; }
+  .mkt .vview { flex-basis: 100%; }
+  .mkt .vview button { flex: 1; }
+}

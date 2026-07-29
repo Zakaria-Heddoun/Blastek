@@ -14,14 +14,32 @@ defmodule Blastek.Venues.Venue do
     field :phone, :string, default: ""
     field :status, :string, default: "pending"
     field :settings, :map, default: %{}
+    # Nil until geocoded; the venue page falls back to an address card.
+    field :lat, :float
+    field :lng, :float
+    # Populated only by a distance search — see `Blastek.Discovery.search/1`.
+    field :distance_km, :float, virtual: true
     has_many :members, Blastek.Venues.VenueMember
     timestamps(type: :naive_datetime)
   end
 
   def changeset(venue, attrs) do
     venue
-    |> cast(attrs, [:slug, :name, :tagline, :address, :city, :phone, :status, :settings])
+    |> cast(attrs, [
+      :slug,
+      :name,
+      :tagline,
+      :address,
+      :city,
+      :phone,
+      :status,
+      :settings,
+      :lat,
+      :lng
+    ])
     |> validate_required([:name])
+    |> validate_number(:lat, greater_than_or_equal_to: -90, less_than_or_equal_to: 90)
+    |> validate_number(:lng, greater_than_or_equal_to: -180, less_than_or_equal_to: 180)
     |> maybe_put_slug()
     |> validate_format(:slug, ~r/^[a-z0-9]+(-[a-z0-9]+)*$/,
       message: "may only contain lowercase letters, numbers and dashes"
@@ -101,16 +119,30 @@ defmodule Blastek.Venues do
     end
   end
 
+  @doc """
+  Venue records, optionally narrowed to one status.
+
+  The administrative listing: it deliberately does **not** filter to `active` or
+  understand search terms, because the platform admin queue exists to look at
+  the pending and suspended venues a shopper must never see.
+
+  Marketplace listing and search go through `Blastek.Discovery.search/1`, which
+  enforces `active` itself.
+  """
   def list_venues(opts \\ []) do
     q = from v in Venue, order_by: v.name
     q = if opts[:status], do: from(v in q, where: v.status == ^opts[:status]), else: q
+    q = if opts[:limit], do: from(v in q, limit: ^opts[:limit]), else: q
     Repo.all(q)
   end
 
   ## ---------- writes ----------
 
   def create_venue(attrs) do
-    %Venue{} |> Venue.changeset(attrs) |> Repo.insert()
+    with {:ok, venue} <- %Venue{} |> Venue.changeset(attrs) |> Repo.insert() do
+      Blastek.Discovery.reindex_venue(venue.id)
+      {:ok, venue}
+    end
   end
 
   @doc "Creates a venue and makes `user` its owner, atomically."
@@ -126,10 +158,69 @@ defmodule Blastek.Venues do
   end
 
   def update_venue(%Venue{} = venue, attrs) do
-    venue |> Venue.changeset(attrs) |> Repo.update()
+    with {:ok, updated} <- venue |> Venue.changeset(attrs) |> Repo.update() do
+      # Name, city, address and tagline all feed the search document, so any
+      # update reindexes rather than guessing which fields changed.
+      Blastek.Discovery.reindex_venue(updated.id)
+      {:ok, updated}
+    end
   end
 
   def update_venue(id, attrs), do: get_venue!(id) |> update_venue(attrs)
+
+  @doc """
+  Sets the women-only flag, which the marketplace exposes as a search filter.
+
+  Merged into `settings` rather than replacing it, because a blind write here
+  would drop the amenities list stored alongside.
+  """
+  def set_women_only(%Venue{} = venue, value) when is_boolean(value) do
+    update_venue(venue, %{settings: Map.put(venue.settings, "women_only", value)})
+  end
+
+  @doc """
+  Sets a venue's map pin.
+
+  Separate from `update_venue/2` because the two arrive from different places and
+  carry different authority: an owner dragging a marker is stating a fact, while
+  `geocode_venue/1` is guessing. A manual pin must therefore never be silently
+  overwritten by a later geocode — see `geocode_venue/1`.
+  """
+  def set_location(%Venue{} = venue, lat, lng) do
+    update_venue(venue, %{lat: lat, lng: lng})
+  end
+
+  def set_location(id, lat, lng), do: get_venue!(id) |> set_location(lat, lng)
+
+  @doc """
+  Fills in a venue's coordinates from its address.
+
+  Refuses to run when a pin already exists: geocoders are approximate, and
+  quietly replacing a hand-placed marker with a street-centroid guess is a
+  regression the owner cannot see until a customer arrives at the wrong door.
+  Pass `force: true` after the address itself has changed.
+  """
+  def geocode_venue(%Venue{} = venue, opts \\ []) do
+    cond do
+      not Keyword.get(opts, :force, false) and not is_nil(venue.lat) ->
+        {:error, "This venue already has a location pin."}
+
+      venue.address == "" and venue.city == "" ->
+        {:error, "Add an address before locating the venue on the map."}
+
+      true ->
+        case Blastek.Geocode.geocode(Blastek.Geocode.query_for(venue)) do
+          {:ok, %{lat: lat, lng: lng}} ->
+            set_location(venue, lat, lng)
+
+          {:error, :not_found} ->
+            {:error, "We could not find that address. Place the pin manually instead."}
+
+          {:error, _reason} ->
+            {:error, "The map service is unavailable. Place the pin manually instead."}
+        end
+    end
+  end
 
   ## ---------- memberships ----------
 

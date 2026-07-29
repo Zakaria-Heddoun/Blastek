@@ -20,6 +20,40 @@ if System.get_env("PHX_SERVER") do
   config :blastek, BlastekWeb.Endpoint, server: true
 end
 
+# ## Media storage
+#
+# Configured here rather than in config/dev.exs so the adapter is chosen when
+# the system boots, not when it was compiled — the same image can run against
+# MinIO in dev and a real bucket in production.
+#
+# Presence of S3_BUCKET selects the S3 adapter. Without it the filesystem
+# adapter stays in force, which is what keeps a bare checkout and CI working.
+bucket = System.get_env("S3_BUCKET")
+
+if config_env() != :test and bucket do
+  endpoint_url = System.get_env("S3_ENDPOINT_URL") || "http://localhost:9000"
+  %URI{host: host, port: port, scheme: scheme} = URI.parse(endpoint_url)
+
+  config :blastek, :storage_adapter, Blastek.Storage.S3
+
+  config :blastek, Blastek.Storage.S3,
+    bucket: bucket,
+    endpoint_url: endpoint_url,
+    # Browsers resolve a different address than the API does: `minio:9000` is
+    # only meaningful inside the compose network.
+    public_base_url: System.get_env("S3_PUBLIC_BASE_URL") || endpoint_url
+
+  config :ex_aws, :s3,
+    scheme: "#{scheme}://",
+    host: host,
+    port: port,
+    region: System.get_env("S3_REGION") || "us-east-1"
+
+  config :ex_aws,
+    access_key_id: System.get_env("S3_ACCESS_KEY_ID"),
+    secret_access_key: System.get_env("S3_SECRET_ACCESS_KEY")
+end
+
 if config_env() == :prod do
   database_url =
     System.get_env("DATABASE_URL") ||
