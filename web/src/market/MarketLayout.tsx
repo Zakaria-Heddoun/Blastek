@@ -27,11 +27,16 @@ const VENUE = `query($slug: String!) {
     slug
     city
     status
+    lat
+    lng
+    amenities
+    womenOnly
+    ${F.photos}
     ${F.settings}
     ${F.categories}
     ${F.services}
     ${F.staff}
-    reviews { id clientName rating comment }
+    reviews { id clientName rating comment createdAt }
     rating
     hours { weekday open close }
     stats { bookings professionals services }

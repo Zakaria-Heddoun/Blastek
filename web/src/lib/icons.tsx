@@ -16,6 +16,9 @@ const PATHS: Record<string, string> = {
   left: 'm15 18-6-6 6-6',
   right: 'm9 18 6-6-6-6',
   external: 'M15 3h6v6 M10 14 21 3 M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6',
+  search: 'M11 19a8 8 0 1 1 0-16 8 8 0 0 1 0 16z M21 21l-4.35-4.35',
+  pin: 'M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z M12 12a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z',
+  clock: 'M12 21a9 9 0 1 1 0-18 9 9 0 0 1 0 18z M12 7v5l3 2',
   sun: 'M12 2v2 M12 20v2 M4.93 4.93l1.41 1.41 M17.66 17.66l1.41 1.41 M2 12h2 M20 12h2 M4.93 19.07l1.41-1.41 M17.66 6.34l1.41-1.41 M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0z',
   moon: 'M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z',
 };
@@ -40,13 +43,25 @@ export function Sparkle({ size = 18 }: { size?: number }) {
   );
 }
 
+/** Filled stars read as a score at a glance; outlines read as a form control. */
 export function StarRow({ rating, size = 13 }: { rating: number; size?: number }) {
+  const filled = Math.round(rating);
+
   return (
-    <span className="stars">
+    <span className="stars" role="img" aria-label={`${rating.toFixed(1)} out of 5`}>
       {[0, 1, 2, 3, 4].map((i) => (
-        <span key={i} style={i < Math.round(rating) ? undefined : { opacity: 0.3 }}>
-          <Icon name="star" size={size} />
-        </span>
+        <svg
+          key={i}
+          className="ic"
+          width={size}
+          height={size}
+          viewBox="0 0 24 24"
+          fill="currentColor"
+          style={i < filled ? undefined : { opacity: 0.22 }}
+          aria-hidden="true"
+        >
+          <path d={PATHS.star} />
+        </svg>
       ))}
     </span>
   );

@@ -180,3 +180,72 @@
   margin-top: 6px;
   padding-left: 2px;
 }
+
+/* ---------- venue presence settings: photos, pin, listing (E8-T7) ---------- */
+
+.adm .set-section { margin-top: 18px; }
+.adm .set-section-head { margin-bottom: 12px; }
+.adm .set-section-head h2 { font-size: 16px; margin: 0 0 4px; }
+.adm .set-section-head p { margin: 0; font-size: 13px; }
+
+.adm .photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.adm .photo-tile {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+/* The cover is what search results show, so it is worth marking clearly. */
+.adm .photo-tile.is-cover { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+
+.adm .photo-tile img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+
+.adm .photo-placeholder {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 4 / 3;
+  font-size: 12px;
+  color: var(--muted);
+}
+.adm .photo-placeholder.is-failed { color: var(--brand-maroon); }
+
+.adm .photo-tile figcaption { padding: 8px; display: grid; gap: 6px; }
+
+.adm .photo-badge {
+  justify-self: start;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #14110f;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.adm .photo-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+
+.adm .set-loc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.adm .set-toggle { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+.adm .set-toggle input { margin-top: 3px; }
+.adm .set-toggle span { display: grid; gap: 2px; font-size: 13px; }

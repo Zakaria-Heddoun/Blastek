@@ -26,6 +26,16 @@ config :blastek, BlastekWeb.Endpoint,
   secret_key_base: "UoTy92Hn7Eh1a2gUsfBxWyl5KacFNC8V3NAO1XYqlPht1WsNEnRvLfHl4s+55DOT",
   server: false
 
+# Media lands in a scratch directory rather than priv/uploads, so a test run
+# leaves no files behind in the repository.
+config :blastek, Blastek.Storage.Local,
+  root: Path.join(System.tmp_dir!(), "blastek-test-uploads"),
+  base_url: "http://localhost:4002"
+
+# Geocoding must never reach the network from a test: it would be slow, flaky,
+# and rude to a free public service. The stub is driven per-test.
+config :blastek, :geocoder, Blastek.Geocode.Stub
+
 # Print only warnings and errors during test
 config :logger, level: :warning
 

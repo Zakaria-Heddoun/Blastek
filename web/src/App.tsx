@@ -9,6 +9,7 @@ import CatalogPage from './admin/CatalogPage';
 import TeamPage from './admin/TeamPage';
 import SalesPage from './admin/SalesPage';
 import ReportsPage from './admin/ReportsPage';
+import SettingsPage from './admin/SettingsPage';
 import MarketLayout from './market/MarketLayout';
 import Home from './market/Home';
 import VenueList from './market/VenueList';
@@ -37,6 +38,7 @@ export default function App() {
             <Route path="team" element={<TeamPage />} />
             <Route path="sales" element={<SalesPage />} />
             <Route path="reports" element={<ReportsPage />} />
+            <Route path="settings" element={<SettingsPage />} />
           </Route>
           {/* Homepage — Blastek marketplace on the Bungee-style design.
               Standalone (its own nav/footer); booking flow stays under

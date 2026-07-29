@@ -35,6 +35,7 @@ const NAV = [
   { to: '/dashboard/team', label: 'Team', min: 'manager' },
   { to: '/dashboard/sales', label: 'Sales', min: 'manager' },
   { to: '/dashboard/reports', label: 'Reports', min: 'manager' },
+  { to: '/dashboard/settings', label: 'Settings', min: 'manager' },
 ] as const;
 
 const RANK = { staff: 0, receptionist: 1, manager: 2, owner: 3 } as const;

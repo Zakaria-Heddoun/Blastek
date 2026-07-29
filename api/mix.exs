@@ -19,7 +19,9 @@ defmodule Blastek.MixProject do
   def application do
     [
       mod: {Blastek.Application, []},
-      extra_applications: [:logger, :runtime_tools]
+      # :inets/:ssl back the geocoder's HTTP client (`:httpc`) — a dependency-free
+      # client is proportionate for a few hundred geocode calls a day.
+      extra_applications: [:logger, :runtime_tools, :inets, :ssl]
     ]
   end
 
@@ -45,7 +47,18 @@ defmodule Blastek.MixProject do
       {:absinthe_plug, "~> 1.5"},
       {:absinthe_phoenix, "~> 2.0"},
       {:cors_plug, "~> 3.0"},
-      {:pbkdf2_elixir, "~> 2.2"}
+      {:pbkdf2_elixir, "~> 2.2"},
+      # Image handling (libvips): generates the thumb/card/hero variants and
+      # doubles as upload validation — a file libvips cannot decode is not an
+      # image, whatever its content-type header claims.
+      {:image, "~> 0.72"},
+      # S3-compatible object storage (MinIO in dev, any S3 in production).
+      # Used for SigV4 signing only — transport is OTP's `:httpc` via
+      # `Blastek.HTTP`, which keeps hackney (and a HIGH advisory in its SOCKS5
+      # path) out of the tree for a client we would barely use.
+      {:ex_aws, "~> 2.5"},
+      {:ex_aws_s3, "~> 2.5"},
+      {:sweet_xml, "~> 0.7"}
     ]
   end
 

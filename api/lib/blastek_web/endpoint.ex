@@ -33,6 +33,15 @@ defmodule BlastekWeb.Endpoint do
     gzip: false,
     only: BlastekWeb.static_paths()
 
+  # Uploaded media for `Blastek.Storage.Local`. Unused when the S3 adapter is
+  # active — there the browser reads straight from the bucket. Cached hard
+  # because keys contain a random component, so a key's bytes never change.
+  plug Plug.Static,
+    at: "/uploads",
+    from: {:blastek, "priv/uploads"},
+    gzip: false,
+    cache_control_for_etags: "public, max-age=31536000, immutable"
+
   # Code reloading can be explicitly enabled under the
   # :code_reloader configuration of your endpoint.
   if code_reloading? do

@@ -1,31 +1,86 @@
-// Venue page: gallery, treatments with descriptions, team, about + hours, reviews.
-import { useEffect } from 'react';
+// Venue page — the marketplace's shop window and the entry point to booking.
+// Order follows what a shopper decides in: is this the right place (header,
+// photos), what can I get (treatments), who from (team), can I trust it
+// (reviews), and can I actually get there (about, map, hours).
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useVenue } from './MarketLayout';
 import { IMG } from './assets';
 import { Icon, StarRow } from '../lib/icons';
-import { fmtDur, fmtMAD, fmtTime, initials, WEEKDAYS_FULL } from '../lib/format';
+import { useToast } from '../components/ui';
+import VenueMap from '../components/VenueMap';
+import type { Photo } from '../lib/types';
+import {
+  fmtDateShort, fmtDur, fmtMAD, fmtTime, initials, WEEKDAYS_FULL,
+} from '../lib/format';
+
+// Shown only until a venue uploads its own photos. Deliberately generic stock:
+// a placeholder that looks like a specific salon would misrepresent this one.
+const PLACEHOLDER_GALLERY = [
+  { src: IMG.salon1, alt: '' },
+  { src: IMG.hair3, alt: '' },
+  { src: IMG.barber3, alt: '' },
+  { src: IMG.spa2, alt: '' },
+  { src: IMG.spa3, alt: '' },
+];
+
+/**
+ * Picks the right rendered size for each gallery slot.
+ *
+ * The first tile is displayed large, so it gets `hero`; the rest are thumbnails
+ * and get `card`. Serving `hero` to all five is how a venue page ends up costing
+ * several megabytes on a phone.
+ */
+function galleryTiles(photos: Photo[] | undefined, venueName: string) {
+  if (!photos || photos.length === 0) return PLACEHOLDER_GALLERY;
+
+  return photos.slice(0, 5).map((photo, index) => ({
+    src:
+      (index === 0 ? photo.urls?.hero : photo.urls?.card) ||
+      photo.urls?.card ||
+      photo.urls?.original ||
+      '',
+    alt: photo.alt || `${venueName} photo ${index + 1}`,
+  }));
+}
+
+/** Minutes-from-midnight comparison against the wall clock. */
+function openState(hours: { open: number | null; close: number | null }[], now: Date) {
+  const today = hours[now.getDay()];
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+
+  if (today?.open == null || today.close == null) return { open: false, label: 'Closed today' };
+
+  if (nowMin < today.open) {
+    return { open: false, label: `Opens at ${fmtTime(today.open, true)}` };
+  }
+  if (nowMin >= today.close) {
+    return { open: false, label: `Closed · opens tomorrow` };
+  }
+  return { open: true, label: `Open until ${fmtTime(today.close, true)}` };
+}
 
 export default function VenuePage() {
   const { venue: v, slug, booking } = useVenue();
   const navigate = useNavigate();
+  const toast = useToast();
   const [params] = useSearchParams();
   const focusCat = params.get('cat');
   const focusSvc = params.get('svc');
+  const [showAllReviews, setShowAllReviews] = useState(false);
+
+  const name = v.settings.businessName;
+  const address = v.settings.businessAddress;
 
   useEffect(() => {
-    document.title = `${v.settings.businessName} — Blastek`;
+    document.title = `${name} — Blastek`;
     const el = focusSvc && document.getElementById(`svc-${focusSvc}`);
     if (el) el.scrollIntoView({ block: 'center' });
     else window.scrollTo(0, 0);
-  }, [v, focusSvc]);
+  }, [name, focusSvc]);
 
   const now = new Date();
-  const todayHours = v.hours[now.getDay()];
-  const openLabel = todayHours.open != null
-    ? `Open today · ${fmtTime(todayHours.open, true)} – ${fmtTime(todayHours.close!, true)}`
-    : 'Closed today';
-
+  const status = openState(v.hours, now);
   const cats = focusCat ? v.categories.filter((c) => c.id === focusCat) : v.categories;
 
   const startFlow = (serviceId: string | null) => {
@@ -34,21 +89,99 @@ export default function VenuePage() {
     navigate(`/v/${slug}/flow`);
   };
 
+  // Venues type their city into the address as often as not, so only append it
+  // when it isn't already there.
+  const fullAddress = [address, v.city]
+    .filter(Boolean)
+    .filter((part, i, all) => i === 0 || !all[0].toLowerCase().includes(part.toLowerCase()))
+    .join(', ');
+
+  // Google Maps accepts a plain address, so directions work without geocoding.
+  const directionsUrl =
+    `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
+      [name, fullAddress].filter(Boolean).join(', '),
+    )}`;
+
+  const pinned = v.lat != null && v.lng != null;
+  const tiles = galleryTiles(v.photos, name);
+
+  const share = async () => {
+    const url = window.location.href;
+    try {
+      // The native sheet on mobile; clipboard everywhere else.
+      if (navigator.share) await navigator.share({ title: name, url });
+      else {
+        await navigator.clipboard.writeText(url);
+        toast('Link copied');
+      }
+    } catch {
+      // A cancelled share sheet is not an error worth reporting.
+    }
+  };
+
+  const reviews = showAllReviews ? v.reviews : v.reviews.slice(0, 6);
+
   return (
     <>
-      <div className="bk-shell" style={{ paddingTop: 20 }}>
-        <Link className="btn btn-ghost btn-sm" to="/"><Icon name="left" size={15} /> Home</Link>
-        <div className="venue-head" style={{ marginTop: 12 }}>
-          <h1>{v.settings.businessName}</h1>
-          <div className="venue-sub">
-            <span className="stars"><Icon name="star" size={14} /></span><b>{v.rating}</b>
-            ({v.reviews.length} reviews) · {v.settings.businessAddress} · {openLabel}
+      <div className="bk-shell venue-top">
+        <nav className="crumbs" aria-label="Breadcrumb">
+          <Link to="/">Home</Link>
+          <span aria-hidden="true">›</span>
+          <Link to="/venues">Venues</Link>
+          {v.city && (
+            <>
+              <span aria-hidden="true">›</span>
+              <Link to={`/venues?where=${encodeURIComponent(v.city)}`}>{v.city}</Link>
+            </>
+          )}
+          <span aria-hidden="true">›</span>
+          <span aria-current="page">{name}</span>
+        </nav>
+
+        <div className="venue-head">
+          <div>
+            <h1>{name}</h1>
+            <div className="venue-sub">
+              {v.reviews.length > 0 && (
+                <>
+                  <b>{v.rating.toFixed(1)}</b>
+                  <StarRow rating={v.rating} size={13} />
+                  <span className="fainttext">({v.reviews.length})</span>
+                  <span className="dot-sep" aria-hidden="true">·</span>
+                </>
+              )}
+              <span className={status.open ? 'open-now' : 'closed-now'}>{status.label}</span>
+              {address && (
+                <>
+                  <span className="dot-sep" aria-hidden="true">·</span>
+                  <span>{address}</span>
+                  <a className="linky" href={directionsUrl} target="_blank" rel="noreferrer">
+                    Get directions
+                  </a>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="venue-actions">
+            <button className="icon-btn" onClick={share} aria-label="Share this venue" title="Share">
+              <Icon name="external" size={17} />
+            </button>
           </div>
         </div>
+
         <div className="gallery">
-          <img className="g-main" src={IMG.salon1} alt="Salon interior" />
-          <img src={IMG.hair3} alt="Hair wash" /><img src={IMG.barber3} alt="Barber tools" />
-          <img src={IMG.spa2} alt="Spa" /><img src={IMG.spa3} alt="Facial treatment" />
+          {tiles.map((tile, i) => (
+            <img
+              key={`${tile.src}-${i}`}
+              className={i === 0 ? 'g-main' : ''}
+              src={tile.src}
+              alt={tile.alt}
+              // The first tile is the page's largest image and its LCP; the rest
+              // are below the fold.
+              loading={i === 0 ? 'eager' : 'lazy'}
+            />
+          ))}
         </div>
       </div>
 
@@ -62,24 +195,28 @@ export default function VenuePage() {
                 to={`/v/${slug}?cat=${c.id}`}>{c.name}</Link>
             ))}
           </div>
-          {cats.map((c) => (
-            <div key={c.id}>
-              <h3 style={{ margin: '18px 0 10px', fontSize: 15 }}>{c.name}</h3>
-              {v.services.filter((s) => s.categoryId === c.id).map((s) => (
-                <div key={s.id} id={`svc-${s.id}`}
-                  className={`svc-row ${focusSvc === s.id ? 'sel' : ''}`} style={{ cursor: 'default' }}>
-                  <div className="grow">
-                    <b>{s.name}</b>
-                    <div className="fainttext">{fmtDur(s.durationMin)}</div>
-                    {s.description &&
-                      <div className="mutetext" style={{ marginTop: 4, fontSize: 13 }}>{s.description}</div>}
+          {cats.map((c) => {
+            const svcs = v.services.filter((s) => s.categoryId === c.id);
+            if (!svcs.length) return null;
+            return (
+              <div key={c.id}>
+                <h3 style={{ margin: '18px 0 10px', fontSize: 15 }}>{c.name}</h3>
+                {svcs.map((s) => (
+                  <div key={s.id} id={`svc-${s.id}`}
+                    className={`svc-row ${focusSvc === s.id ? 'sel' : ''}`} style={{ cursor: 'default' }}>
+                    <div className="grow">
+                      <b>{s.name}</b>
+                      <div className="fainttext">{fmtDur(s.durationMin)}</div>
+                      {s.description &&
+                        <div className="mutetext" style={{ marginTop: 4, fontSize: 13 }}>{s.description}</div>}
+                    </div>
+                    <span className="price">{fmtMAD(s.priceCents)}</span>
+                    <button className="btn svc-book" onClick={() => startFlow(s.id)}>Book</button>
                   </div>
-                  <span className="price">{fmtMAD(s.priceCents)}</span>
-                  <button className="btn svc-book" onClick={() => startFlow(s.id)}>Book</button>
-                </div>
-              ))}
-            </div>
-          ))}
+                ))}
+              </div>
+            );
+          })}
 
           <h2 className="section-title">Team</h2>
           <div className="pro-grid">
@@ -92,46 +229,133 @@ export default function VenuePage() {
             ))}
           </div>
 
-          <h2 className="section-title">About</h2>
-          <div className="card pad about-grid">
-            <div>
-              <p className="mutetext" style={{ marginTop: 0 }}>
-                {v.settings.businessTagline}. Walk-ins welcome when the calendar allows — booking
-                ahead guarantees your slot. Find us in the heart of Gauthier.
-              </p>
-              <div className="fainttext">{v.settings.businessAddress}<br />{v.settings.businessPhone}</div>
-            </div>
-            <table className="hours-table">
-              <tbody>
-                {v.hours.map((h) => (
-                  <tr key={h.weekday} className={h.weekday === now.getDay() ? 'today' : ''}>
-                    <td>{WEEKDAYS_FULL[h.weekday]}</td>
-                    <td className="num">
-                      {h.open != null ? `${fmtTime(h.open, true)} – ${fmtTime(h.close!, true)}` : 'Closed'}
-                    </td>
-                  </tr>
+          <h2 className="section-title">Reviews</h2>
+          {v.reviews.length === 0 ? (
+            <div className="empty">No reviews yet — be the first after your visit.</div>
+          ) : (
+            <>
+              <div className="reviews-summary">
+                <div className="reviews-score">{v.rating.toFixed(1)}</div>
+                <div>
+                  <StarRow rating={v.rating} size={16} />
+                  <div className="fainttext">
+                    Based on {v.reviews.length} verified visit{v.reviews.length === 1 ? '' : 's'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="reviews-grid">
+                {reviews.map((r) => (
+                  <div key={r.id} className="review-card card">
+                    <div className="who">
+                      <span className="avatar sm">{initials(r.clientName)}</span>
+                      <div className="grow">
+                        <b>{r.clientName}</b>
+                        {r.createdAt && (
+                          <div className="fainttext">{fmtDateShort(r.createdAt)}</div>
+                        )}
+                      </div>
+                      <StarRow rating={r.rating} size={12} />
+                    </div>
+                    <div className="mutetext">{r.comment}</div>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+
+              {v.reviews.length > 6 && !showAllReviews && (
+                <button className="btn" style={{ marginTop: 14 }}
+                  onClick={() => setShowAllReviews(true)}>
+                  See all {v.reviews.length} reviews
+                </button>
+              )}
+            </>
+          )}
+
+          <h2 className="section-title">About</h2>
+          <p className="mutetext" style={{ marginTop: 0 }}>
+            {v.settings.businessTagline}. Walk-ins welcome when the calendar allows — booking
+            ahead guarantees your slot.
+          </p>
+
+          {pinned ? (
+            <VenueMap
+              markers={[
+                { id: v.id, lat: v.lat as number, lng: v.lng as number, label: name },
+              ]}
+              zoom={16}
+              height={300}
+              ariaLabel={`Map showing ${name}`}
+            />
+          ) : (
+            // A venue is listable before anyone has geocoded it, so the address
+            // card is a real state rather than an error.
+            <div className="card pad venue-map-fallback">
+              <Icon name="pin" size={18} />
+              <div className="grow">{fullAddress || 'Location on request'}</div>
+            </div>
+          )}
+
+          <div className="venue-loc">
+            {/* Seeded addresses often already end in the city; don't repeat it. */}
+            <div className="fainttext">{fullAddress}</div>
+            <a className="linky" href={directionsUrl} target="_blank" rel="noreferrer">
+              Get directions
+            </a>
           </div>
 
-          <h2 className="section-title">Reviews</h2>
-          {v.reviews.map((r) => (
-            <div key={r.id} className="card review-card">
-              <div className="who"><span>{r.clientName}</span><StarRow rating={r.rating} size={12} /></div>
-              <div className="mutetext">{r.comment}</div>
+          <div className="info-grid">
+            <div>
+              <h3 className="section-title">Opening times</h3>
+              <table className="hours-table">
+                <tbody>
+                  {v.hours.map((h) => (
+                    <tr key={h.weekday} className={h.weekday === now.getDay() ? 'today' : ''}>
+                      <td>
+                        <span className={`hour-dot ${h.open != null ? 'on' : ''}`} aria-hidden="true" />
+                        {WEEKDAYS_FULL[h.weekday]}
+                      </td>
+                      <td className="num">
+                        {h.open != null ? `${fmtTime(h.open, true)} – ${fmtTime(h.close!, true)}` : 'Closed'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          ))}
+
+            <div>
+              <h3 className="section-title">Additional information</h3>
+              <ul className="amenities">
+                {(v.amenities ?? []).map((a) => (
+                  <li key={a}><Icon name="check" size={15} /> {a}</li>
+                ))}
+                {v.settings.businessPhone && (
+                  <li>
+                    <Icon name="user" size={15} />
+                    <a className="linky" href={`tel:${v.settings.businessPhone.replace(/\s/g, '')}`}>
+                      {v.settings.businessPhone}
+                    </a>
+                  </li>
+                )}
+              </ul>
+            </div>
+          </div>
         </div>
 
         <div>
           <div className="card summary-card">
-            <b style={{ fontSize: 16 }}>{v.settings.businessName}</b>
-            <div className="fainttext" style={{ marginBottom: 4 }}>
-              <span className="stars"><Icon name="star" size={12} /></span> {v.rating} ({v.reviews.length})
-            </div>
-            <div className="fainttext">{openLabel}</div>
+            <b style={{ fontSize: 16 }}>{name}</b>
+            {v.reviews.length > 0 && (
+              <div className="fainttext" style={{ marginBottom: 4 }}>
+                <span className="stars"><Icon name="star" size={12} /></span> {v.rating.toFixed(1)}{' '}
+                ({v.reviews.length})
+              </div>
+            )}
+            <div className={`fainttext ${status.open ? 'open-now' : 'closed-now'}`}>{status.label}</div>
             <button className="btn btn-accent cta" onClick={() => startFlow(null)}>Book now</button>
+            <a className="linky block" href={directionsUrl} target="_blank" rel="noreferrer">
+              <Icon name="pin" size={14} /> Get directions
+            </a>
           </div>
         </div>
       </div>

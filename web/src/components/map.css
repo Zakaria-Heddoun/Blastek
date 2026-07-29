@@ -1,0 +1,98 @@
+/* Leaflet container + the CSS-drawn markers used instead of Leaflet's default
+   image pins. Kept next to the component rather than in the global sheet: both
+   design systems (market and admin) embed the same map. */
+
+.venue-map {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid var(--line, rgba(0, 0, 0, 0.12));
+  background: #e8e6e1;
+}
+
+.venue-map-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+/* Leaflet writes its own stacking contexts; keep it under the app's overlays so
+   a modal or dropdown is never painted beneath the map. */
+.venue-map .leaflet-pane,
+.venue-map .leaflet-top,
+.venue-map .leaflet-bottom {
+  z-index: 1;
+}
+
+.venue-map .leaflet-container {
+  font: inherit;
+  background: #e8e6e1;
+}
+
+.mapdot-wrap {
+  display: grid;
+  place-items: center;
+}
+
+.mapdot {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent, #d8b88a);
+  border: 2px solid #14110f;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9);
+  transition: transform 0.14s ease;
+}
+
+.mapdot-wrap.is-active .mapdot {
+  transform: scale(1.5);
+  background: #14110f;
+  border-color: var(--accent, #d8b88a);
+}
+
+/* Focus must be visible on a marker reached by keyboard — Leaflet makes them
+   real anchors, so this is reachable and needs a ring. */
+.venue-map .leaflet-marker-icon:focus-visible .mapdot {
+  outline: 2px solid #14110f;
+  outline-offset: 3px;
+}
+
+.venue-map-hint {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  z-index: 2;
+  margin: 0;
+  padding: 7px 10px;
+  border-radius: 9px;
+  background: rgba(20, 17, 15, 0.82);
+  color: #fff;
+  font-size: 12px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.venue-map-fallback {
+  display: grid;
+  gap: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mapdot {
+    transition: none;
+  }
+}
+
+/* Placeholder shown while the Leaflet chunk is in flight. Holds the map's
+   height so nothing below it jumps when the module lands. */
+.venue-map-loading {
+  background: repeating-linear-gradient(
+    45deg,
+    #e8e6e1,
+    #e8e6e1 10px,
+    #e2e0da 10px,
+    #e2e0da 20px
+  );
+}

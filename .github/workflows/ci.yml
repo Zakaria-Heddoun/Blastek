@@ -50,6 +50,9 @@ jobs:
           path: |
             api/deps
             api/_build
+            # vix downloads a precompiled libvips NIF here. Without it cached,
+            # every run re-fetches ~10 MB before it can compile.
+            ~/.cache/elixir_make
           key: ${{ runner.os }}-mix-${{ hashFiles('api/mix.lock') }}
           restore-keys: ${{ runner.os }}-mix-
 

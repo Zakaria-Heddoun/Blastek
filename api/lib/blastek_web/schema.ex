@@ -16,6 +16,8 @@ defmodule BlastekWeb.Schema do
   import_types(Absinthe.Type.Custom)
 
   alias Blastek.Accounts
+  alias Blastek.Discovery
+  alias Blastek.Media
   alias Blastek.Salon
   alias Blastek.Venues
   alias BlastekWeb.Schema.{RateLimitAuth, RequireAdmin, RequireAuth, RequireMember}
@@ -149,6 +151,10 @@ defmodule BlastekWeb.Schema do
     field :client_name, :string
     field :rating, :integer
     field :comment, :string
+
+    field :created_at, :naive_datetime do
+      resolve(fn parent, _, _ -> {:ok, parent.inserted_at} end)
+    end
   end
 
   @desc "One page of clients. `totalCount` is the size of the whole filtered set."
@@ -161,6 +167,69 @@ defmodule BlastekWeb.Schema do
   object :sale_page do
     field :items, non_null(list_of(non_null(:sale)))
     field :total_count, non_null(:integer)
+  end
+
+  @desc "One page of search results. `totalCount` is the whole filtered set."
+  object :venue_page do
+    field :items, non_null(list_of(non_null(:venue_summary)))
+    field :total_count, non_null(:integer)
+  end
+
+  @desc """
+  A venue photo's URLs, one per rendered size.
+
+  Only `original` is guaranteed: the others appear once the variant worker has
+  run, so a just-uploaded photo may briefly have none of them.
+  """
+  object :photo_urls do
+    field :original, :string
+    field :thumb, :string
+    field :card, :string
+    field :hero, :string
+  end
+
+  object :photo do
+    field :id, :id
+    field :alt, :string
+    field :kind, :string
+    field :sort, :integer
+    field :status, :string
+    field :width, :integer
+    field :height, :integer
+
+    field :urls, :photo_urls do
+      resolve(fn photo, _, _ -> {:ok, Media.urls(photo)} end)
+    end
+  end
+
+  @desc "A presigned upload: PUT the bytes to `url`, replaying every header."
+  object :upload_ticket do
+    field :photo, non_null(:photo)
+    field :url, non_null(:string)
+    field :headers, non_null(list_of(non_null(:http_header)))
+  end
+
+  object :http_header do
+    field :name, non_null(:string)
+    field :value, non_null(:string)
+  end
+
+  @desc "A city with listable venues, for the search filter."
+  object :city_facet do
+    field :city, :string
+    field :venue_count, :integer
+  end
+
+  @desc "A treatment category offered somewhere on the marketplace."
+  object :category_facet do
+    field :name, :string
+    field :service_count, :integer
+  end
+
+  @desc "A map coordinate."
+  input_object :geo_point do
+    field :lat, non_null(:float)
+    field :lng, non_null(:float)
   end
 
   object :venue_hour do
@@ -185,6 +254,48 @@ defmodule BlastekWeb.Schema do
     field :tagline, :string
     field :address, :string
     field :phone, :string
+
+    # Batched: a results page would otherwise issue three queries per card.
+    @desc "Mean review score, 0.0 when the venue has no reviews yet."
+    field :rating, :float do
+      resolve(&venue_card(&1, &2, &3, :rating))
+    end
+
+    field :review_count, :integer do
+      resolve(&venue_card(&1, &2, &3, :review_count))
+    end
+
+    @desc "Cheapest active service, for \"from X MAD\" on a listing card."
+    field :price_from_cents, :integer do
+      resolve(&venue_card(&1, &2, &3, :price_from_cents))
+    end
+
+    @desc "Coordinates for the results map; null until the venue has a pin."
+    field :lat, :float
+    field :lng, :float
+
+    @desc "Whether the venue serves women only — a marketplace search filter."
+    field :women_only, :boolean do
+      resolve(fn venue, _, _ -> {:ok, women_only?(venue)} end)
+    end
+
+    @desc """
+    Kilometres from the point given as `near`.
+
+    Null on any search that did not supply one — it is a property of the query,
+    not of the venue.
+    """
+    field :distance_km, :float
+
+    @desc "Card-sized URL of the venue's cover photo, or null when it has none."
+    field :cover_url, :string do
+      resolve(&venue_cover/3)
+    end
+
+    @desc "The venue's photos, cover first."
+    field :photos, list_of(:photo) do
+      resolve(&venue_photos/3)
+    end
   end
 
   @desc "Public marketplace view of one venue."
@@ -194,6 +305,22 @@ defmodule BlastekWeb.Schema do
     field :city, :string
     field :status, :string
     field :settings, :settings
+
+    @desc "Coordinates for the map; null until the venue has been geocoded."
+    field :lat, :float
+    field :lng, :float
+
+    @desc """
+    Facts a shopper checks before booking (parking, card accepted, wheelchair
+    access…). Venue-declared, so the list is open rather than an enum.
+    """
+    field :amenities, list_of(:string)
+
+    @desc "Whether the venue serves women only."
+    field :women_only, :boolean
+
+    @desc "Gallery photos, cover first."
+    field :photos, list_of(:photo)
     field :categories, list_of(:category)
     field :services, list_of(:service)
     field :staff, list_of(:staff)
@@ -336,9 +463,84 @@ defmodule BlastekWeb.Schema do
       end)
     end
 
-    @desc "Active venues on the marketplace."
+    @desc """
+    Active venues on the marketplace, optionally filtered by a search term.
+
+    The unpaginated convenience form, for the homepage's featured strip. Use
+    `searchVenues` for anything a shopper drives.
+    """
     field :venues, list_of(:venue_summary) do
-      resolve(fn _, _ -> {:ok, Venues.list_venues(status: "active")} end)
+      @desc "Free text matched against venue identity and the treatments offered."
+      arg(:q, :string)
+      arg(:limit, :integer, default_value: 24)
+
+      resolve(fn args, _ ->
+        page = Discovery.search(q: args[:q], limit: args[:limit])
+        {:ok, page.items}
+      end)
+    end
+
+    @desc """
+    Marketplace search: full text, filters, sorting and paging.
+
+    `q` matches a venue's name, city, address and the treatments it offers, with
+    words ANDed — "fade rabat" finds the Rabat barber who does fades.
+    """
+    field :search_venues, non_null(:venue_page) do
+      arg(:q, :string)
+      arg(:city, :string)
+      arg(:category, :string)
+
+      @desc "Restrict to venues that serve women only. False and null both mean \"no preference\"."
+      arg(:women_only, :boolean)
+
+      @desc "Where the shopper is, enabling `distanceKm` and `sort: \"distance\"`."
+      arg(:near, :geo_point)
+
+      @desc "Only venues within this many kilometres of `near`."
+      arg(:within_km, :float)
+
+      @desc "One of: relevance (default), distance, rating, price, name."
+      arg(:sort, :string)
+
+      arg(:limit, :integer, default_value: 24)
+      arg(:offset, :integer, default_value: 0)
+
+      resolve(fn args, _ ->
+        {:ok,
+         Discovery.search(
+           q: args[:q],
+           city: args[:city],
+           category: args[:category],
+           women_only: args[:women_only],
+           near: near_point(args[:near]),
+           within_km: args[:within_km],
+           sort: args[:sort],
+           limit: args[:limit],
+           offset: args[:offset]
+         )}
+      end)
+    end
+
+    @desc "Cities that currently have listable venues, for the search filter."
+    field :venue_cities, list_of(:city_facet) do
+      resolve(fn _, _ -> {:ok, Discovery.cities()} end)
+    end
+
+    @desc "Treatment categories offered somewhere on the marketplace."
+    field :venue_categories, list_of(:category_facet) do
+      resolve(fn _, _ -> {:ok, Discovery.categories()} end)
+    end
+
+    @desc """
+    Every photo of the active venue, including ones still processing.
+
+    The dashboard needs the `pending` and `failed` rows the public gallery hides,
+    or an upload that went wrong would simply vanish with no way to retry it.
+    """
+    field :venue_photos, list_of(:photo) do
+      middleware(RequireMember, "manager")
+      resolve(fn _, %{context: ctx} -> {:ok, Media.list_all_photos(ctx.venue_id)} end)
     end
 
     ## --- dashboard (venue-scoped) ---
@@ -652,6 +854,124 @@ defmodule BlastekWeb.Schema do
       end)
     end
 
+    @desc """
+    Sets whether the venue serves women only — a marketplace search filter.
+
+    Its own mutation rather than a field on `updateVenue`: it lives in the
+    settings JSONB, and E5 is what gives that a typed, validated write path.
+    """
+    field :set_venue_women_only, :venue_summary do
+      arg(:value, non_null(:boolean))
+      middleware(RequireMember, "manager")
+
+      resolve(fn %{value: value}, %{context: ctx} ->
+        Venues.set_women_only(ctx.current_venue, value) |> format_errors()
+      end)
+    end
+
+    @desc """
+    Places the venue's map pin by hand.
+
+    Always wins over `geocodeVenue`: the owner knows which door customers use.
+    """
+    field :set_venue_location, :venue_summary do
+      arg(:lat, non_null(:float))
+      arg(:lng, non_null(:float))
+      middleware(RequireMember, "manager")
+
+      resolve(fn %{lat: lat, lng: lng}, %{context: ctx} ->
+        Venues.set_location(ctx.current_venue, lat, lng) |> format_errors()
+      end)
+    end
+
+    @desc """
+    Guesses the venue's coordinates from its address.
+
+    Refuses when a pin already exists unless `force` is set, so it cannot
+    silently overwrite a hand-placed marker.
+    """
+    field :geocode_venue, :venue_summary do
+      arg(:force, :boolean, default_value: false)
+      middleware(RequireMember, "manager")
+
+      resolve(fn %{force: force}, %{context: ctx} ->
+        Venues.geocode_venue(ctx.current_venue, force: force) |> format_errors()
+      end)
+    end
+
+    @desc """
+    Step 1 of a photo upload: reserves a key and returns a presigned PUT.
+
+    The browser then PUTs the bytes to `url` and calls `finalizePhotoUpload`.
+    """
+    field :request_photo_upload, :upload_ticket do
+      arg(:content_type, non_null(:string))
+      arg(:byte_size, :integer)
+      arg(:kind, :string, default_value: "gallery")
+      middleware(RequireMember, "manager")
+
+      resolve(fn args, %{context: ctx} ->
+        case Media.request_upload(ctx.venue_id, args) do
+          {:ok, ticket} ->
+            # `Media` calls it `attachment`; the API calls it `photo`. Naming the
+            # mapping here keeps the context's vocabulary out of the schema.
+            {:ok,
+             %{
+               photo: ticket.attachment,
+               url: ticket.url,
+               headers: header_list(ticket.headers)
+             }}
+
+          other ->
+            format_errors(other)
+        end
+      end)
+    end
+
+    @desc """
+    Step 2 of a photo upload: validates the stored bytes and builds the variants.
+
+    Where a file that is not really an image is caught — a presigned PUT accepts
+    whatever the client sent, so this is the first point anything is trusted.
+    """
+    field :finalize_photo_upload, :photo do
+      arg(:id, non_null(:id))
+      middleware(RequireMember, "manager")
+
+      resolve(fn %{id: id}, %{context: ctx} ->
+        Media.finalize_upload(ctx.venue_id, to_int(id)) |> format_errors()
+      end)
+    end
+
+    field :delete_photo, :photo do
+      arg(:id, non_null(:id))
+      middleware(RequireMember, "manager")
+
+      resolve(fn %{id: id}, %{context: ctx} ->
+        Media.delete_photo(ctx.venue_id, to_int(id)) |> format_errors()
+      end)
+    end
+
+    @desc "Promotes one photo to the venue's cover, demoting the previous one."
+    field :set_cover_photo, :photo do
+      arg(:id, non_null(:id))
+      middleware(RequireMember, "manager")
+
+      resolve(fn %{id: id}, %{context: ctx} ->
+        Media.set_cover(ctx.venue_id, to_int(id)) |> format_errors()
+      end)
+    end
+
+    @desc "Applies a gallery display order."
+    field :reorder_photos, list_of(:photo) do
+      arg(:ids, non_null(list_of(non_null(:id))))
+      middleware(RequireMember, "manager")
+
+      resolve(fn %{ids: photo_ids}, %{context: ctx} ->
+        Media.reorder_photos(ctx.venue_id, ids(photo_ids)) |> format_errors()
+      end)
+    end
+
     field :checkout, :sale do
       arg(:appointment_ids, non_null(list_of(non_null(:id))))
       arg(:tip_cents, :integer)
@@ -882,6 +1202,49 @@ defmodule BlastekWeb.Schema do
 
   @doc false
   def batch_client_stats(venue_id, client_ids), do: Salon.client_stats_for(venue_id, client_ids)
+
+  defp venue_card(venue, _args, _res, key) do
+    batch({__MODULE__, :batch_venue_cards, nil}, venue.id, fn results ->
+      {:ok, get_in(results, [venue.id, key])}
+    end)
+  end
+
+  @doc false
+  def batch_venue_cards(_, venue_ids), do: Salon.venue_cards_for(venue_ids)
+
+  # Photos are batched for the same reason as the card stats: a results page
+  # renders one card per venue, and a per-card query is a query per result.
+  defp venue_cover(venue, _args, _res) do
+    batch({__MODULE__, :batch_venue_photos, nil}, venue.id, fn results ->
+      {:ok, results |> Map.get(venue.id, []) |> Media.cover_url()}
+    end)
+  end
+
+  defp venue_photos(venue, _args, _res) do
+    batch({__MODULE__, :batch_venue_photos, nil}, venue.id, fn results ->
+      {:ok, Map.get(results, venue.id, [])}
+    end)
+  end
+
+  @doc false
+  def batch_venue_photos(_, venue_ids), do: Media.photos_for(venue_ids)
+
+  # Absinthe input objects arrive as maps; `Discovery` takes a plain tuple so it
+  # has no opinion about where the coordinates came from.
+  defp near_point(%{lat: lat, lng: lng}), do: {lat, lng}
+  defp near_point(_), do: nil
+
+  # Read out of the settings JSONB, where a flag may have been written as a
+  # boolean or as a string depending on which client wrote it.
+  defp women_only?(%{settings: settings}) when is_map(settings) do
+    Map.get(settings, "women_only") in [true, "true"]
+  end
+
+  defp women_only?(_), do: false
+
+  defp header_list(headers) do
+    Enum.map(headers, fn {name, value} -> %{name: name, value: value} end)
+  end
 
   defp ids(list), do: Enum.map(list, &to_int/1)
 

@@ -188,17 +188,102 @@ throwing one away. The PRD already records this dependency (F0.14 → F0.10).
 | E7-T8 | Hardcoded-string CI lint gate | XS | infra |
 
 ### E8 · Discovery — F0.6
-| ID | Task | Est | Labels |
-|---|---|---|---|
-| E8-T1 | Storage: MinIO in compose, `Blastek.Storage` behaviour, presigned uploads, `attachments` | M | api,infra |
-| E8-T2 | Image variant worker (thumb/card/hero) | S | api |
-| E8-T3 | Search: tsvector + FTS query, city/category/women-only filters, pagination | M | api |
-| E8-T4 | Geo: lat/lng, onboarding geocode (Nominatim + manual pin), distance sort | M | api |
-| E8-T5 | `searchVenues` GraphQL + `priceFrom` per venue | S | api |
-| E8-T6 | Web: Home search + results grid + filters + map toggle (Leaflet) | L | web |
-| E8-T7 | Web: VenuePage gallery + map + photo upload in Settings | M | web |
-| E8-T8 | SEO spike: SSR vs prerender for `/v/:slug`; implement chosen approach | M | spike,web |
-| E8-T9 | Search perf test @1k venues (p95 < 300ms) | S | test |
+
+**Status: ✅ COMPLETE and verified** (162 tests). Built out of phase order,
+before E3–E7, at the product owner's direction.
+
+| ID | Task | Est | Labels | Status |
+|---|---|---|---|---|
+| E8-T1 | Storage: MinIO in compose, `Blastek.Storage` behaviour, presigned uploads, `attachments` | M | api,infra | ✅ |
+| E8-T2 | Image variant worker (thumb/card/hero) | S | api | ✅ |
+| E8-T3 | Search: tsvector + FTS query, city/category/women-only filters, pagination | M | api | ✅ |
+| E8-T4 | Geo: lat/lng, onboarding geocode (Nominatim + manual pin), distance sort | M | api | ✅ |
+| E8-T5 | `searchVenues` GraphQL + `priceFrom` per venue | S | api | ✅ |
+| E8-T6 | Web: Home search + results grid + filters + map toggle (Leaflet) | L | web | ✅ |
+| E8-T7 | Web: VenuePage gallery + map + photo upload in Settings | M | web | ✅ |
+| E8-T8 | SEO spike: SSR vs prerender for `/v/:slug`; implement chosen approach | M | spike,web | ✅ [ADR](adr/0001-venue-page-seo.md) |
+| E8-T9 | Search perf test @1k venues (p95 < 300ms) | S | test | ✅ 23 ms |
+
+**Verification performed**
+
+```
+docker compose exec api sh -c "MIX_ENV=test mix test"   # 162 tests, 0 failures
+docker compose exec api mix compile --warnings-as-errors && mix format --check-formatted
+docker compose exec api sh -c "MIX_ENV=test mix ecto.rollback --all && mix ecto.migrate"
+docker compose run --rm api mix ecto.reset               # migrations + seed + reindex
+cd web && npx tsc --noEmit && npm run build              # + prerender, + money guard
+```
+
+Driven in a real browser (Playwright over system Edge) against the running
+stack: search filters narrow and survive a reload, the map toggle loads its
+chunk and pins both venues, the venue page renders a street-level map, and a
+photo uploaded through the dashboard reaches object storage and appears as the
+cover on the public search card.
+
+**Notes from implementation**
+
+* **Search is a denormalized document per venue**, not a per-table match. A
+  shopper types "fade rabat" in one box and expects the Rabat barber who does
+  fades — no single row holds both facts, so each venue gets one `tsvector`
+  combining its identity with its treatments. `ts_rank` weights name (A) above
+  treatments (B) above city/address (C), or a venue that merely *mentions* a
+  treatment outranks the salon named after it.
+* Config is `simple` + `unaccent`, not `french`. The catalog mixes French,
+  Arabic and English ("balayage", "hammam", "fade") and a French stemmer mangles
+  two of the three. Unaccenting is what actually matters here — "Éclat" has to be
+  findable by typing "eclat".
+* The document can go stale, so every write funnels through
+  `Discovery.reindex_venue/1` and `reindex_all/0` exists as the repair. The seed
+  needs it: the catalog is bulk-inserted for speed, which bypasses the hook.
+* **Presigned uploads mean nothing may be trusted until it is fetched back.** A
+  presigned PUT accepts whatever the client sends, so `finalize_upload/2` makes
+  libvips decode the bytes — a PDF renamed `.jpg` is caught there, not by its
+  content-type header.
+* Variants never upscale (a 320 px upload stays 320 px) and re-encoding strips
+  EXIF — phone photos carry GPS, and these URLs are public, so a home-based
+  salon would otherwise publish its owner's coordinates.
+* **Two adapters, both real.** CI has no object store, so the filesystem adapter
+  is what keeps the upload path under test; MinIO is what dev and production
+  run. Verified both: the S3 path was round-tripped against live MinIO.
+* Geocoding is advisory and **never overwrites a hand-placed pin**. Replacing an
+  owner's marker with a street-centroid guess is a regression they cannot see
+  until a customer arrives at the wrong door.
+* Haversine in SQL, no PostGIS. The `asin` form is used over the textbook `acos`
+  one because `acos` loses precision at short distances — the only range that
+  matters when sorting salons within one city.
+* Leaflet is **lazy-loaded**: ~150 kB that most visits never need (the results
+  page defaults to list, an unpinned venue shows an address card). Main bundle
+  567 kB → 412 kB.
+* SEO is prerendered, not SSR — see the ADR. The deciding argument was that
+  SSR's cost is structural and permanent (a second runtime beside Elixir,
+  dual-environment components) while prerendering's cost is a staleness window
+  we control. In Morocco a venue link is shared on WhatsApp far more than it is
+  found on Google, and unfurlers read `<head>` and stop.
+
+**Defects found and fixed during verification** (each would have shipped):
+
+| Defect | Fix |
+|---|---|
+| `requestPhotoUpload` returned the context's `attachment` key while the schema declared a non-null `photo` → every upload failed at serialization, leaving an orphaned `pending` row. **Context-level tests all passed**; the browser was the first thing to notice | Map the key in the resolver, and add `photo_api_test.exs` covering the mutations *through GraphQL* so schema/resolver drift is caught |
+| Presigned URLs were signed for `minio:9000`, the in-cluster address — a browser cannot resolve it, and SigV4 signs the `Host` header so re-pointing the URL would break the signature | Sign browser-facing URLs against the public base URL; server-side operations keep the internal one |
+| `Venues.list_venues/1` was rewired through `Discovery.search/1`, which hardcodes `status: "active"` — this silently broke the platform admin queue, whose whole job is to show pending and suspended venues | Keep `list_venues/1` as the administrative listing; marketplace reads go through `Discovery` |
+| `reindex_all/0` ran under Ecto's 15 s default timeout — a full rebuild over a large directory is an operator action, and it began timing out on a loaded machine | Long explicit timeout for the full rebuild; `reindex_venue/1` keeps the default because it *is* on a request path |
+| The Settings page showed "No pin yet" while the venue was still loading, telling an owner with a pin that they had none | Distinguish loading from genuinely unpinned |
+| Prerendered pages emitted `<title>`/`<meta description>` twice (shell + injected); which one wins is undefined and some unfurlers take the first | Strip the shell's generic tags before injecting |
+
+**Dependency advisories** (surfaced by `mix deps.get` / `npm audit`, tracked as CH-1):
+
+* Fixed in passing: **bandit** 1.12.0 → 1.12.4 (HIGH — quadratic CPU blow-up on
+  fragmented WebSocket messages, which E2's subscriptions had just made
+  reachable) and **postgrex** 0.22.2 → 0.22.3 (LOW). **hackney** was dropped
+  entirely rather than patched — ExAws needs it only for transport, and
+  presigning is pure computation, so `Blastek.HTTP` over OTP's `:httpc` carries
+  the few requests instead.
+* **Still open, deliberately not bundled into this epic:** `phoenix` 1.7.23
+  (HIGH, EEF-CVE-2026-56811) needs a 1.7 → 1.8 major bump, and
+  `react-router` 6.x (2 × MODERATE) needs 7.x. Both are framework majors whose
+  blast radius is the whole app; they deserve their own change with their own
+  verification, not a line in a feature commit.
 
 ### E9 · Scheduling depth — F0.7 blocks, F0.9 reschedule
 | ID | Task | Est | Labels |
