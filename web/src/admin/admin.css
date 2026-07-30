@@ -228,7 +228,7 @@
   padding: 2px 7px;
   border-radius: 999px;
   background: var(--accent);
-  color: #14110f;
+  color: var(--accent-ink);
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
@@ -340,3 +340,151 @@
 .adm .invite-done button { justify-self: end; }
 
 .adm .modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
+
+/* ---------- settings: identity, hours, closures (E5-T5) ---------- */
+
+.adm .identity-form { display: grid; gap: 14px; max-width: 460px; }
+.adm .identity-form label { display: grid; gap: 5px; font-size: 13px; color: var(--fg-2); }
+.adm .identity-form input,
+.adm .identity-form select {
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+}
+.adm .identity-form button { justify-self: start; }
+
+/* The seven days the venue actually keeps — a read-only strip above the
+   editing controls, so the panel says something even before a template exists. */
+.adm .week-now {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.adm .week-now-day {
+  display: grid;
+  gap: 2px;
+  padding: 10px 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  text-align: center;
+  font-size: 12px;
+}
+.adm .week-now-day b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.adm .week-now-day.is-closed { background: var(--muted-bg, rgba(0, 0, 0, 0.03)); }
+.adm .week-now-day.is-closed b { color: var(--muted); font-weight: 500; }
+
+@media (max-width: 720px) {
+  .adm .week-now { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.adm .tpl-rows { display: grid; gap: 10px; }
+.adm .tpl-row { display: flex; align-items: center; gap: 12px; }
+.adm .tpl-row.is-active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.adm .tpl-row b { text-transform: capitalize; }
+
+.adm .tpl-badge {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.adm .tpl-add { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+
+.adm .hours-grid {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 8px;
+}
+.adm .hours-grid h3 { margin: 0 0 6px; font-size: 14px; text-transform: capitalize; }
+.adm .hours-row { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.adm .hours-day { display: flex; align-items: center; gap: 8px; min-width: 130px; }
+.adm .hours-row select {
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+}
+.adm .hours-row select:disabled { opacity: 0.45; }
+
+.adm .closure-form { display: grid; gap: 12px; max-width: 460px; }
+.adm .closure-form label { display: grid; gap: 5px; font-size: 13px; color: var(--fg-2); }
+.adm .closure-form input,
+.adm .closure-form select {
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+}
+.adm .closure-check { display: flex; flex-direction: row; align-items: center; gap: 8px; }
+.adm .closure-check input { height: auto; }
+.adm .closure-window { display: flex; align-items: center; gap: 8px; }
+
+.adm .closure-conflicts {
+  margin: 14px 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-size: 13px;
+}
+/* An amber edge, not a red one: these bookings are a decision to make, not an
+   error that has happened. */
+.adm .closure-conflicts.has-conflicts { border-left: 3px solid #d18b2c; }
+.adm .closure-conflicts ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 4px; }
+
+.adm .closure-rows { display: grid; gap: 10px; margin-top: 14px; }
+.adm .closure-row { display: flex; align-items: center; gap: 12px; }
+
+/* ---------- calendar: closure shading (E5-T6) ---------- */
+
+.adm .closure-band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  pointer-events: none;
+  /* Diagonal hatching rather than a flat fill: it reads as "not available"
+     without hiding the hour lines underneath. */
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(209, 139, 44, 0.13),
+    rgba(209, 139, 44, 0.13) 8px,
+    rgba(209, 139, 44, 0.22) 8px,
+    rgba(209, 139, 44, 0.22) 16px
+  );
+  border-top: 1px solid rgba(209, 139, 44, 0.5);
+  border-bottom: 1px solid rgba(209, 139, 44, 0.5);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow: hidden;
+}
+.adm .closure-band span {
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(20, 17, 15, 0.75);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}

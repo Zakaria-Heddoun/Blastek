@@ -142,6 +142,14 @@
   .auth-grid { grid-template-columns: 1fr; }
   .auth-media { display: none; }
   .auth-form-col { padding-top: clamp(96px, 22vw, 140px); }
+
+  /* The wizard is six screens of typing on a phone, not a two-field login.
+     Centring a short step in the viewport pushed the first input most of the
+     way down the screen, so it starts near the top instead. */
+  .wiz-shell .auth-form-col {
+    align-items: flex-start;
+    padding-top: clamp(56px, 12vw, 80px);
+  }
 }
 
 /* field-level validation messages (structured GraphQL errors) */
@@ -228,3 +236,64 @@
   justify-content: center;
   text-decoration: none;
 }
+
+/* ---------- onboarding wizard (E5-T9) ---------- */
+
+.wiz-form { max-width: 520px; }
+
+.wiz-progress { display: flex; gap: 6px; margin-bottom: 22px; }
+.wiz-progress span {
+  height: 4px;
+  flex: 1;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.12);
+}
+.wiz-progress span.done { background: #1e1e1e; }
+
+.wiz-done {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 20px;
+  border-radius: 999px;
+  background: #eef7f0;
+  color: #1d7a44;
+}
+
+.wiz-choices { display: grid; gap: 10px; margin: 18px 0; }
+.wiz-choice {
+  display: grid;
+  gap: 3px;
+  padding: 14px 16px;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 12px;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.wiz-choice.active { border-color: #1e1e1e; background: #f5f7fa; }
+.wiz-choice:disabled { opacity: 0.6; cursor: default; }
+
+.wiz-services {
+  display: grid;
+  gap: 8px;
+  margin: 18px 0;
+  /* Long menus scroll inside the step rather than pushing the button off a
+     phone screen. */
+  max-height: 46vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.wiz-services label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.wiz-services label.active { border-color: #1e1e1e; background: #f5f7fa; }
+.wiz-services label span { display: grid; gap: 2px; font-size: 13px; }

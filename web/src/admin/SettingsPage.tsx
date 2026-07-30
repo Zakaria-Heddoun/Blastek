@@ -1,19 +1,31 @@
-// Venue presence settings: photos, map pin, and the women-only listing flag
-// (E8-T7). Scoped to what discovery needs — the full settings page (identity,
-// opening hours, closures, templates) is E5-T5.
+// Everything an owner controls about how their venue works and appears
+// (E5-T5 / F0.4, extending the photos-and-pin page E8 left behind).
+//
+// Ordered the way an owner thinks about it: who we are, what we look like,
+// where we are, when we are open, and how booking behaves.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { gql } from '../lib/gql';
-import { F } from '../lib/fragments';
 import type { Photo, UploadTicket, VenueSummary } from '../lib/types';
 import { Icon } from '../lib/icons';
 import { useToast } from '../components/ui';
 import VenueMap from '../components/VenueMap';
+import ScheduleSettings from './ScheduleSettings';
 import { useAppData } from './AdminLayout';
 import './admin.css';
 
 const LOAD = `{
   venuePhotos { id alt kind sort status width height urls { original thumb card hero } }
-  currentVenue { id name city address lat lng womenOnly }
+  currentVenue {
+    id name city address phone tagline lat lng womenOnly status settingsJson
+  }
+}`;
+
+const UPDATE_VENUE = `mutation($input: VenueInput!) {
+  updateVenue(input: $input) { id name tagline address city phone }
+}`;
+
+const UPDATE_SETTINGS = `mutation($input: VenueSettingsInput!) {
+  updateVenueSettings(input: $input) { id settingsJson }
 }`;
 
 const REQUEST_UPLOAD = `mutation($contentType: String!, $byteSize: Int) {
@@ -153,6 +165,8 @@ export default function SettingsPage() {
 
       {error && <div className="empty">{error}</div>}
 
+      {venue && <IdentitySection venue={venue} onSaved={load} />}
+
       <section className="card pad set-section">
         <div className="set-section-head">
           <h2>Photos</h2>
@@ -286,6 +300,8 @@ export default function SettingsPage() {
         />
       </section>
 
+      <ScheduleSettings />
+
       <section className="card pad set-section">
         <div className="set-section-head">
           <h2>Listing</h2>
@@ -309,5 +325,88 @@ export default function SettingsPage() {
         </label>
       </section>
     </div>
+  );
+}
+
+/** Name, tagline, address, and how booking behaves. */
+function IdentitySection({ venue, onSaved }: { venue: VenueSummary; onSaved: () => void }) {
+  const toast = useToast();
+  const [form, setForm] = useState({
+    name: venue.name ?? '',
+    tagline: venue.tagline ?? '',
+    address: venue.address ?? '',
+    city: venue.city ?? '',
+    phone: venue.phone ?? '',
+  });
+
+  const settings = (venue.settingsJson ?? {}) as Record<string, unknown>;
+  const [slotStep, setSlotStep] = useState(Number(settings.slot_step_min ?? 15));
+  const [horizon, setHorizon] = useState(Number(settings.booking_horizon_days ?? 90));
+  const [busy, setBusy] = useState(false);
+
+  const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((f) => ({ ...f, [key]: e.target.value }));
+
+  const save = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      // Two mutations because these are two different kinds of write: identity
+      // is columns, the rest is the typed settings blob.
+      await gql(UPDATE_VENUE, { input: form });
+      await gql(UPDATE_SETTINGS, { input: { slotStepMin: slotStep, bookingHorizonDays: horizon } });
+      toast('Settings saved');
+      onSaved();
+    } catch (e) {
+      toast((e as Error).message, true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="card pad set-section">
+      <div className="set-section-head">
+        <h2>Your salon</h2>
+        <p className="mutetext">Name and contact details as customers see them.</p>
+      </div>
+
+      <div className="identity-form">
+        <label>Name<input value={form.name} onChange={set('name')} /></label>
+        <label>
+          Tagline
+          <input
+            value={form.tagline}
+            onChange={set('tagline')}
+            placeholder="Hair, nails and spa in one studio"
+          />
+        </label>
+        <label>Address<input value={form.address} onChange={set('address')} /></label>
+        <label>City<input value={form.city} onChange={set('city')} /></label>
+        <label>Phone<input value={form.phone} onChange={set('phone')} /></label>
+
+        <label>
+          Booking slots every
+          <select value={slotStep} onChange={(e) => setSlotStep(Number(e.target.value))}>
+            {[5, 10, 15, 20, 30, 60].map((m) => (
+              <option key={m} value={m}>{m} minutes</option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Bookable up to
+          <select value={horizon} onChange={(e) => setHorizon(Number(e.target.value))}>
+            {[14, 30, 60, 90, 180, 365].map((d) => (
+              <option key={d} value={d}>{d} days ahead</option>
+            ))}
+          </select>
+        </label>
+
+        <button className="btn btn-primary" disabled={busy || !form.name.trim()} onClick={save}>
+          {busy ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </section>
   );
 }

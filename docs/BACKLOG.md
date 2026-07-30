@@ -353,24 +353,21 @@ something about the test itself rather than only about the code:
 
 ### E5 · Venue settings & onboarding — F0.4, F0.5
 
-**Status: 🚧 IN PROGRESS — domain layer complete and tested (368 tests).**
-The contexts, schema and availability changes are done and green; the GraphQL
-surface and the three web tasks are not yet built, so none of it is reachable
-from the app. See "Remaining" below.
+**Status: ✅ DONE — 399 tests green, browser-verified end to end.**
 
 | ID | Task | Est | Labels | Status |
 |---|---|---|---|---|
-| E5-T1 | `updateVenue` + typed settings JSONB validation | S | api | ✅ domain |
-| E5-T2 | Closures: table, CRUD, availability subtraction, past-midnight ranges | M | api | ✅ domain |
-| E5-T3 | Hour templates (default/ramadan) + switch + staff-hours variants | M | api | ✅ domain |
-| E5-T4 | Conflict detection: closures/template changes vs existing bookings | S | api | ✅ domain |
+| E5-T1 | `updateVenue` + typed settings JSONB validation | S | api | ✅ |
+| E5-T2 | Closures: table, CRUD, availability subtraction, past-midnight ranges | M | api | ✅ |
+| E5-T3 | Hour templates (default/ramadan) + switch + staff-hours variants | M | api | ✅ |
+| E5-T4 | Conflict detection: closures/template changes vs existing bookings | S | api | ✅ |
 | E5-T7 | Onboarding: `service_templates` seed catalogs (5 categories, i18n names) | S | api | ✅ |
-| E5-T8 | Onboarding wizard API (step state, submit, approve/reject) | M | api | ✅ domain |
-| E5-T10 | Duplicate-venue detection heuristic for admin queue | XS | api | ✅ domain |
-| — | GraphQL surface for all of the above | — | api | ⬜ next |
-| E5-T5 | Web: SettingsPage (identity, hours grid, closures, templates) | L | web | ⬜ |
-| E5-T6 | Calendar: closure/holiday shading | S | web | ⬜ |
-| E5-T9 | Web: OnboardVenue wizard `/for-business` (mobile-first, resumable) | L | web | ⬜ |
+| E5-T8 | Onboarding wizard API (step state, submit, approve/reject) | M | api | ✅ |
+| E5-T10 | Duplicate-venue detection heuristic for admin queue | XS | api | ✅ |
+| — | GraphQL surface for all of the above | — | api | ✅ |
+| E5-T5 | Web: SettingsPage (identity, hours grid, closures, templates) | L | web | ✅ |
+| E5-T6 | Calendar: closure/holiday shading | S | web | ✅ |
+| E5-T9 | Web: OnboardVenue wizard `/for-business` (mobile-first, resumable) | L | web | ✅ |
 
 **Notes from the domain layer**
 
@@ -403,9 +400,41 @@ impossible — the second row for a weekday was rejected outright. Replaced by a
 pair of partial indexes ("one row per weekday *per template*"), since Postgres
 treats NULLs as distinct and a single index cannot express both halves.
 
-**Remaining**: the GraphQL surface (closures, templates, settings, onboarding,
-approve/reject), then E5-T5, E5-T6 and E5-T9. Nothing shipped so far is
-reachable from the UI, so the app behaves exactly as it did before.
+**Notes from the API and web layers**
+
+* **`venueWeek` exists because a venue can have no template at all.** Every
+  venue from E1 keeps hours as `staff_hours` rows with no `template_id`. The
+  dashboard has to be able to show those hours — a panel headed "Opening
+  hours" that renders nothing reads as *your hours are not set*. The same
+  query backs the marketplace, so both surfaces answer the question the same
+  way. Opening the editor pre-fills from it rather than from a blank
+  09:00–18:00 week, so setting up a template cannot silently overwrite hours
+  the owner was never shown.
+* **The conflict pre-check is a separate button, not a save-time warning.**
+  `closureConflicts` runs against a *proposed* closure and returns the
+  appointments with client names and phone numbers; creating the closure is a
+  second, deliberate click. F0.4 requires the owner be shown who to telephone,
+  and a dialog that appears only after the destructive action has begun is the
+  wrong shape for that.
+* **The wizard's terminal state is derived, not navigational.** `submitted` is
+  read back from the venue's onboarding blob, so returning to `/for-business`
+  a week later still shows "Sent for review" instead of inviting a second
+  submission.
+
+**Defects found while verifying**
+
+| Where | Defect | Found by |
+|---|---|---|
+| `Salon.venue_view/1` | The public venue page aggregated `staff_hours` with **no `template_id` filter**, so it ignored the active template *and* min/max-ed Ramadan and default rows together. Switching to Ramadan hours left the marketplace advertising the winter times — customers would arrive at a locked door. | Reading the code while fixing the blank dashboard panel; now covered by a test that fails against the old aggregation |
+| `ScheduleSettings` | "Opening hours" was empty for any venue predating templates, and the editor opened on a blank 09:00–18:00 week. | Browser drive |
+| `OnboardVenue` | "Submit for review" and "Not yet" both navigated to `/dashboard/calendar`, so submitting produced no acknowledgement of any kind and the two buttons were indistinguishable in outcome. | Browser drive |
+| `auth.css` | The wizard inherited the login screen's vertical centring, pushing the first input 296px down a 930px phone viewport — on a flow whose premise is "ten minutes, from your phone". Now 88px. | Browser drive |
+| `admin.css` | `.tpl-badge` and E8's `.photo-badge` hardcoded `color: #14110f` against `var(--accent)`. That pairing is from the marketplace theme, where the accent is gold; the dashboard's accent is ink, so both badges rendered near-black on near-black. Now `var(--accent-ink)`. | Screenshot |
+
+The `venue_view` bug is the one worth remembering: the E5 domain work added a
+`template_id` dimension to `staff_hours`, and every *read* had to learn about
+it. The booking engine did. The page that tells customers when to turn up did
+not, and no domain test noticed because both layers were asked separately.
 
 <!-- Original task table retained for reference:
 | ID | Task | Est | Labels |

@@ -289,6 +289,19 @@ defmodule BlastekWeb.Schema do
       resolve(fn venue, _, _ -> {:ok, women_only?(venue)} end)
     end
 
+    @desc "Why an admin turned this venue down, if they did."
+    field :rejected_reason, :string
+
+    @desc "Progress through the setup wizard."
+    field :onboarding, :onboarding_state do
+      resolve(fn venue, _, _ -> {:ok, onboarding_state(venue)} end)
+    end
+
+    @desc "The settings blob, as JSON. Written through `updateVenueSettings`."
+    field :settings_json, :json do
+      resolve(fn venue, _, _ -> {:ok, venue.settings || %{}} end)
+    end
+
     @desc """
     Kilometres from the point given as `near`.
 
@@ -405,6 +418,97 @@ defmodule BlastekWeb.Schema do
     field :venue_name, :string
     field :venue_slug, :string
     field :expires_at, :naive_datetime
+  end
+
+  @desc "A period the venue is shut. Null times mean the whole day."
+  object :closure do
+    field :id, :id
+    field :date, :date
+
+    @desc "Last day of a span; null for a single day."
+    field :end_date, :date
+
+    field :start_min, :integer
+    field :end_min, :integer
+    field :reason, :string
+  end
+
+  @desc "One day in a weekly grid. `endMin` may exceed 1440 for a shift past midnight."
+  object :hour_day do
+    field :weekday, non_null(:integer)
+    field :working, non_null(:boolean)
+    field :start_min, non_null(:integer)
+    field :end_min, non_null(:integer)
+  end
+
+  @desc "A named weekly grid — `default`, `ramadan`, or whatever the venue calls it."
+  object :hour_template do
+    field :id, :id
+    field :name, :string
+    field :active, :boolean
+
+    field :days, list_of(:hour_day) do
+      resolve(fn template, _, _ ->
+        {:ok, template |> Venues.Schedule.week_list() |> Enum.map(&atomize_day/1)}
+      end)
+    end
+  end
+
+  input_object :hour_day_input do
+    field :weekday, non_null(:integer)
+    field :working, non_null(:boolean)
+    field :start_min, non_null(:integer)
+    field :end_min, non_null(:integer)
+  end
+
+  @desc """
+  Options that live in the settings blob.
+
+  Every field is optional: sending one must not blank the rest.
+  """
+  input_object :venue_settings_input do
+    field :women_only, :boolean
+    field :amenities, list_of(non_null(:string))
+    field :slot_step_min, :integer
+    field :booking_lead_min, :integer
+    field :booking_horizon_days, :integer
+    field :cancellation_window_hours, :integer
+    field :instant_confirmation, :boolean
+    field :locale, :string
+  end
+
+  @desc "A starter catalog offered during onboarding."
+  object :service_catalog do
+    field :catalog, :string
+    field :service_count, :integer
+  end
+
+  @desc "A starter service. `name` is resolved for the requested locale."
+  object :service_template do
+    field :id, :id
+    field :catalog, :string
+    field :category, :string
+    field :duration_min, :integer
+    field :price_hint_cents, :integer
+
+    field :name, :string do
+      arg(:locale, :string, default_value: "fr")
+
+      resolve(fn template, args, _ ->
+        {:ok, Blastek.Venues.ServiceTemplate.name(template, args.locale)}
+      end)
+    end
+  end
+
+  @desc "How far through the setup wizard a venue is."
+  object :onboarding_state do
+    field :current_step, :string
+    field :completed, list_of(:string)
+    field :submitted, non_null(:boolean)
+    field :complete, non_null(:boolean)
+
+    @desc "Saved answers, keyed by step. Shape follows the wizard, not the database."
+    field :data, :json
   end
 
   @desc "One recorded change to who can do what."
@@ -874,6 +978,103 @@ defmodule BlastekWeb.Schema do
       end)
     end
 
+    @desc "Upcoming closures for the active venue."
+    field :venue_closures, list_of(:closure) do
+      arg(:from, :date)
+      arg(:to, :date)
+      middleware(RequireMember, "staff")
+
+      resolve(fn args, %{context: ctx} ->
+        {:ok,
+         Venues.Schedule.list_closures(ctx.venue_id,
+           from: args[:from] || Date.utc_today(),
+           to: args[:to]
+         )}
+      end)
+    end
+
+    @desc "The venue's saved weekly grids, the active one first."
+    field :venue_hour_templates, list_of(:hour_template) do
+      middleware(RequireMember, "manager")
+      resolve(fn _, %{context: ctx} -> {:ok, Venues.Schedule.list_templates(ctx.venue_id)} end)
+    end
+
+    @desc """
+    The hours the venue actually keeps this week, under whichever template is
+    in use — the same seven rows the marketplace advertises.
+
+    A venue carried over from before templates existed has no saved grid at
+    all, and the dashboard still has to be able to show it its own opening
+    hours rather than an empty panel.
+    """
+    field :venue_week, list_of(:venue_hour) do
+      middleware(RequireMember, "manager")
+      resolve(fn _, %{context: ctx} -> {:ok, Salon.venue_week(ctx.venue_id)} end)
+    end
+
+    @desc """
+    Appointments a proposed closure would strand.
+
+    A dry run: nothing is created and nothing is cancelled. F0.4 is explicit
+    that bookings inside a new closure are shown to the owner to act on, never
+    silently dropped — a salon closing for a funeral still has to telephone the
+    four people booked that afternoon.
+    """
+    field :closure_conflicts, list_of(:appointment) do
+      arg(:date, non_null(:date))
+      arg(:end_date, :date)
+      arg(:start_min, :integer)
+      arg(:end_min, :integer)
+
+      middleware(RequireMember, "manager")
+
+      resolve(fn args, %{context: ctx} ->
+        {:ok,
+         Salon.appointments_in_window(
+           ctx.venue_id,
+           args.date,
+           args[:end_date],
+           args[:start_min],
+           args[:end_min]
+         )}
+      end)
+    end
+
+    @desc "Starter catalogs offered during onboarding."
+    field :service_catalogs, list_of(:service_catalog) do
+      resolve(fn _, _ -> {:ok, Venues.Onboarding.catalogs()} end)
+    end
+
+    @desc "The services in one starter catalog."
+    field :service_templates, list_of(:service_template) do
+      arg(:catalog, non_null(:string))
+      resolve(fn %{catalog: catalog}, _ -> {:ok, Venues.Onboarding.templates_for(catalog)} end)
+    end
+
+    @desc "Venues waiting for a decision, oldest first."
+    field :venue_review_queue, list_of(:venue_summary) do
+      middleware(RequireAdmin)
+      resolve(fn _, _ -> {:ok, Venues.Onboarding.review_queue()} end)
+    end
+
+    @desc """
+    Venues that look like the same business as this one.
+
+    A hint for the reviewer, not a verdict: two salons in one city really can
+    share a name, and a franchise really does reuse a phone number.
+    """
+    field :venue_duplicates, list_of(:venue_summary) do
+      arg(:id, non_null(:id))
+      middleware(RequireAdmin)
+
+      resolve(fn %{id: id}, _ ->
+        case Venues.get_venue(to_int(id)) do
+          nil -> {:error, "Unknown venue."}
+          venue -> {:ok, Venues.Onboarding.possible_duplicates(venue)}
+        end
+      end)
+    end
+
     @desc "Recent changes to who can do what here."
     field :audit_log, list_of(:audit_entry) do
       arg(:limit, :integer, default_value: 50)
@@ -1082,6 +1283,166 @@ defmodule BlastekWeb.Schema do
 
       resolve(fn %{input: input}, %{context: ctx} ->
         Venues.update_venue(ctx.current_venue, input) |> format_errors()
+      end)
+    end
+
+    @desc """
+    Updates the options in the settings blob.
+
+    Only the fields sent are touched, and each is range-checked — the column is
+    schemaless, so the discipline has to live here.
+    """
+    field :update_venue_settings, :venue_summary do
+      arg(:input, non_null(:venue_settings_input))
+      middleware(RequireMember, "manager")
+
+      resolve(fn %{input: input}, %{context: ctx} ->
+        Venues.update_settings(ctx.current_venue, input) |> format_errors()
+      end)
+    end
+
+    @desc "Closes the venue for a day, a span of days, or a window within one."
+    field :create_closure, :closure do
+      arg(:date, non_null(:date))
+      arg(:end_date, :date)
+
+      @desc "Both or neither. Omit for a whole-day closure."
+      arg(:start_min, :integer)
+      arg(:end_min, :integer)
+
+      arg(:reason, :string)
+
+      middleware(RequireMember, "manager")
+
+      resolve(fn args, %{context: ctx} ->
+        Venues.Schedule.create_closure(ctx.venue_id, Map.delete(args, :__struct__))
+        |> format_errors()
+      end)
+    end
+
+    field :delete_closure, :closure do
+      arg(:id, non_null(:id))
+      middleware(RequireMember, "manager")
+
+      resolve(fn %{id: id}, %{context: ctx} ->
+        Venues.Schedule.delete_closure(ctx.venue_id, to_int(id)) |> format_errors()
+      end)
+    end
+
+    @desc """
+    Saves a weekly grid under a name, creating or replacing it.
+
+    Days may be sent partially; the rest of the week keeps its current shape
+    rather than closing.
+    """
+    field :save_hour_template, :hour_template do
+      arg(:name, non_null(:string))
+      arg(:days, non_null(list_of(non_null(:hour_day_input))))
+
+      middleware(RequireMember, "manager")
+
+      resolve(fn %{name: name, days: days}, %{context: ctx} ->
+        Venues.Schedule.upsert_template(ctx.venue_id, name, days) |> format_errors()
+      end)
+    end
+
+    @desc "Switches the venue to a saved grid — the one-tap seasonal change."
+    field :set_hour_template, :hour_template do
+      arg(:name, non_null(:string))
+      middleware(RequireMember, "manager")
+
+      resolve(fn %{name: name}, %{context: ctx} ->
+        Venues.Schedule.activate_template(ctx.venue_id, name) |> format_errors()
+      end)
+    end
+
+    @desc "Creates real services from chosen starter templates."
+    field :apply_service_templates, list_of(:service) do
+      arg(:template_ids, non_null(list_of(non_null(:id))))
+      arg(:locale, :string, default_value: "fr")
+
+      middleware(RequireMember, "manager")
+
+      resolve(fn args, %{context: ctx} ->
+        case Venues.Onboarding.apply_templates(
+               ctx.current_venue,
+               ids(args.template_ids),
+               args.locale
+             ) do
+          {:ok, services} -> {:ok, Repo.preload(services, :staff)}
+          other -> format_errors(other)
+        end
+      end)
+    end
+
+    ## --- onboarding (F0.5) ---
+
+    @desc """
+    Creates a venue owned by the signed-in account.
+
+    Starts `pending`: the dashboard works immediately so an owner can build
+    their catalog and invite their team, while the public page stays hidden
+    until an admin approves.
+    """
+    field :create_venue, :venue_summary do
+      arg(:name, non_null(:string))
+      arg(:city, :string)
+      arg(:address, :string)
+      arg(:phone, :string)
+
+      middleware(RequireAuth)
+
+      resolve(fn args, %{context: %{current_user: user}} ->
+        attrs = args |> Map.take([:name, :city, :address, :phone]) |> Map.put(:status, "pending")
+
+        case Venues.create_venue_with_owner(attrs, user.id) do
+          {:ok, venue} -> {:ok, venue}
+          other -> format_errors(other)
+        end
+      end)
+    end
+
+    @desc "Saves one step of the setup wizard so a dropped connection resumes where it left off."
+    field :update_onboarding, :venue_summary do
+      arg(:step, non_null(:string))
+      arg(:data, :json)
+
+      middleware(RequireMember, "manager")
+
+      resolve(fn args, %{context: ctx} ->
+        Venues.Onboarding.update_step(ctx.current_venue, args.step, args[:data] || %{})
+        |> format_errors()
+      end)
+    end
+
+    @desc "Hands the venue to the admin queue for review."
+    field :submit_venue, :venue_summary do
+      middleware(RequireMember, "owner")
+
+      resolve(fn _, %{context: ctx} ->
+        Venues.Onboarding.submit(ctx.current_venue, ctx.current_user) |> format_errors()
+      end)
+    end
+
+    @desc "Puts a venue live."
+    field :approve_venue, :venue_summary do
+      arg(:id, non_null(:id))
+      middleware(RequireAdmin)
+
+      resolve(fn %{id: id}, %{context: ctx} ->
+        Venues.Onboarding.approve(to_int(id), ctx.current_user) |> format_errors()
+      end)
+    end
+
+    @desc "Turns a venue down. The reason is required — the owner needs to know what to fix."
+    field :reject_venue, :venue_summary do
+      arg(:id, non_null(:id))
+      arg(:reason, non_null(:string))
+      middleware(RequireAdmin)
+
+      resolve(fn args, %{context: ctx} ->
+        Venues.Onboarding.reject(to_int(args.id), args.reason, ctx.current_user)
+        |> format_errors()
       end)
     end
 
@@ -1797,6 +2158,29 @@ defmodule BlastekWeb.Schema do
   end
 
   defp women_only?(_), do: false
+
+  # JSONB comes back with string keys; the GraphQL layer speaks atoms.
+  defp atomize_day(day) do
+    %{
+      weekday: day["weekday"],
+      working: day["working"],
+      start_min: day["start_min"],
+      end_min: day["end_min"]
+    }
+  end
+
+  defp onboarding_state(%{onboarding: onboarding} = venue) when is_map(onboarding) do
+    %{
+      current_step: Map.get(onboarding, "current_step"),
+      completed: onboarding |> Map.get("completed", []) |> List.wrap(),
+      submitted: Map.has_key?(onboarding, "submitted_at"),
+      complete: Venues.Onboarding.complete?(venue),
+      data: Map.drop(onboarding, ["current_step", "completed", "submitted_at", "updated_at"])
+    }
+  end
+
+  defp onboarding_state(_),
+    do: %{current_step: nil, completed: [], submitted: false, complete: false, data: %{}}
 
   defp header_list(headers) do
     Enum.map(headers, fn {name, value} -> %{name: name, value: value} end)

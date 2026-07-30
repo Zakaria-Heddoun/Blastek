@@ -552,7 +552,7 @@ function Footer() {
           <div className="foot-nav">
             <ul>
               <li><Link to="/venues">Book now</Link></li>
-              <li><Link to="/dashboard">For professionals</Link></li>
+              <li><Link to="/for-business">For professionals</Link></li>
               <li><Link to="/login">Log in</Link></li>
               <li><a href="#top">Back to top</a></li>
             </ul>
