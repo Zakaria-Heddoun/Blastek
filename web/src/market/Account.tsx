@@ -8,6 +8,7 @@ import { useAuth } from '../lib/auth';
 import { Icon } from '../lib/icons';
 import { StatusBadge, useToast } from '../components/ui';
 import MarketTopbar from './MarketTopbar';
+import AccountSecurity from './AccountSecurity';
 import { fmtDateLong, fmtMAD, fmtTime, todayStr } from '../lib/format';
 import './market.css';
 
@@ -81,7 +82,11 @@ export default function Account() {
           <button className="btn btn-sm" onClick={logout}>Log out</button>
         </div>
         <div className="mutetext" style={{ marginBottom: 22 }}>
-          Signed in as {user.firstName} {user.lastName} · {user.email}
+          {/* A phone-first account may have no email and no name yet, so the
+              identity line falls back to whichever of them exists. */}
+          Signed in as {[user.firstName, user.lastName].filter(Boolean).join(' ') || 'you'}
+          {user.email ? ` · ${user.email}` : ''}
+          {user.phone ? ` · ${user.phone}` : ''}
         </div>
 
         <h2 className="section-title">Upcoming</h2>
@@ -94,6 +99,8 @@ export default function Account() {
         {appts !== null && (past.length === 0
           ? <div className="empty">Nothing here yet.</div>
           : past.slice(0, 15).map((a) => row(a, false)))}
+
+        <AccountSecurity />
       </div>
     </div>
   );

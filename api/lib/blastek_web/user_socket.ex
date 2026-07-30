@@ -31,9 +31,8 @@ defmodule BlastekWeb.UserSocket do
   def id(_socket), do: nil
 
   defp authenticate(token) when is_binary(token) do
-    with {:ok, user_id} <- Accounts.verify_token(token) do
-      Accounts.get_user(user_id)
-    else
+    case Accounts.verify_token(token) do
+      {:ok, user, _session} -> user
       _ -> nil
     end
   end

@@ -10,12 +10,25 @@ import type { VenueMembership } from './types';
 
 export interface User {
   id: string;
-  email: string;
+  email: string | null;
   role: 'customer' | 'admin';
   firstName: string;
   lastName: string;
   phone: string;
+  /** The number has been proven by a one-time code. */
+  phoneVerified: boolean;
+  /** False for an account created by phone that has not been named yet. */
+  profileComplete: boolean;
+  /** Phone-first accounts start without one. */
+  hasPassword: boolean;
   venues: VenueMembership[];
+}
+
+/** What `requestOtp` reports back: a masked number and the two countdowns. */
+export interface OtpRequest {
+  phone: string;
+  expiresAt: string;
+  resendAfter: number;
 }
 
 interface AuthCtx {
@@ -29,7 +42,13 @@ interface AuthCtx {
   login: (email: string, password: string) => Promise<User>;
   signUp: (input: { email: string; password: string; firstName: string; lastName?: string;
     phone?: string; businessName?: string }) => Promise<User>;
-  logout: () => void;
+  /** Step 1 of phone sign-in: send a code. */
+  requestOtp: (phone: string) => Promise<OtpRequest>;
+  /** Step 2: exchange the code for a session. */
+  verifyOtp: (phone: string, code: string) => Promise<User>;
+  /** Names an account created by phone. */
+  completeProfile: (firstName: string, lastName?: string) => Promise<User>;
+  logout: () => Promise<void>;
   refreshMe: () => Promise<void>;
 }
 
@@ -37,11 +56,18 @@ const Ctx = createContext<AuthCtx>(null!);
 export const useAuth = () => useContext(Ctx);
 
 const USER_FIELDS = `id email role firstName lastName phone
+  phoneVerified profileComplete hasPassword
   venues { id role venue { id slug name city status } }`;
 
 const ME = `{ me { ${USER_FIELDS} } }`;
 
-const AUTH_FIELDS = `token user { ${USER_FIELDS} }`;
+const AUTH_FIELDS = `token refreshToken profileComplete user { ${USER_FIELDS} }`;
+
+const TOKEN_KEY = 'blastek-token';
+// Stored beside the access token so a returning visitor can be signed back in
+// without another code. It is the longer-lived of the two, so it is also the
+// one that must be cleared on logout.
+const REFRESH_KEY = 'blastek-refresh';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -66,9 +92,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshMe = useCallback(async () => {
-    if (!localStorage.getItem('blastek-token')) { setUser(null); return; }
-    const d = await gql<{ me: User | null }>(ME);
-    if (!d.me) localStorage.removeItem('blastek-token');
+    if (!localStorage.getItem(TOKEN_KEY)) { setUser(null); return; }
+
+    let d = await gql<{ me: User | null }>(ME);
+
+    // An access token lasts a day, a refresh token two months. A null `me` with
+    // a refresh token in hand means the short one simply aged out — exchange it
+    // rather than making someone sign in again every day.
+    if (!d.me && localStorage.getItem(REFRESH_KEY)) {
+      if (await tryRefresh()) d = await gql<{ me: User | null }>(ME);
+    }
+
+    if (!d.me) clearTokens();
     setUser(d.me);
     syncVenue(d.me);
   }, [syncVenue]);
@@ -85,8 +120,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false));
   }, [refreshMe]);
 
-  const accept = (payload: { token: string; user: User }) => {
-    localStorage.setItem('blastek-token', payload.token);
+  const accept = (payload: { token: string; refreshToken?: string; user: User }) => {
+    localStorage.setItem(TOKEN_KEY, payload.token);
+    if (payload.refreshToken) localStorage.setItem(REFRESH_KEY, payload.refreshToken);
     setUser(payload.user);
     syncVenue(payload.user);
     return payload.user;
@@ -111,13 +147,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return accept(d.signUp);
   };
 
+  const requestOtp = async (phone: string) => {
+    const d = await gql<{ requestOtp: OtpRequest }>(
+      `mutation($phone: String!) {
+        requestOtp(phone: $phone) { phone expiresAt resendAfter } }`,
+      { phone });
+    return d.requestOtp;
+  };
+
+  const verifyOtp = async (phone: string, code: string) => {
+    const d = await gql<{ verifyOtp: { token: string; refreshToken: string; user: User } }>(
+      `mutation($phone: String!, $code: String!) {
+        verifyOtp(phone: $phone, code: $code) { ${AUTH_FIELDS} } }`,
+      { phone, code });
+    return accept(d.verifyOtp);
+  };
+
+  const completeProfile = async (firstName: string, lastName?: string) => {
+    const d = await gql<{ completeProfile: User }>(
+      `mutation($firstName: String!, $lastName: String) {
+        completeProfile(firstName: $firstName, lastName: $lastName) { ${USER_FIELDS} } }`,
+      { firstName, lastName });
+    setUser(d.completeProfile);
+    return d.completeProfile;
+  };
+
   const selectVenue = (slug: string) => {
     setActiveVenue(slug);
     setActive(slug);
   };
 
-  const logout = () => {
-    localStorage.removeItem('blastek-token');
+  // Tells the server first: a session that is only forgotten locally is still a
+  // live credential, and revoking it is the whole point of server-side sessions.
+  const logout = async () => {
+    try {
+      await gql('mutation { logout }');
+    } catch {
+      // Already invalid, or offline. Either way the local state must still go.
+    }
+    clearTokens();
     setActiveVenue(null);
     setActive(null);
     setUser(null);
@@ -125,8 +193,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <Ctx.Provider value={{ user, loading, memberships: user?.venues ?? [], activeVenue,
-      selectVenue, login, signUp, logout, refreshMe }}>
+      selectVenue, login, signUp, requestOtp, verifyOtp, completeProfile, logout, refreshMe }}>
       {children}
     </Ctx.Provider>
   );
+}
+
+function clearTokens() {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(REFRESH_KEY);
+}
+
+/** Exchanges the refresh token for a new pair. Returns whether it worked. */
+async function tryRefresh(): Promise<boolean> {
+  const refreshToken = localStorage.getItem(REFRESH_KEY);
+  if (!refreshToken) return false;
+
+  try {
+    const d = await gql<{ refreshSession: { token: string; refreshToken: string } }>(
+      `mutation($refreshToken: String!) {
+        refreshSession(refreshToken: $refreshToken) { token refreshToken } }`,
+      { refreshToken });
+
+    localStorage.setItem(TOKEN_KEY, d.refreshSession.token);
+    localStorage.setItem(REFRESH_KEY, d.refreshSession.refreshToken);
+    return true;
+  } catch {
+    // Expired, or revoked because the server saw the token reused. Both mean
+    // the same thing here: this device has to sign in again.
+    clearTokens();
+    return false;
+  }
 }

@@ -126,16 +126,97 @@ throwing one away. The PRD already records this dependency (F0.14 → F0.10).
   calendar is naturally bounded by dates, and paging a week makes no sense.
 
 ### E3 · Auth & identity — F0.2
-| ID | Task | Est | Labels |
-|---|---|---|---|
-| E3-T1 | Migrations: `sessions`, `otp_codes`, `users.phone_verified_at` + unique verified phone | S | api |
-| E3-T2 | Sessions module: issue/verify/refresh/revoke; token TTLs; swap auth_context | M | api |
-| E3-T3 | OTP module: generate/hash/verify, attempts, cooldown, purposes | S | api |
-| E3-T4 | Phone normalization (E.164, Moroccan formats) + property tests | S | api,test |
-| E3-T5 | GraphQL: requestOtp/verifyOtp/completeProfile/logout/revokeSession/mySessions | S | api |
-| E3-T6 | Password reset (email link + OTP variants) | S | api |
-| E3-T7 | Web: AuthShell OTP mode (phone → code screens); account settings sessions page | M | web |
-| E3-T8 | OTP delivery templates through Notifications (dev logger until E6 lands) | XS | api |
+
+**Status: ✅ COMPLETE and verified** (261 tests).
+
+| ID | Task | Est | Labels | Status |
+|---|---|---|---|---|
+| E3-T1 | Migrations: `sessions`, `otp_codes`, `users.phone_verified_at` + unique verified phone | S | api | ✅ |
+| E3-T2 | Sessions module: issue/verify/refresh/revoke; token TTLs; swap auth_context | M | api | ✅ |
+| E3-T3 | OTP module: generate/hash/verify, attempts, cooldown, purposes | S | api | ✅ |
+| E3-T4 | Phone normalization (E.164, Moroccan formats) + property tests | S | api,test | ✅ |
+| E3-T5 | GraphQL: requestOtp/verifyOtp/completeProfile/logout/revokeSession/mySessions | S | api | ✅ |
+| E3-T6 | Password reset (email link + OTP variants) | S | api | ✅ |
+| E3-T7 | Web: AuthShell OTP mode (phone → code screens); account settings sessions page | M | web | ✅ |
+| E3-T8 | OTP delivery templates through Notifications (dev logger until E6 lands) | XS | api | ✅ |
+
+**Acceptance criteria** (F0.2), all met: `requestOtp` → `verifyOtp` issues a
+session and creates an account for an unseen number, with the name asked
+afterwards · 6 digits, 5-minute TTL, 3 attempts, 60-second resend cooldown ·
+sessions listed and revocable in the account, access 24 h, refresh 60 d,
+refresh rotates · password reset end to end by email link and by SMS code ·
+OTP endpoints rate-limited per phone and per IP, hashes stored and never the
+code · existing email/password accounts unaffected.
+
+**Verification performed**
+
+```
+docker compose exec api sh -c "MIX_ENV=test mix test"   # 261 tests, 0 failures
+docker compose exec api mix compile --warnings-as-errors && mix format --check-formatted
+docker compose exec api sh -c "MIX_ENV=test mix ecto.rollback --all && mix ecto.migrate"
+docker compose run --rm api mix ecto.reset               # migrations + seed + reindex
+cd web && npx tsc --noEmit && npm run build              # + prerender, + money guard
+```
+
+Driven in a real browser against the running stack: phone is the default
+sign-in method, a code arrives and the number is masked, a wrong code is
+refused, the real one creates the account and asks for a name, the session
+survives a reload and lists "Edge on Windows" as the current device, the
+password panel omits "current password" for an account that has none, the
+60-second cooldown genuinely blocks a second code, the reset page confirms
+without disclosing whether the address exists, and logout sends `/account`
+back to `/login` because the session is really gone server-side.
+
+**Notes from implementation**
+
+* **Sessions replace the stateless token, and that is the whole point.** Auth
+  was a signed `Phoenix.Token` carrying a user id with nothing stored, which
+  made "log out the phone I lost" and "revoke a compromised account"
+  unimplementable — there was no record to revoke. ⚠️ **Everyone signs in once
+  more when this deploys**: old tokens reference a scheme that no longer exists,
+  and keeping a parallel unrevocable path would have defeated the epic.
+* Tokens are 32 random bytes; only the SHA-256 is stored. SHA-256 rather than
+  Pbkdf2 *here* because the input already has 256 bits of entropy — there is no
+  search to slow down, and this runs on every authenticated request.
+* OTP codes are the opposite case and get **Pbkdf2**: six digits is a
+  million-entry space, so a leaked table of SHA-256 digests would be reversed
+  faster than it could be downloaded.
+* **Refresh rotates, and reuse is treated as theft.** Presenting a refresh token
+  that was already rotated away means two parties hold it; the session is
+  revoked rather than guessing which caller is legitimate. Without that,
+  rotation only means the thief has to be quick.
+* Every OTP failure reads the same to the caller. Distinguishing "no code for
+  this number" from "wrong code" would turn `requestOtp` into a way to ask which
+  Moroccan numbers have Blastek accounts; `requestPasswordReset` always reports
+  success for the same reason.
+* One code live per `(phone, purpose)`. Purposes are isolated so a login code
+  cannot complete a password reset, and a resend supersedes rather than adds —
+  otherwise attempts could be banked across a stack of live codes.
+* `email` and `password_hash` became nullable, because a phone-first account has
+  neither. Empty string would not do for email: the unique index is on
+  `lower(email)`, so the second passwordless account would collide with the
+  first. The rollback backfills a reserved `.invalid` address, so going back is
+  lossless.
+* Changing a password from inside the account signs out **other** devices but
+  not the caller's; a reset signs out everything. The first is how someone
+  responds to "I think somebody else is logged in as me", the second happens
+  when they are already locked out.
+* `Notifications` is a deliberate stub — a provider behaviour, a dev logger, and
+  FR/AR/EN templates. E6 replaces it with the real context; this establishes
+  only the seam and the locale shape, which are the parts that would hurt to
+  retrofit.
+
+**Defects and hazards found during verification**
+
+| Finding | Fix |
+|---|---|
+| The whole suite slowed to 170 s and the search perf gate began failing at ExUnit's 60 s limit — Pbkdf2 now runs on nearly every fixture. A perf gate that fails because the *machine* is slow is the most misleading way it can fail | `config :pbkdf2_elixir, :rounds, 1` in test (170 s → 6 s), plus a generous `@moduletag timeout` and one fixture build instead of two on the perf test |
+| Every new auth test failed together: `Blastek.RateLimit` is one ETS table shared by the whole run, so `async: true` tests reusing one phone and IP throttled each other into failures that looked like bugs | A distinct number and IP per test — which is also what real users are |
+| `Sessions.describe/1` parses a raw User-Agent, but the test passed it a pre-formatted label and asserted the label came back | Test fixed to pass a real User-Agent string |
+
+**Deferred, unchanged from E8:** `phoenix` 1.7.23 (HIGH) and `react-router` 6.x
+(2 × MODERATE) still need framework major bumps and still belong in their own
+CH-1 change rather than a feature commit.
 
 ### E4 · Team & permissions — F0.3
 | ID | Task | Est | Labels |

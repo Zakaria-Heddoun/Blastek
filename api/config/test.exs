@@ -36,6 +36,15 @@ config :blastek, Blastek.Storage.Local,
 # and rude to a free public service. The stub is driven per-test.
 config :blastek, :geocoder, Blastek.Geocode.Stub
 
+# Notifications are collected in-process so a test can read the code it was
+# "sent" — the same way a user reads their text message.
+config :blastek, :notifications_provider, Blastek.Notifications.Collector
+
+# Password and OTP hashing is deliberately slow in production — that slowness is
+# the security property. In tests it is pure cost, and the suite hashes on
+# nearly every fixture, so the work factor drops to its minimum here.
+config :pbkdf2_elixir, :rounds, 1
+
 # Print only warnings and errors during test
 config :logger, level: :warning
 

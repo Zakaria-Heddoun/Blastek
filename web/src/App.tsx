@@ -16,6 +16,7 @@ import VenueList from './market/VenueList';
 import VenuePage from './market/VenuePage';
 import BookingFlow from './market/BookingFlow';
 import AuthPage from './market/AuthPage';
+import ForgotPassword from './market/ForgotPassword';
 import Account from './market/Account';
 import BungeePage from './bungee/BungeePage';
 
@@ -47,6 +48,10 @@ export default function App() {
           {/* Auth — standalone full pages in the Blastek/Bungee design system */}
           <Route path="/login" element={<AuthPage mode="login" />} />
           <Route path="/signup" element={<AuthPage mode="signup" />} />
+          {/* One route for both halves of a reset: request a link, and consume
+              one arriving back as ?token=. */}
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ForgotPassword />} />
           {/* Marketplace: the directory, then one venue addressed by slug. */}
           <Route path="/venues" element={<VenueList />} />
           <Route path="/v/:slug" element={<MarketLayout />}>

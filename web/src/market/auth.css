@@ -152,3 +152,79 @@
   font-size: 12px;
   margin-top: 6px;
 }
+
+/* ---------- phone / OTP sign-in (E3-T7) ---------- */
+
+.auth-methods {
+  display: inline-flex;
+  margin-bottom: 20px;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 999px;
+  padding: 3px;
+  gap: 2px;
+}
+.auth-methods button {
+  border: 0;
+  background: none;
+  border-radius: 999px;
+  padding: 7px 18px;
+  font: inherit;
+  font-size: 13px;
+  color: #5a6271;
+  cursor: pointer;
+}
+.auth-methods button.active { background: #1e1e1e; color: #fff; }
+
+.auth-hint { margin: 2px 0 0; font-size: 13px; color: #5a6271; }
+
+/* Codes are read digit by digit off a lock screen, so they get room to breathe. */
+.auth-code-input {
+  font-family: "Chivo Mono", ui-monospace, Consolas, monospace;
+  font-size: 26px;
+  letter-spacing: 0.42em;
+  text-align: center;
+}
+
+.auth-code-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  font-size: 13px;
+}
+.auth-code-actions .linky {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: #1e1e1e;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.auth-code-actions .linky:disabled {
+  color: #8a919b;
+  text-decoration: none;
+  cursor: default;
+}
+
+.auth-forgot { margin-top: -4px; }
+.auth-forgot .linky {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  color: #5a6271;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+/* The confirmation screen replaces the submit button with a link out. */
+.auth-submit-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}

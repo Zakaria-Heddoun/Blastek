@@ -114,7 +114,7 @@ export function AuthField({
 }
 
 export default function AuthShell({
-  media, eyebrow, title, sub, form, fields, submitLabel, toggle, onToggle, demo,
+  media, eyebrow, title, sub, form, fields, submitLabel, toggle, onToggle, demo, body, above,
 }: {
   media: { eyebrow: string; heading: ReactNode };
   eyebrow: string;
@@ -126,6 +126,16 @@ export default function AuthShell({
   toggle: ReactNode;
   onToggle: () => void;
   demo?: string;
+  /**
+   * Replaces the fields, error and submit button entirely.
+   *
+   * A multi-step flow such as phone verification owns its own buttons and error
+   * placement; forcing it through the single-submit chrome would mean a "Sign
+   * in" button that means something different on each step.
+   */
+  body?: ReactNode;
+  /** Rendered above the form — the sign-in method switcher. */
+  above?: ReactNode;
 }) {
   return (
     <div className="bungee blastek-home auth-shell">
@@ -155,13 +165,19 @@ export default function AuthShell({
             <h1 className="auth-title">{title}</h1>
             <p className="auth-sub">{sub}</p>
 
-            <div className="auth-fields">{fields}</div>
+            {above}
 
-            <div className="auth-err">{form.err}</div>
+            {body ?? (
+              <>
+                <div className="auth-fields">{fields}</div>
 
-            <button className="auth-submit" disabled={form.busy} onClick={form.submit}>
-              {form.busy ? 'Please wait…' : submitLabel}
-            </button>
+                <div className="auth-err">{form.err}</div>
+
+                <button className="auth-submit" disabled={form.busy} onClick={form.submit}>
+                  {form.busy ? 'Please wait…' : submitLabel}
+                </button>
+              </>
+            )}
 
             <button
               className="auth-toggle"

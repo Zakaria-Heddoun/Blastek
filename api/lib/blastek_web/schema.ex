@@ -20,7 +20,14 @@ defmodule BlastekWeb.Schema do
   alias Blastek.Media
   alias Blastek.Salon
   alias Blastek.Venues
-  alias BlastekWeb.Schema.{RateLimitAuth, RequireAdmin, RequireAuth, RequireMember}
+
+  alias BlastekWeb.Schema.{
+    RateLimitAuth,
+    RateLimitOtp,
+    RequireAdmin,
+    RequireAuth,
+    RequireMember
+  }
 
   # A quarter is more than any calendar view needs and keeps one request from
   # pulling a venue's entire history.
@@ -396,6 +403,21 @@ defmodule BlastekWeb.Schema do
     field :last_name, :string
     field :phone, :string
 
+    @desc "Whether the phone number has been proven by a one-time code."
+    field :phone_verified, :boolean do
+      resolve(fn user, _, _ -> {:ok, user.phone_verified_at != nil} end)
+    end
+
+    @desc "False until an account created by phone has been given a name."
+    field :profile_complete, :boolean do
+      resolve(fn user, _, _ -> {:ok, Accounts.profile_complete?(user)} end)
+    end
+
+    @desc "Whether a password is set — phone-first accounts start without one."
+    field :has_password, :boolean do
+      resolve(fn user, _, _ -> {:ok, user.password_hash != nil} end)
+    end
+
     @desc "Venues this account administers (empty for pure customers)."
     field :venues, list_of(:venue_membership) do
       resolve(fn user, _, _ -> {:ok, Venues.list_memberships(user.id)} end)
@@ -405,6 +427,48 @@ defmodule BlastekWeb.Schema do
   object :auth_payload do
     field :token, :string
     field :user, :user
+
+    @desc "Exchange for a new pair via `refreshSession` when `token` expires."
+    field :refresh_token, :string
+
+    field :expires_at, :naive_datetime
+
+    @desc """
+    False for an account created by phone that has not been named yet — the
+    client should ask for a name before letting them book.
+    """
+    field :profile_complete, :boolean
+  end
+
+  @desc "A code was sent. The number is masked; the server knows the real one."
+  object :otp_request do
+    field :phone, :string
+    field :expires_at, :naive_datetime
+
+    @desc "Seconds before another code may be requested."
+    field :resend_after, :integer
+  end
+
+  @desc "One signed-in device."
+  object :session do
+    field :id, :id
+
+    @desc "Human-readable device label derived from the User-Agent."
+    field :device, :string do
+      resolve(fn session, _, _ -> {:ok, Blastek.Accounts.Sessions.describe(session)} end)
+    end
+
+    field :ip, :string
+    field :last_used_at, :naive_datetime
+    field :expires_at, :naive_datetime
+    field :inserted_at, :naive_datetime
+
+    @desc "Whether this is the session making the request — do not offer to revoke it."
+    field :current, :boolean do
+      resolve(fn session, _, %{context: ctx} ->
+        {:ok, ctx[:current_session] != nil and ctx.current_session.id == session.id}
+      end)
+    end
   end
 
   ## ---------- inputs ----------
@@ -444,6 +508,15 @@ defmodule BlastekWeb.Schema do
     field :my_venues, list_of(:venue_membership) do
       middleware(RequireAuth)
       resolve(fn _, %{context: ctx} -> {:ok, Venues.list_memberships(ctx.current_user.id)} end)
+    end
+
+    @desc "Devices currently signed in to this account, most recently used first."
+    field :my_sessions, list_of(:session) do
+      middleware(RequireAuth)
+
+      resolve(fn _, %{context: ctx} ->
+        {:ok, Blastek.Accounts.Sessions.list_for_user(ctx.current_user.id)}
+      end)
     end
 
     @desc "The venue the current dashboard session is acting on."
@@ -1027,7 +1100,7 @@ defmodule BlastekWeb.Schema do
 
       middleware(RateLimitAuth)
 
-      resolve(fn args, _ ->
+      resolve(fn args, %{context: ctx} ->
         result =
           case args[:business_name] do
             name when is_binary(name) and name != "" ->
@@ -1039,7 +1112,7 @@ defmodule BlastekWeb.Schema do
           end
 
         case result do
-          {:ok, user} -> {:ok, %{token: Accounts.token_for(user), user: user}}
+          {:ok, user} -> session_payload(user, ctx)
           {:error, reason} -> format_errors({:error, reason})
         end
       end)
@@ -1051,9 +1124,224 @@ defmodule BlastekWeb.Schema do
 
       middleware(RateLimitAuth)
 
-      resolve(fn %{email: email, password: password}, _ ->
+      resolve(fn %{email: email, password: password}, %{context: ctx} ->
         with {:ok, user} <- Accounts.authenticate(email, password) do
-          {:ok, %{token: Accounts.token_for(user), user: user}}
+          session_payload(user, ctx)
+        end
+      end)
+    end
+
+    ## --- phone-first auth (F0.2) ---
+
+    @desc """
+    Sends a one-time code to a phone number.
+
+    Reports the same success whether or not the number has an account — telling
+    them apart would make this an endpoint for enumerating customers.
+    """
+    field :request_otp, :otp_request do
+      arg(:phone, non_null(:string))
+
+      @desc "One of: login (default), verify, reset."
+      arg(:purpose, :string, default_value: "login")
+
+      arg(:locale, :string)
+
+      middleware(RateLimitOtp)
+
+      resolve(fn args, %{context: ctx} ->
+        opts = [locale: args[:locale]]
+
+        result =
+          case args.purpose do
+            "reset" -> Accounts.request_password_reset_by_phone(args.phone, opts)
+            "verify" -> verify_phone_request(ctx, args.phone, opts)
+            _ -> Accounts.request_login_code(args.phone, opts)
+          end
+
+        case result do
+          {:ok, details} ->
+            {:ok,
+             %{
+               phone: Blastek.Accounts.Phone.mask(details.phone),
+               expires_at: details.expires_at,
+               resend_after: details.resend_after
+             }}
+
+          other ->
+            format_errors(other)
+        end
+      end)
+    end
+
+    @desc """
+    Exchanges a phone and code for a session.
+
+    A number nobody has used before becomes an account here; `profileComplete`
+    tells the client whether to ask for a name next.
+    """
+    field :verify_otp, :auth_payload do
+      arg(:phone, non_null(:string))
+      arg(:code, non_null(:string))
+
+      middleware(RateLimitOtp)
+
+      resolve(fn %{phone: phone, code: code}, %{context: ctx} ->
+        case Accounts.verify_login_code(phone, code, session_opts(ctx)) do
+          {:ok, tokens} -> {:ok, auth_payload(tokens)}
+          other -> format_errors(other)
+        end
+      end)
+    end
+
+    @desc "Fills in the name of an account created by phone."
+    field :complete_profile, :user do
+      arg(:first_name, non_null(:string))
+      arg(:last_name, :string)
+      arg(:email, :string)
+
+      middleware(RequireAuth)
+
+      resolve(fn args, %{context: %{current_user: user}} ->
+        Accounts.complete_profile(user, args) |> format_errors()
+      end)
+    end
+
+    @desc "Confirms a phone number for the signed-in account."
+    field :confirm_phone, :user do
+      arg(:phone, non_null(:string))
+      arg(:code, non_null(:string))
+
+      middleware(RequireAuth)
+      middleware(RateLimitOtp)
+
+      resolve(fn %{phone: phone, code: code}, %{context: %{current_user: user}} ->
+        Accounts.confirm_phone(user, phone, code) |> format_errors()
+      end)
+    end
+
+    ## --- sessions ---
+
+    @desc """
+    Trades a refresh token for a fresh pair.
+
+    The old pair stops working. Presenting an already-rotated refresh token
+    revokes the whole session — it means two parties hold it.
+    """
+    field :refresh_session, :auth_payload do
+      arg(:refresh_token, non_null(:string))
+
+      resolve(fn %{refresh_token: refresh_token}, %{context: ctx} ->
+        case Blastek.Accounts.Sessions.refresh(refresh_token, session_opts(ctx)) do
+          {:ok, tokens} ->
+            {:ok, auth_payload(Map.put(tokens, :user, Accounts.get_user(tokens.session.user_id)))}
+
+          {:error, :reused} ->
+            {:error,
+             %{
+               message: "Your session was ended for security. Please sign in again.",
+               code: "session_reused"
+             }}
+
+          {:error, _} ->
+            {:error, %{message: "Please sign in again.", code: "unauthenticated"}}
+        end
+      end)
+    end
+
+    @desc "Ends the current session."
+    field :logout, :boolean do
+      resolve(fn _, %{context: ctx} ->
+        Blastek.Accounts.Sessions.revoke_token(ctx[:bearer_token])
+        {:ok, true}
+      end)
+    end
+
+    @desc "Ends one other session — the \"log out the phone I lost\" button."
+    field :revoke_session, :boolean do
+      arg(:id, non_null(:id))
+
+      middleware(RequireAuth)
+
+      resolve(fn %{id: id}, %{context: %{current_user: user}} ->
+        case Blastek.Accounts.Sessions.revoke(user.id, to_int(id)) do
+          {:ok, _} -> {:ok, true}
+          other -> format_errors(other)
+        end
+      end)
+    end
+
+    @desc "Ends every session except this one."
+    field :revoke_other_sessions, :integer do
+      middleware(RequireAuth)
+
+      resolve(fn _, %{context: ctx} ->
+        current = ctx[:current_session]
+
+        {:ok,
+         Blastek.Accounts.Sessions.revoke_all(ctx.current_user.id, except: current && current.id)}
+      end)
+    end
+
+    ## --- password ---
+
+    @desc "Emails a password reset link. Always reports success."
+    field :request_password_reset, :boolean do
+      arg(:email, non_null(:string))
+      arg(:locale, :string)
+
+      middleware(RateLimitAuth)
+
+      resolve(fn args, _ ->
+        Accounts.request_password_reset(args.email, locale: args[:locale])
+        {:ok, true}
+      end)
+    end
+
+    field :reset_password, :boolean do
+      arg(:token, non_null(:string))
+      arg(:password, non_null(:string))
+
+      resolve(fn %{token: token, password: password}, _ ->
+        case Accounts.reset_password(token, password) do
+          {:ok, _user} -> {:ok, true}
+          other -> format_errors(other)
+        end
+      end)
+    end
+
+    @desc "Resets a password with a code sent by SMS — for accounts with no email."
+    field :reset_password_by_phone, :boolean do
+      arg(:phone, non_null(:string))
+      arg(:code, non_null(:string))
+      arg(:password, non_null(:string))
+
+      middleware(RateLimitOtp)
+
+      resolve(fn args, _ ->
+        case Accounts.reset_password_by_phone(args.phone, args.code, args.password) do
+          {:ok, _user} -> {:ok, true}
+          other -> format_errors(other)
+        end
+      end)
+    end
+
+    @desc "Changes the password from inside the account."
+    field :change_password, :boolean do
+      arg(:current_password, :string)
+      arg(:password, non_null(:string))
+
+      middleware(RequireAuth)
+
+      resolve(fn args, %{context: ctx} ->
+        # Keeps the session doing the changing; every other device is signed out.
+        except = ctx[:current_session] && ctx.current_session.id
+
+        case Accounts.change_password(ctx.current_user, args[:current_password], args.password,
+               except: except
+             ) do
+          {:ok, _user} -> {:ok, true}
+          other -> format_errors(other)
         end
       end)
     end
@@ -1228,6 +1516,36 @@ defmodule BlastekWeb.Schema do
 
   @doc false
   def batch_venue_photos(_, venue_ids), do: Media.photos_for(venue_ids)
+
+  # Every sign-in path ends the same way: start a session, return the pair.
+  defp session_payload(user, context) do
+    {:ok, tokens} = Accounts.start_session(user, session_opts(context))
+    {:ok, auth_payload(Map.put(tokens, :user, user))}
+  end
+
+  defp auth_payload(tokens) do
+    %{
+      token: tokens.token,
+      refresh_token: tokens.refresh_token,
+      expires_at: tokens.expires_at,
+      user: tokens.user,
+      profile_complete: Accounts.profile_complete?(tokens.user)
+    }
+  end
+
+  # Labels the session with the device that started it, so the sessions list can
+  # say "Chrome on Android" instead of showing a row of ids.
+  defp session_opts(context) do
+    [device: context[:user_agent] || "", ip: context[:client_ip] || ""]
+  end
+
+  # Adding a number to an existing account, versus signing in with one. Only the
+  # former requires being signed in already.
+  defp verify_phone_request(%{current_user: user}, phone, opts),
+    do: Accounts.request_phone_verification(user, phone, opts)
+
+  defp verify_phone_request(_context, _phone, _opts),
+    do: {:error, "You must be signed in to add a phone number."}
 
   # Absinthe input objects arrive as maps; `Discovery` takes a plain tuple so it
   # has no opinion about where the coordinates came from.
