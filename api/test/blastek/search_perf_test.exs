@@ -14,6 +14,14 @@ defmodule Blastek.SearchPerfTest do
   """
   use Blastek.DataCase, async: false
 
+  # Building a 7 000-row fixture is not what is being measured, but it happens
+  # inside the test and so counts against ExUnit's wall clock. Under a loaded
+  # Docker host that setup has taken over the default 60 s — turning a slow
+  # *machine* into a failed *performance assertion*, which is the most
+  # misleading way a gate like this can fail. The budget below is asserted
+  # explicitly and precisely; this timeout only has to be out of its way.
+  @moduletag timeout: 300_000
+
   alias Blastek.Discovery
   alias Blastek.Repo
 
@@ -94,15 +102,15 @@ defmodule Blastek.SearchPerfTest do
       "\n  search p95 @#{@venue_count} venues — slowest: #{elem(slowest, 0)} " <>
         "#{Float.round(elem(slowest, 1), 1)} ms (budget #{@budget_ms} ms)"
     )
-  end
 
-  test "a term search returns correct results at scale, not just fast ones" do
+    # Correctness, in the same test rather than its own, because a second test
+    # would rebuild the whole 7 000-row fixture to assert one thing. A fast
+    # search that has quietly stopped filtering would sail through the timings
+    # above, so the gate needs both halves.
     page = Discovery.search(q: "hammam traditionnel", limit: 5)
 
     assert page.total_count > 0
     assert length(page.items) <= 5
-    # Everything returned really offers it — a fast search that has stopped
-    # filtering would still pass a timing assertion.
     assert Enum.all?(page.items, &offers?(&1.id, "Hammam traditionnel"))
   end
 

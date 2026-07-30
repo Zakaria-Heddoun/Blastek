@@ -93,6 +93,29 @@ Without `S3_BUCKET` the filesystem adapter writes to `api/priv/uploads` and
 serves it at `/uploads`. That is what CI and the test suite use, so the upload
 path stays covered with no object store running.
 
+### Signing in
+
+Two ways in. **Phone + one-time code** is the default: the number is the
+identity, there is no password to invent, and the name is asked after the code
+rather than before it. **Email + password** still works exactly as before.
+
+In dev, nothing is actually texted — `Blastek.Notifications.DevLogger` prints
+the message to the API log, so the code is read from there:
+
+```
+docker compose logs api --tail 20 | grep "code Blastek"
+```
+
+Sessions are server-side rows, which is what makes "log out the device I lost"
+possible; they are listed and revocable under **My account**. An access token
+lasts 24 h and a refresh token 60 d, and refreshing rotates both — presenting a
+refresh token that has already been rotated away revokes the whole session,
+since it means two parties are holding it.
+
+> ⚠️ Upgrading past this point invalidates existing sign-ins. The old scheme was
+> a self-contained signed token with no server record, so there is nothing to
+> migrate — everyone signs in once more.
+
 ### Search
 
 The venue directory is full-text searched over a per-venue `tsvector` that
@@ -113,6 +136,7 @@ docker compose exec api mix run -e "IO.puts(Blastek.Discovery.reindex_all())"
 | Authorization | [api/lib/blastek_web/auth_context.ex](api/lib/blastek_web/auth_context.ex) — `RequireMember` / `RequireAdmin` middleware |
 | GraphQL schema | [api/lib/blastek_web/schema.ex](api/lib/blastek_web/schema.ex) |
 | Migrations + seeds | [api/priv/repo/](api/priv/repo/) |
+| Auth & identity | [api/lib/blastek/accounts.ex](api/lib/blastek/accounts.ex) — sessions, OTP and phone normalization in [api/lib/blastek/accounts/](api/lib/blastek/accounts/) |
 | Discovery (search + geo) | [api/lib/blastek/discovery.ex](api/lib/blastek/discovery.ex), [api/lib/blastek/geocode.ex](api/lib/blastek/geocode.ex) |
 | Media (photos) | [api/lib/blastek/media.ex](api/lib/blastek/media.ex), [api/lib/blastek/storage.ex](api/lib/blastek/storage.ex) |
 | React frontend | [web/src/](web/src/) — admin in [web/src/admin/](web/src/admin/), marketplace in [web/src/market/](web/src/market/) |

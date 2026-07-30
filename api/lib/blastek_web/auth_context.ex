@@ -20,22 +20,50 @@ defmodule BlastekWeb.AuthContext do
   end
 
   defp build_context(conn) do
-    # Carried into resolvers so per-IP limits can be applied per operation.
-    base = %{client_ip: conn.remote_ip |> :inet.ntoa() |> to_string()}
+    # Carried into resolvers so per-IP limits can be applied per operation, and
+    # so a new session can be labelled with the device that started it.
+    base = %{
+      client_ip: conn.remote_ip |> :inet.ntoa() |> to_string(),
+      user_agent: user_agent(conn)
+    }
 
     case current_user(conn) do
-      nil -> base
-      user -> base |> Map.put(:current_user, user) |> put_membership(user, venue_slug(conn))
+      nil ->
+        base
+
+      {user, session} ->
+        base
+        |> Map.put(:current_user, user)
+        |> Map.put(:current_session, session)
+        # Logout revokes the session behind the token that presented it, so the
+        # raw token has to reach the resolver.
+        |> Map.put(:bearer_token, bearer_token(conn))
+        |> put_membership(user, venue_slug(conn))
     end
   end
 
+  # A session lookup rather than a signature check: a revoked session must stop
+  # working immediately, which a self-contained token can never do.
   defp current_user(conn) do
-    with ["Bearer " <> token] <- get_req_header(conn, "authorization"),
-         {:ok, user_id} <- Blastek.Accounts.verify_token(token),
-         user when not is_nil(user) <- Blastek.Accounts.get_user(user_id) do
-      user
+    with token when is_binary(token) <- bearer_token(conn),
+         {:ok, user, session} <- Blastek.Accounts.verify_token(token) do
+      {user, session}
     else
       _ -> nil
+    end
+  end
+
+  defp bearer_token(conn) do
+    case get_req_header(conn, "authorization") do
+      ["Bearer " <> token | _] when token != "" -> token
+      _ -> nil
+    end
+  end
+
+  defp user_agent(conn) do
+    case get_req_header(conn, "user-agent") do
+      [value | _] -> value
+      _ -> ""
     end
   end
 
@@ -182,6 +210,59 @@ defmodule BlastekWeb.Schema.RateLimitAuth do
 
   defp retry_seconds(seconds) when seconds >= 60, do: "#{div(seconds, 60)} minute(s)"
   defp retry_seconds(seconds), do: "#{seconds} second(s)"
+end
+
+defmodule BlastekWeb.Schema.RateLimitOtp do
+  @moduledoc """
+  Budget for the one-time-code endpoints.
+
+  Tighter than `RateLimitAuth` because each request may **send a text message**.
+  Two things are being defended at once: an attacker grinding codes, and an
+  attacker using the endpoint as a free SMS cannon aimed at someone else's phone
+  — which costs us money and gets the number reported as spam.
+
+  Per-phone is therefore the primary bucket, and it is keyed on the *normalized*
+  number so `0612…` and `+21261 2…` cannot be alternated to buy twice the quota.
+  """
+  @behaviour Absinthe.Middleware
+
+  alias Blastek.Accounts.Phone
+  alias Blastek.RateLimit
+  alias BlastekWeb.Schema.Deny
+
+  # The OTP module's own 60s cooldown handles the common case; this is the
+  # backstop against sustained abuse across a longer window.
+  @per_phone 5
+  @per_phone_window :timer.minutes(15)
+  @per_ip 20
+  @per_ip_window :timer.hours(1)
+
+  def call(resolution, _opts) do
+    phone =
+      case resolution.arguments |> Map.get(:phone) |> Phone.normalize() do
+        {:ok, normalized} -> normalized
+        # An unparseable number still gets counted, or the limiter is bypassed
+        # by sending junk.
+        _ -> resolution.arguments |> Map.get(:phone, "") |> to_string()
+      end
+
+    ip = resolution.context[:client_ip] || "unknown"
+
+    with :ok <- RateLimit.hit({:otp_phone, phone}, @per_phone, @per_phone_window),
+         :ok <- RateLimit.hit({:otp_ip, ip}, @per_ip, @per_ip_window) do
+      resolution
+    else
+      {:error, retry_after} ->
+        Deny.deny(
+          resolution,
+          "Too many code requests. Try again in #{minutes(retry_after)}.",
+          "rate_limited"
+        )
+    end
+  end
+
+  defp minutes(seconds) when seconds >= 60, do: "#{div(seconds, 60)} minute(s)"
+  defp minutes(seconds), do: "#{seconds} second(s)"
 end
 
 defmodule BlastekWeb.Schema.Deny do
