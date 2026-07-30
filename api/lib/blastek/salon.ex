@@ -549,41 +549,151 @@ defmodule Blastek.Salon do
   def slots_for_staff(venue_id, staff_id, date, duration_min) do
     weekday = Date.day_of_week(date, :sunday) - 1
 
-    hour =
-      Repo.one(
-        from h in StaffHour,
-          join: s in Staff,
-          on: s.id == h.staff_id and s.venue_id == ^venue_id,
-          where: h.staff_id == ^staff_id and h.weekday == ^weekday and h.working
-      )
+    case working_hours(venue_id, staff_id, weekday) do
+      nil ->
+        []
 
-    if hour == nil do
-      []
-    else
-      busy =
-        Repo.all(
-          from a in scope(Appointment, venue_id),
-            where:
-              a.staff_id == ^staff_id and a.date == ^date and
-                a.status not in ["cancelled", "no_show"],
-            select: {a.start_min, a.end_min}
-        )
+      {open_min, close_min} ->
+        busy =
+          Repo.all(
+            from a in scope(Appointment, venue_id),
+              where:
+                a.staff_id == ^staff_id and a.date == ^date and
+                  a.status not in ["cancelled", "no_show"],
+              select: {a.start_min, a.end_min}
+          )
 
-      now = NaiveDateTime.local_now()
+        # A closure is an exception to the weekly grid — Eid, or a Tuesday
+        # afternoon off — so it is subtracted here rather than folded into
+        # hours. One query per date, shared by every candidate staff member of
+        # the venue on that date.
+        closed = Venues.Schedule.closed_windows(venue_id, date)
+        blocked = busy ++ closed
 
-      min_start =
-        if Date.compare(date, NaiveDateTime.to_date(now)) == :eq,
-          do: now.hour * 60 + now.minute,
-          else: -1
+        now = NaiveDateTime.local_now()
 
-      hour.start_min
-      |> Stream.iterate(&(&1 + @slot_step))
-      |> Enum.take_while(&(&1 + duration_min <= hour.end_min))
-      |> Enum.filter(fn start ->
-        start > min_start and
-          not Enum.any?(busy, fn {bs, be} -> start < be and start + duration_min > bs end)
-      end)
+        min_start =
+          if Date.compare(date, NaiveDateTime.to_date(now)) == :eq,
+            do: now.hour * 60 + now.minute,
+            else: -1
+
+        open_min
+        |> Stream.iterate(&(&1 + @slot_step))
+        # `close_min` may exceed 1440 for a shift running past midnight
+        # (21:00–00:30 is 1260–1470). This is minute arithmetic, so a later
+        # number is simply later; nothing here needs to know about days.
+        |> Enum.take_while(&(&1 + duration_min <= close_min))
+        |> Enum.filter(fn start ->
+          start > min_start and
+            not Enum.any?(blocked, fn {bs, be} -> start < be and start + duration_min > bs end)
+        end)
     end
+  end
+
+  @doc """
+  The hours a staff member works on a weekday, honouring the active template.
+
+  With **no template active** — every venue that predates F0.4 — this is the
+  staff member's own weekly row, exactly as before.
+
+  With one active, resolution runs:
+
+    1. the staff member's row **for that template** — a stylist who works
+       different hours in Ramadan;
+    2. their default row, but only when the *default* template is the active
+       one, since rows with no template are what "the normal week" means;
+    3. the template's venue-wide grid.
+
+  The order matters more than it looks. Falling back to the default row under
+  *any* template would make a one-tap switch do nothing at all: a venue that
+  moved to Ramadan hours without rewriting every stylist's week would keep
+  offering its winter slots, and the owner would have no way to tell why.
+
+  Returns `nil` when nobody is working.
+  """
+  def working_hours(venue_id, staff_id, weekday) do
+    case Venues.Schedule.active_template(venue_id) do
+      nil ->
+        case staff_hour(venue_id, staff_id, weekday, nil) do
+          nil -> nil
+          hour -> {hour.start_min, hour.end_min}
+        end
+
+      template ->
+        template_hours(venue_id, staff_id, weekday, template)
+    end
+  end
+
+  defp template_hours(venue_id, staff_id, weekday, template) do
+    own = staff_hour(venue_id, staff_id, weekday, template.id)
+
+    # Rows with no template *are* the default week, so they still apply when the
+    # default template is the active one — but under no other, or a seasonal
+    # switch would silently keep serving the old hours.
+    fallback =
+      if template.name == Venues.Schedule.default_template_name(),
+        do: staff_hour(venue_id, staff_id, weekday, nil)
+
+    cond do
+      own -> {own.start_min, own.end_min}
+      fallback -> {fallback.start_min, fallback.end_min}
+      day = template_day(template, weekday) -> {day["start_min"], day["end_min"]}
+      true -> nil
+    end
+  end
+
+  defp staff_hour(venue_id, staff_id, weekday, template_id) do
+    query =
+      from h in StaffHour,
+        join: s in Staff,
+        on: s.id == h.staff_id and s.venue_id == ^venue_id,
+        where: h.staff_id == ^staff_id and h.weekday == ^weekday and h.working
+
+    query =
+      if template_id,
+        do: from(h in query, where: h.template_id == ^template_id),
+        else: from(h in query, where: is_nil(h.template_id))
+
+    Repo.one(query)
+  end
+
+  defp template_day(nil, _weekday), do: nil
+
+  defp template_day(template, weekday) do
+    case Venues.Schedule.week_of(template) do
+      nil -> nil
+      week -> week |> Map.get(weekday) |> working_day()
+    end
+  end
+
+  defp working_day(%{"working" => true} = day), do: day
+  defp working_day(_), do: nil
+
+  @doc """
+  Appointments that a proposed closure would strand.
+
+  F0.4 is explicit that these are **never silently cancelled** — the owner is
+  shown what they are about to break and decides. Returning them rather than
+  acting on them is the whole point: a salon closing for a funeral still has to
+  telephone the four people booked that afternoon.
+  """
+  def appointments_in_window(venue_id, %Date{} = from_date, to_date, start_min, end_min) do
+    to_date = to_date || from_date
+
+    query =
+      from a in scope(Appointment, venue_id),
+        where:
+          a.date >= ^from_date and a.date <= ^to_date and
+            a.status not in ["cancelled", "no_show", "completed"],
+        order_by: [asc: a.date, asc: a.start_min],
+        preload: ^@appt_preloads
+
+    query =
+      if start_min && end_min,
+        do: from(a in query, where: a.start_min < ^end_min and a.end_min > ^start_min),
+        else: query
+
+    Repo.all(query)
   end
 
   ## ---------- online booking ----------

@@ -87,6 +87,24 @@ defmodule Blastek.Notifications do
     })
   end
 
+  @doc "Tells an owner whether their venue was approved (E5-T8)."
+  @spec deliver_venue_decision(String.t(), String.t(), :approved | :rejected, String.t(), keyword) ::
+          :ok | {:error, term}
+  def deliver_venue_decision(to, venue_name, decision, reason, opts \\ []) do
+    locale = locale(opts[:locale])
+
+    deliver(%{
+      to: to,
+      channel: :sms,
+      body: render(decision_template(decision), locale, venue: venue_name, reason: reason),
+      template: decision_template(decision),
+      locale: locale
+    })
+  end
+
+  defp decision_template(:approved), do: :venue_approved
+  defp decision_template(_), do: :venue_rejected
+
   defp deliver(message), do: provider().deliver(message)
 
   defp locale(requested) when requested in @locales, do: requested
@@ -141,6 +159,24 @@ defmodule Blastek.Notifications do
 
   defp render(:invitation, _en, venue: venue, role: role, url: url),
     do: "#{venue} invited you to join their team on Blastek as #{role}: #{url}"
+
+  defp render(:venue_approved, "fr", venue: venue, reason: _),
+    do: "#{venue} est en ligne sur Blastek. Vos clients peuvent réserver dès maintenant."
+
+  defp render(:venue_approved, "ar", venue: venue, reason: _),
+    do: "#{venue} أصبح متاحًا على بلاستيك. يمكن لعملائك الحجز الآن."
+
+  defp render(:venue_approved, _en, venue: venue, reason: _),
+    do: "#{venue} is live on Blastek. Your customers can book now."
+
+  defp render(:venue_rejected, "fr", venue: venue, reason: reason),
+    do: "#{venue} n'a pas encore été validé : #{reason} Corrigez et renvoyez."
+
+  defp render(:venue_rejected, "ar", venue: venue, reason: reason),
+    do: "#{venue} لم تتم الموافقة عليه بعد: #{reason} صحّح وأعد الإرسال."
+
+  defp render(:venue_rejected, _en, venue: venue, reason: reason),
+    do: "#{venue} was not approved yet: #{reason} Fix it and resubmit."
 
   # Roles are stored in English; the invitation is read by the invitee.
   defp role_name(role, "fr") do

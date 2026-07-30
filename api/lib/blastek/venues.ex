@@ -19,6 +19,10 @@ defmodule Blastek.Venues.Venue do
     field :lng, :float
     # Populated only by a distance search — see `Blastek.Discovery.search/1`.
     field :distance_km, :float, virtual: true
+    # Wizard step state (F0.5). Schemaless on purpose: the wizard's shape will
+    # change far more often than the database should.
+    field :onboarding, :map, default: %{}
+    field :rejected_reason, :string, default: ""
     has_many :members, Blastek.Venues.VenueMember
     timestamps(type: :naive_datetime)
   end
@@ -35,7 +39,9 @@ defmodule Blastek.Venues.Venue do
       :status,
       :settings,
       :lat,
-      :lng
+      :lng,
+      :onboarding,
+      :rejected_reason
     ])
     |> validate_required([:name])
     |> validate_number(:lat, greater_than_or_equal_to: -90, less_than_or_equal_to: 90)
@@ -96,6 +102,7 @@ defmodule Blastek.Venues do
   import Ecto.Query
   alias Blastek.Audit
   alias Blastek.Repo
+  alias Blastek.Venues.Settings
   alias Blastek.Venues.{Venue, VenueMember}
 
   # Ordered weakest → strongest; `role_at_least?/2` compares by index.
@@ -170,13 +177,25 @@ defmodule Blastek.Venues do
   def update_venue(id, attrs), do: get_venue!(id) |> update_venue(attrs)
 
   @doc """
-  Sets the women-only flag, which the marketplace exposes as a search filter.
+  Merges validated changes into a venue's settings blob.
 
-  Merged into `settings` rather than replacing it, because a blind write here
-  would drop the amenities list stored alongside.
+  Everything that writes to `settings` goes through `Blastek.Venues.Settings`:
+  the column is schemaless by design, so the discipline has to live in the write
+  path or a typo becomes a key nobody reads.
+
+  Merged rather than replaced — a client saving one option must not blank the
+  rest.
   """
+  def update_settings(%Venue{} = venue, changes) do
+    case Settings.change(venue.settings || %{}, changes) do
+      {:ok, settings} -> update_venue(venue, %{settings: settings})
+      {:error, message} -> {:error, message}
+    end
+  end
+
+  @doc "Sets the women-only flag, which the marketplace exposes as a search filter."
   def set_women_only(%Venue{} = venue, value) when is_boolean(value) do
-    update_venue(venue, %{settings: Map.put(venue.settings, "women_only", value)})
+    update_settings(venue, %{"women_only" => value})
   end
 
   @doc """
