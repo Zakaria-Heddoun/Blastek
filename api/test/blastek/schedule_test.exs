@@ -191,6 +191,45 @@ defmodule Blastek.ScheduleTest do
       assert message =~ "No schedule called"
     end
 
+    test "a day that ends before it starts is stored as closed", ctx do
+      # The seven days arrive together, so one transposed pair must not cost the
+      # owner the other six — but storing it as-is would leave the slot engine
+      # offering nothing on that day with nothing to show for it.
+      {:ok, template} =
+        Schedule.upsert_template(ctx.venue.id, "typo", [
+          %{weekday: 2, working: true, start_min: 1080, end_min: 540}
+        ])
+
+      day = Schedule.week_list(template) |> Enum.find(&(&1["weekday"] == 2))
+      refute day["working"]
+    end
+
+    test "working_hours reports the precedence directly", ctx do
+      weekday = Date.day_of_week(ctx.date, :sunday) - 1
+
+      # No template: the staff member's own default row.
+      assert Salon.working_hours(ctx.venue.id, ctx.staff.id, weekday) == {540, 1080}
+
+      {:ok, template} = Schedule.upsert_template(ctx.venue.id, "ramadan", ramadan_week())
+      {:ok, _} = Schedule.activate_template(ctx.venue.id, "ramadan")
+
+      # Under a non-default template the venue grid applies, *not* the default
+      # staff row — that fallback is what would make a seasonal switch a no-op.
+      assert Salon.working_hours(ctx.venue.id, ctx.staff.id, weekday) == {1260, 1470}
+
+      Repo.insert!(%Blastek.Salon.StaffHour{
+        staff_id: ctx.staff.id,
+        template_id: template.id,
+        weekday: weekday,
+        working: true,
+        start_min: 600,
+        end_min: 720
+      })
+
+      # Their own row for this template beats the grid.
+      assert Salon.working_hours(ctx.venue.id, ctx.staff.id, weekday) == {600, 720}
+    end
+
     test "a partial week is filled in rather than blanking the rest", ctx do
       # A client sending only the day it changed must not close the salon for
       # the other six.

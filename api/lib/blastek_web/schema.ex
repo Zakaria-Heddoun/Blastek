@@ -289,17 +289,28 @@ defmodule BlastekWeb.Schema do
       resolve(fn venue, _, _ -> {:ok, women_only?(venue)} end)
     end
 
-    @desc "Why an admin turned this venue down, if they did."
-    field :rejected_reason, :string
-
-    @desc "Progress through the setup wizard."
-    field :onboarding, :onboarding_state do
-      resolve(fn venue, _, _ -> {:ok, onboarding_state(venue)} end)
+    @desc "Why an admin turned this venue down, if they did. Null to outsiders."
+    field :rejected_reason, :string do
+      resolve(fn venue, args, res ->
+        own_venue_field(venue, args, res, fn venue -> venue.rejected_reason end)
+      end)
     end
 
-    @desc "The settings blob, as JSON. Written through `updateVenueSettings`."
+    @desc "Progress through the setup wizard. Null to outsiders."
+    field :onboarding, :onboarding_state do
+      resolve(fn venue, args, res -> own_venue_field(venue, args, res, &onboarding_state/1) end)
+    end
+
+    @desc """
+    The settings blob, as JSON. Written through `updateVenueSettings`.
+
+    Null to outsiders: a venue's notice period, cancellation window and whether
+    it vets its bookings are its own business, not a shopper's.
+    """
     field :settings_json, :json do
-      resolve(fn venue, _, _ -> {:ok, venue.settings || %{}} end)
+      resolve(fn venue, args, res ->
+        own_venue_field(venue, args, res, fn venue -> venue.settings || %{} end)
+      end)
     end
 
     @desc """
@@ -1315,8 +1326,7 @@ defmodule BlastekWeb.Schema do
       middleware(RequireMember, "manager")
 
       resolve(fn args, %{context: ctx} ->
-        Venues.Schedule.create_closure(ctx.venue_id, Map.delete(args, :__struct__))
-        |> format_errors()
+        Venues.Schedule.create_closure(ctx.venue_id, args) |> format_errors()
       end)
     end
 
@@ -1871,13 +1881,13 @@ defmodule BlastekWeb.Schema do
       middleware(RequireAuth)
 
       resolve(fn %{id: id}, %{context: %{current_user: user}} ->
-        case Salon.get_appointment_for_client(to_int(id), Accounts.client_ids(user)) do
-          %{status: status} = appt when status in ["booked", "confirmed"] ->
-            Salon.update_appointment(appt.venue_id, appt.id, %{status: "cancelled"})
-            |> format_errors()
+        appt = Salon.get_appointment_for_client(to_int(id), Accounts.client_ids(user))
 
-          _ ->
-            {:error, "This appointment can no longer be cancelled online."}
+        if appt && Salon.cancellable_by_client?(appt) do
+          Salon.update_appointment(appt.venue_id, appt.id, %{status: "cancelled"})
+          |> format_errors()
+        else
+          {:error, "This appointment can no longer be cancelled online — please call the salon."}
         end
       end)
     end
@@ -2167,6 +2177,23 @@ defmodule BlastekWeb.Schema do
       start_min: day["start_min"],
       end_min: day["end_min"]
     }
+  end
+
+  # `venue_summary` is a public type: it comes back from marketplace search and
+  # from a venue page. A few of its fields are the venue's own business, so they
+  # answer only to a member of that venue or to an admin.
+  #
+  # Gated on the type rather than left to the queries. Nothing today hands a
+  # stranger a pending venue, so nothing leaks — but that is a property of
+  # today's queries, and the next one to return summaries would give these away
+  # without anybody noticing.
+  defp own_venue_field(venue, _args, %{context: ctx}, read) do
+    admin? = match?(%{current_user: %{role: "admin"}}, ctx)
+
+    member? =
+      ctx |> Map.get(:memberships, []) |> Enum.any?(&(&1.venue_id == venue.id))
+
+    if admin? or member?, do: {:ok, read.(venue)}, else: {:ok, nil}
   end
 
   defp onboarding_state(%{onboarding: onboarding} = venue) when is_map(onboarding) do

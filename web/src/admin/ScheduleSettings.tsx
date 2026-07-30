@@ -336,6 +336,7 @@ function ClosuresSection({
   const [endMin, setEndMin] = useState(840);
   const [reason, setReason] = useState('');
   const [conflicts, setConflicts] = useState<Conflict[] | null>(null);
+  const [checkError, setCheckError] = useState('');
   const [checking, setChecking] = useState(false);
 
   const vars = () => ({
@@ -346,6 +347,15 @@ function ClosuresSection({
     reason,
   });
 
+  // A result belongs to the period it was asked about. Leaving "nothing is
+  // booked" on screen while the owner edits the dates underneath it is the same
+  // false reassurance as showing it when the check failed.
+  const forget = <T,>(set: (value: T) => void) => (value: T) => {
+    set(value);
+    setConflicts(null);
+    setCheckError('');
+  };
+
   // Checked before creating, never after. F0.4 is explicit that bookings inside
   // a new closure are shown to the owner to act on and never silently
   // cancelled — a salon closing for a funeral still has to telephone the four
@@ -353,11 +363,17 @@ function ClosuresSection({
   const check = async () => {
     if (!date) return;
     setChecking(true);
+    setCheckError('');
     try {
       const d = await gql<{ closureConflicts: Conflict[] }>(CONFLICTS, vars());
       setConflicts(d.closureConflicts ?? []);
-    } catch {
-      setConflicts([]);
+    } catch (e) {
+      // Emphatically not `setConflicts([])`. A failed check rendered as
+      // "nothing is booked in that period" is the one outcome this feature
+      // exists to prevent: the owner shuts the day on that reassurance and
+      // finds out from the customers standing outside.
+      setConflicts(null);
+      setCheckError((e as Error).message);
     } finally {
       setChecking(false);
     }
@@ -384,31 +400,31 @@ function ClosuresSection({
       <div className="closure-form">
         <label>
           First day
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          <input type="date" value={date} onChange={(e) => forget(setDate)(e.target.value)} />
         </label>
 
         <label>
           Last day (optional)
-          <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+          <input type="date" value={endDate} onChange={(e) => forget(setEndDate)(e.target.value)} />
         </label>
 
         <label className="closure-check">
           <input
             type="checkbox"
             checked={wholeDay}
-            onChange={(e) => setWholeDay(e.target.checked)}
+            onChange={(e) => forget(setWholeDay)(e.target.checked)}
           />
           Closed all day
         </label>
 
         {!wholeDay && (
           <div className="closure-window">
-            <select value={startMin} onChange={(e) => setStartMin(Number(e.target.value))}
+            <select value={startMin} onChange={(e) => forget(setStartMin)(Number(e.target.value))}
               aria-label="Closed from">
               {TIME_OPTIONS.map((m) => <option key={m} value={m}>{fmtMinutes(m)}</option>)}
             </select>
             <span className="fainttext">to</span>
-            <select value={endMin} onChange={(e) => setEndMin(Number(e.target.value))}
+            <select value={endMin} onChange={(e) => forget(setEndMin)(Number(e.target.value))}
               aria-label="Closed until">
               {TIME_OPTIONS.map((m) => <option key={m} value={m}>{fmtMinutes(m)}</option>)}
             </select>
@@ -433,6 +449,15 @@ function ClosuresSection({
           </button>
         </div>
       </div>
+
+      {checkError && (
+        <div className="closure-conflicts has-conflicts">
+          <b>We could not check that period.</b>
+          <p className="fainttext">
+            {checkError} — try again before closing the day, rather than assuming it is empty.
+          </p>
+        </div>
+      )}
 
       {conflicts !== null && (
         <div className={`closure-conflicts${conflicts.length ? ' has-conflicts' : ''}`}>

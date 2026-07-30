@@ -153,8 +153,8 @@ export default function CalendarPage() {
                       className="closure-band"
                       title={band.reason || 'Closed'}
                       style={{
-                        top: (Math.max(band.from, DAY_START) - DAY_START) * PX_MIN,
-                        height: (Math.min(band.to, DAY_END) - Math.max(band.from, DAY_START)) * PX_MIN,
+                        top: (band.from - DAY_START) * PX_MIN,
+                        height: (band.to - band.from) * PX_MIN,
                       }}
                     >
                       <span>{band.reason || 'Closed'}</span>
@@ -482,12 +482,20 @@ interface Closure {
  * covers its window. Spans are expanded per day here rather than server-side so
  * the calendar can draw each column independently.
  */
+/**
+ * Closure bands overlapping this date, clipped to the visible hours.
+ *
+ * Clipped here rather than at render: a closure wholly outside the grid — the
+ * 00:00–07:00 half of a whole-day one, say — otherwise produced a band with a
+ * negative height, which is invalid CSS that happens to look like nothing.
+ */
 function closedBands(closures: Closure[], date: string) {
   return closures
     .filter((c) => date >= c.date && date <= (c.endDate || c.date))
     .map((c) => ({
-      from: c.startMin ?? 0,
-      to: c.endMin ?? 24 * 60,
+      from: Math.max(c.startMin ?? 0, DAY_START),
+      to: Math.min(c.endMin ?? 24 * 60, DAY_END),
       reason: c.reason,
-    }));
+    }))
+    .filter((band) => band.to > band.from);
 }

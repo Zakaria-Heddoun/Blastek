@@ -146,7 +146,7 @@ defmodule Blastek.Venues.Schedule do
 
   def create_closure(venue_id, attrs) do
     %Closure{}
-    |> Closure.changeset(Map.put(normalize(attrs), :venue_id, venue_id))
+    |> Closure.changeset(Map.put(stringify_keys(attrs), "venue_id", venue_id))
     |> Repo.insert()
   end
 
@@ -256,7 +256,17 @@ defmodule Blastek.Venues.Schedule do
             set: [active: false]
           )
 
-          template |> Ecto.Changeset.change(%{active: true}) |> Repo.update!()
+          # Through the changeset, not `change/2`: two owners switching at once
+          # (or one impatient double-click) both clear the flag and both try to
+          # set it, and the partial unique index rejects the loser. That has to
+          # come back as "try again", not a 500.
+          template
+          |> HourTemplate.changeset(%{active: true})
+          |> Repo.update()
+          |> case do
+            {:ok, activated} -> activated
+            {:error, _changeset} -> Repo.rollback("Another schedule change is in flight.")
+          end
         end)
     end
   end
@@ -296,11 +306,19 @@ defmodule Blastek.Venues.Schedule do
           %{"weekday" => weekday, "working" => false, "start_min" => 540, "end_min" => 1080}
 
         day ->
+          start_min = clamp_minute(day_field(day, :start_min) || 540)
+          end_min = clamp_minute(day_field(day, :end_min) || 1080)
+
           %{
             "weekday" => weekday,
-            "working" => day_field(day, :working) == true,
-            "start_min" => clamp_minute(day_field(day, :start_min) || 540),
-            "end_min" => clamp_minute(day_field(day, :end_min) || 1080)
+            # A day that ends before it starts is closed, not a shift running
+            # backwards. `Closure` rejects the same shape outright; a template
+            # cannot, because the seven days arrive together and one bad row
+            # must not cost the owner the other six — but silently storing it
+            # would leave the slot engine offering nothing with no explanation.
+            "working" => day_field(day, :working) == true and end_min > start_min,
+            "start_min" => start_min,
+            "end_min" => end_min
           }
       end
     end
@@ -317,10 +335,11 @@ defmodule Blastek.Venues.Schedule do
 
   defp clamp_minute(_), do: 540
 
-  defp normalize(attrs) do
-    Map.new(attrs, fn {key, value} -> {to_atom(key), value} end)
+  # `cast/3` takes either, but not a mixture — so everything becomes a string
+  # key. The previous version reached for `String.to_existing_atom`, which turns
+  # an unrecognised key from any future caller into a raise rather than the
+  # "ignored" that `cast/3` already gives for free.
+  defp stringify_keys(attrs) do
+    Map.new(attrs, fn {key, value} -> {to_string(key), value} end)
   end
-
-  defp to_atom(key) when is_atom(key), do: key
-  defp to_atom(key), do: String.to_existing_atom(key)
 end
