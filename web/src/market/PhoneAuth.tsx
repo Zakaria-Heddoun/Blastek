@@ -10,10 +10,23 @@ import { useAuth } from '../lib/auth';
 
 type Step = 'phone' | 'code' | 'name';
 
-export default function PhoneAuth({ onDone }: { onDone: () => void }) {
+export default function PhoneAuth({
+  onDone,
+  initialStep = 'phone',
+}: {
+  onDone: () => void;
+  /**
+   * Where to start.
+   *
+   * `name` is for someone already signed in whose account has never been named
+   * — they have a phone and a session, so asking for the number again would be
+   * a step backwards.
+   */
+  initialStep?: Step;
+}) {
   const { requestOtp, verifyOtp, completeProfile } = useAuth();
 
-  const [step, setStep] = useState<Step>('phone');
+  const [step, setStep] = useState<Step>(initialStep);
   const [phone, setPhone] = useState('');
   const [masked, setMasked] = useState('');
   const [code, setCode] = useState('');

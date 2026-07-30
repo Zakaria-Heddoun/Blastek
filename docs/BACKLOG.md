@@ -243,14 +243,85 @@ as a bearer token, a forged `x-venue-slug` cannot reach another venue, and
 `last_used_at` is not rewritten per request.
 
 ### E4 · Team & permissions — F0.3
-| ID | Task | Est | Labels |
-|---|---|---|---|
-| E4-T1 | Migration + context: `venue_invitations`; invite/accept/remove/change-role | M | api |
-| E4-T2 | `RequireMember` per-field minimum roles across schema; role integration-test matrix | M | api,test |
-| E4-T3 | `staff` role scoping: own-calendar-only queries | S | api |
-| E4-T4 | Web: Team page members tab (invite modal, roles); role-aware nav in AdminLayout | M | web |
-| E4-T5 | Invitation accept flow (deep link → OTP → membership) | S | web |
-| E4-T6 | Last-owner protection + audit of membership changes | XS | api |
+
+**Status: ✅ COMPLETE and verified** (345 tests). E1 had already built the
+membership model, roles and last-owner protection, so the new work was
+invitations, the audit trail, staff scoping and the permission matrix.
+
+| ID | Task | Est | Labels | Status |
+|---|---|---|---|---|
+| E4-T1 | Migration + context: `venue_invitations`; invite/accept/remove/change-role | M | api | ✅ |
+| E4-T2 | `RequireMember` per-field minimum roles across schema; role integration-test matrix | M | api,test | ✅ |
+| E4-T3 | `staff` role scoping: own-calendar-only queries | S | api | ✅ |
+| E4-T4 | Web: Team page members tab (invite modal, roles); role-aware nav in AdminLayout | M | web | ✅ |
+| E4-T5 | Invitation accept flow (deep link → OTP → membership) | S | web | ✅ |
+| E4-T6 | Last-owner protection + audit of membership changes | XS | api | ✅ |
+
+**Acceptance criteria** (F0.3), all met: invite by phone or email creates a
+pending invitation, and accepting links or creates the account through the OTP
+flow · role changes take effect on the session's next request, because
+`AuthContext` resolves memberships per request rather than caching them ·
+`staff` see only their own calendar column, and the API refuses a colleague's
+client with the same "Not found." a missing id gets · removing a member revokes
+access and preserves the `staff` row and its history · **every dashboard
+GraphQL op is integration-tested against all four roles**.
+
+**Verification performed**
+
+```
+docker compose exec api sh -c "MIX_ENV=test mix test"   # 345 tests, 0 failures
+docker compose exec api mix compile --warnings-as-errors && mix format --check-formatted
+docker compose exec api sh -c "MIX_ENV=test mix ecto.rollback --all && mix ecto.migrate"
+cd web && npx tsc --noEmit && npm run build              # + prerender, + money guard
+```
+
+Driven in a real browser: an owner opens Team → Access, sees the sole owner's
+controls disabled, invites a receptionist by phone, gets a shareable link, and
+watches the pending row appear. A clean browser session opens that link, is
+shown the venue and role *before* being asked to sign in, signs in by code,
+is asked its name, joins, and lands in the dashboard — where the nav offers
+Calendar and Clients and no revenue.
+
+**Notes from implementation**
+
+* **Roster and Access are separate tabs, deliberately.** A `staff` row is a
+  calendar column that takes appointments; a membership is a login. Most people
+  are both, some are only one — a silent partner who reads the books, a junior
+  who is booked but has no account — and merging them is what makes "remove
+  their access" delete a year of history.
+* An invitation is a bearer credential and follows the session rules: 32 random
+  bytes, only the SHA-256 stored, 7-day expiry, single use. The **token grants,
+  not the contact** — invitees routinely sign up with a different number than
+  the owner had for them, and an invitation the holder of the link cannot
+  redeem is just a support ticket.
+* The invite modal shows the link as well as sending it. It is unrecoverable
+  afterwards, and an owner standing next to the new hire should not have to wait
+  for an SMS.
+* Accepting **upgrades an existing membership but never downgrades one**. An
+  invitation is an offer; taking one up should not cost someone access they
+  already had.
+* `audit_log` is the general shape with a deliberately narrow set of writers —
+  the same seam-now, machinery-later approach as E3's `Notifications`. E11 adds
+  actions and the admin UI rather than migrating a `membership_events` table.
+  Recording never fails the operation being recorded: losing an audit row is
+  bad, failing a member removal because the log was unavailable is worse.
+* Staff get F0.3's "limited CRM": the client list narrowed to people they have
+  actually served, via `EXISTS` rather than a join so a client with twenty
+  appointments is still one row. A staff membership with **no** calendar column
+  is scoped to `staff_id: 0` rather than `nil` — the latter would read as "no
+  restriction" and hand the whole client list to the least privileged role.
+
+**Defects found during verification** (each would have shipped):
+
+| Defect | Fix |
+|---|---|
+| **The permission matrix was passing vacuously.** Absinthe hides field middleware behind a lazy shim, so reading `field.middleware` found nothing, `gated` was empty, and the completeness check asserted precisely zero. It was caught only because the check asserts a *lower bound* on what introspection finds | Expand and `unshim` the middleware. With it working, the check immediately found **28 gated fields with no matrix row** — including every photo and venue mutation E8 added, which had never been role-reviewed. All 37 are now covered |
+| A malformed row in the matrix never reached the middleware, so it read as "allowed" for every role — a typo would have silently asserted nothing | GraphQL *validation* errors now fail the test loudly, separately from argument errors |
+| `createService` with a non-existent `categoryId` raised `Ecto.ConstraintError` out of the resolver — an HTTP 500 for an ordinary bad argument. The same class of defect the E1 review fixed for cross-tenant reads, in the opposite direction | `foreign_key_constraint(:category_id)` on the changeset |
+| **The invitee was never asked their name.** `JoinVenue` switched on `user`, so the instant `verifyOtp` set one it unmounted the phone flow mid-sequence — before the name step could render. New team members joined as a bare phone number | Gate on `profileComplete`, and let an already-signed-in-but-unnamed invitee start at the name step |
+
+**Deferred, unchanged:** `phoenix` 1.7.23 (HIGH) and `react-router` 6.x
+(2 × MODERATE) still need framework major bumps under CH-1.
 
 ### E5 · Venue settings & onboarding — F0.4, F0.5
 | ID | Task | Est | Labels |

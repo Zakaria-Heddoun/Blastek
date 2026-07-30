@@ -17,6 +17,7 @@ import VenuePage from './market/VenuePage';
 import BookingFlow from './market/BookingFlow';
 import AuthPage from './market/AuthPage';
 import ForgotPassword from './market/ForgotPassword';
+import JoinVenue from './market/JoinVenue';
 import Account from './market/Account';
 import BungeePage from './bungee/BungeePage';
 
@@ -52,6 +53,8 @@ export default function App() {
               one arriving back as ?token=. */}
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ForgotPassword />} />
+          {/* Team invitation deep link (E4-T5). */}
+          <Route path="/join" element={<JoinVenue />} />
           {/* Marketplace: the directory, then one venue addressed by slug. */}
           <Route path="/venues" element={<VenueList />} />
           <Route path="/v/:slug" element={<MarketLayout />}>

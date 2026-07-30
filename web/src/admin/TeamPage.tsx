@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { gql } from '../lib/gql';
 import type { Staff, StaffHour } from '../lib/types';
 import { useAppData } from './AdminLayout';
+import MembersTab from './MembersTab';
 import { Modal, useToast } from '../components/ui';
 import { Icon } from '../lib/icons';
 import { fmtTime, initials, WEEKDAYS } from '../lib/format';
@@ -19,16 +20,45 @@ function timeRange(from: number, to: number) {
 export default function TeamPage() {
   const { staff, refresh } = useAppData();
   const [editing, setEditing] = useState<Staff | 'new' | null>(null);
+  const [tab, setTab] = useState<'roster' | 'access'>('roster');
 
   return (
     <>
       <div className="page-head">
-        <h1>Team</h1><div className="grow" />
-        <button className="btn btn-primary" onClick={() => setEditing('new')}>
-          <Icon name="plus" size={16} /> Add team member
-        </button>
+        <h1>Team</h1>
+        {/* Two different things share this page: who takes appointments, and
+            who can sign in. Tabs rather than one list, because conflating them
+            is how "remove their access" deletes a year of history. */}
+        <div className="team-tabs" role="tablist">
+          <button
+            role="tab"
+            aria-selected={tab === 'roster'}
+            className={tab === 'roster' ? 'active' : ''}
+            onClick={() => setTab('roster')}
+          >
+            Roster
+          </button>
+          <button
+            role="tab"
+            aria-selected={tab === 'access'}
+            className={tab === 'access' ? 'active' : ''}
+            onClick={() => setTab('access')}
+          >
+            Access
+          </button>
+        </div>
+        <div className="grow" />
+        {tab === 'roster' && (
+          <button className="btn btn-primary" onClick={() => setEditing('new')}>
+            <Icon name="plus" size={16} /> Add team member
+          </button>
+        )}
       </div>
-      <div className="cards">
+
+      {tab === 'access' && <MembersTab staff={staff} />}
+
+      {tab === 'roster' && (
+        <div className="cards">
         {staff.map((st) => (
           <div key={st.id} className={`card staff-card ${st.active ? '' : 'mutetext'}`}>
             <div className="top">
@@ -46,7 +76,9 @@ export default function TeamPage() {
             <button className="btn btn-sm" style={{ alignSelf: 'flex-start' }} onClick={() => setEditing(st)}>Edit</button>
           </div>
         ))}
-      </div>
+        </div>
+      )}
+
       {editing && <StaffModal staff={editing === 'new' ? null : editing}
         onClose={() => setEditing(null)} onDone={() => { setEditing(null); refresh(); }} />}
     </>

@@ -94,17 +94,63 @@ defmodule BlastekWeb.AuthorizationTest do
   end
 
   describe "role gates" do
-    test "staff cannot read clients, sales or reports", %{a: a} do
+    test "staff cannot read sales or reports", %{a: a} do
       %{user: user} = member_fixture(a.venue, "staff", "staff@example.com")
       ctx = context_for(user)
-
-      assert error_message(run("{ clients { items { id } } }", ctx)) =~ "role does not allow"
 
       assert error_message(run("{ sales(from: \"2020-01-01\") { items { id } } }", ctx)) =~
                "role does not allow"
 
       assert error_message(run("{ reportSummary { revenueCents } }", ctx)) =~
                "role does not allow"
+    end
+
+    test "staff read only the clients they have served", %{a: a} do
+      # F0.3 gives staff a *limited* CRM: the allergy note for the person in
+      # their chair, not the venue's whole customer list — which is the venue's
+      # commercial asset and would walk out of the door with anyone who leaves.
+      %{user: user} = member_fixture(a.venue, "staff", "own-clients@example.com")
+
+      Venues.get_membership(user.id, a.venue.id)
+      |> Ecto.Changeset.change(%{staff_id: a.staff.id})
+      |> Blastek.Repo.update!()
+
+      mine = a.client
+      {:ok, theirs} = Blastek.Salon.create_client(a.venue.id, %{first_name: "Unserved"})
+      appointment_fixture(a)
+
+      ctx = context_for(user)
+
+      assert {:ok, %{data: %{"clients" => page}}} =
+               run("{ clients { items { id } totalCount } }", ctx)
+
+      ids = Enum.map(page["items"], & &1["id"])
+      assert ids == [to_string(mine.id)]
+      assert page["totalCount"] == 1
+
+      # And a colleague's client cannot be reached by guessing the id.
+      assert error_message(run(~s|{ client(id: "#{theirs.id}") { id } }|, ctx)) =~ "Not found"
+    end
+
+    test "a staff member with no calendar column has served nobody", %{a: a} do
+      # `staff_id: nil` must not read as "no restriction" — that would hand the
+      # whole client list to the least privileged role.
+      %{user: user} = member_fixture(a.venue, "staff", "columnless@example.com")
+
+      assert {:ok, %{data: %{"clients" => page}}} =
+               run("{ clients { items { id } totalCount } }", context_for(user))
+
+      assert page["items"] == []
+      assert page["totalCount"] == 0
+    end
+
+    test "a receptionist still sees every client", %{a: a} do
+      %{user: user} = member_fixture(a.venue, "receptionist", "front-desk@example.com")
+
+      assert {:ok, %{data: %{"clients" => page}}} =
+               run("{ clients { totalCount } }", context_for(user))
+
+      assert page["totalCount"] >= 1
     end
 
     test "staff can read the calendar", %{a: a} do

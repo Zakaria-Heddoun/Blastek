@@ -151,48 +151,94 @@ defmodule Blastek.Salon do
 
   ## ---------- clients ----------
 
+  @doc """
+  Clients of a venue, searchable and paginated.
+
+  `staff_id:` narrows the list to the people that staff member has actually
+  served — the "limited CRM" a `staff` role gets (F0.3). A stylist needs the
+  allergy note for the person in their chair; they do not need the venue's whole
+  customer list, which is the venue's commercial asset and walks out of the door
+  with anyone who leaves.
+  """
   def list_clients(venue_id, query_text, opts \\ []) do
     term = "%#{String.downcase(query_text || "")}%"
     limit = opts[:limit] || 50
     offset = opts[:offset] || 0
 
     Repo.all(
-      from c in search_clients(venue_id, term),
+      from c in search_clients(venue_id, term, opts[:staff_id]),
         order_by: [c.first_name, c.last_name],
         limit: ^limit,
         offset: ^offset
     )
   end
 
-  def count_clients(venue_id, query_text) do
-    Repo.aggregate(search_clients(venue_id, "%#{String.downcase(query_text || "")}%"), :count)
+  def count_clients(venue_id, query_text, opts \\ []) do
+    term = "%#{String.downcase(query_text || "")}%"
+    Repo.aggregate(search_clients(venue_id, term, opts[:staff_id]), :count)
   end
 
-  defp search_clients(venue_id, term) do
-    from c in scope(Client, venue_id),
+  # The `:client` binding is named here so the `served_by` subquery can
+  # correlate back to it.
+  defp client_base(venue_id), do: from(c in Client, as: :client) |> scope(venue_id)
+
+  defp search_clients(venue_id, term, staff_id) do
+    query =
+      from c in client_base(venue_id),
+        where:
+          like(
+            fragment(
+              "lower(? || ' ' || ? || ' ' || ? || ' ' || ?)",
+              c.first_name,
+              c.last_name,
+              c.email,
+              c.phone
+            ),
+            ^term
+          )
+
+    if staff_id, do: served_by(query, staff_id), else: query
+  end
+
+  # EXISTS rather than a join: a client with twenty appointments is still one
+  # row in the list.
+  defp served_by(query, staff_id) do
+    from c in query,
       where:
-        like(
-          fragment(
-            "lower(? || ' ' || ? || ' ' || ? || ' ' || ?)",
-            c.first_name,
-            c.last_name,
-            c.email,
-            c.phone
-          ),
-          ^term
+        exists(
+          from a in Appointment,
+            where: a.client_id == parent_as(:client).id and a.staff_id == ^staff_id,
+            select: 1
         )
   end
 
-  def get_client!(venue_id, id) do
-    get_scoped!(Repo, Client, id, venue_id)
-    |> Repo.preload(
-      appointments:
-        {from(a in Appointment,
-           order_by: [desc: a.date, desc: a.start_min],
-           limit: 50,
-           preload: ^@appt_preloads
-         ), []}
-    )
+  @doc """
+  One client with their recent appointments.
+
+  `staff_id:` restricts both the lookup and the history, so a staff member
+  cannot reach a colleague's client by guessing an id, and sees only their own
+  appointments with the ones they do serve.
+  """
+  def get_client!(venue_id, id, opts \\ []) do
+    staff_id = opts[:staff_id]
+
+    base = client_base(venue_id)
+    query = if staff_id, do: served_by(base, staff_id), else: base
+
+    case Repo.get(query, id) do
+      nil -> raise Ecto.NoResultsError, queryable: Client
+      client -> Repo.preload(client, appointments: client_history(staff_id))
+    end
+  end
+
+  defp client_history(staff_id) do
+    query =
+      from a in Appointment,
+        order_by: [desc: a.date, desc: a.start_min],
+        limit: 50,
+        preload: ^@appt_preloads
+
+    if staff_id, do: from(a in query, where: a.staff_id == ^staff_id), else: query
   end
 
   @doc """

@@ -16,10 +16,13 @@ defmodule BlastekWeb.Schema do
   import_types(Absinthe.Type.Custom)
 
   alias Blastek.Accounts
+  alias Blastek.Audit
   alias Blastek.Discovery
   alias Blastek.Media
+  alias Blastek.Repo
   alias Blastek.Salon
   alias Blastek.Venues
+  alias Blastek.Venues.Invitations
 
   alias BlastekWeb.Schema.{
     RateLimitAuth,
@@ -342,6 +345,88 @@ defmodule BlastekWeb.Schema do
     field :id, :id
     field :role, :string
     field :venue, :venue_summary
+
+    @desc "The person. Absent on a membership loaded without its user."
+    field :user, :team_member do
+      resolve(fn membership, _, _ -> {:ok, loaded_or(membership.user, nil)} end)
+    end
+
+    @desc "Calendar column this member owns, when they take appointments."
+    field :staff_id, :id
+  end
+
+  @desc """
+  A colleague, as their teammates see them.
+
+  Deliberately not the full `:user` type: a manager listing the team has no
+  business reading another member's platform role or venue list.
+  """
+  object :team_member do
+    field :id, :id
+    field :first_name, :string
+    field :last_name, :string
+    field :email, :string
+    field :phone, :string
+  end
+
+  @desc "A role held open for someone who has not joined yet."
+  object :invitation do
+    field :id, :id
+    field :role, :string
+    field :phone, :string
+    field :email, :string
+    field :expires_at, :naive_datetime
+    field :inserted_at, :naive_datetime
+  end
+
+  @desc """
+  A freshly created invitation.
+
+  `url` is returned once and never again — it contains the raw token, which is
+  not recoverable from storage. Showing it lets an owner hand the link over in
+  person when delivery fails or the invitee is standing right there.
+  """
+  object :invitation_created do
+    field :invitation, non_null(:invitation)
+    field :url, non_null(:string)
+  end
+
+  @desc "What an invitation link is offering, shown before asking anyone to sign in."
+  object :invitation_preview do
+    field :role, :string
+    field :venue_name, :string
+    field :venue_slug, :string
+    field :expires_at, :naive_datetime
+  end
+
+  @desc "One recorded change to who can do what."
+  object :audit_entry do
+    field :id, :id
+
+    @desc ~s|Dotted verb, e.g. "member.role_changed".|
+    field :action, :string
+
+    field :subject_type, :string
+    field :subject_id, :integer
+    field :inserted_at, :naive_datetime
+
+    @desc "Who did it. Null when the account has since been deleted."
+    field :actor, :team_member do
+      resolve(fn entry, _, _ ->
+        {:ok, entry.actor_user_id && Accounts.get_user(entry.actor_user_id)}
+      end)
+    end
+
+    @desc "Before-and-after detail, as JSON. Shape depends on `action`."
+    field :metadata, :json do
+      resolve(fn entry, _, _ -> {:ok, entry.metadata} end)
+    end
+  end
+
+  @desc "Arbitrary JSON. Used where the shape depends on a sibling field."
+  scalar :json, name: "Json" do
+    serialize(& &1)
+    parse(fn %Absinthe.Blueprint.Input.String{value: value} -> Jason.decode(value) end)
   end
 
   object :slot do
@@ -682,25 +767,32 @@ defmodule BlastekWeb.Schema do
       arg(:q, :string)
       arg(:limit, :integer, default_value: 50)
       arg(:offset, :integer, default_value: 0)
-      middleware(RequireMember, "receptionist")
+
+      # Staff may reach this, narrowed to the people they have served — the
+      # "limited CRM" of F0.3. The venue's full client list stays a
+      # receptionist-and-above thing.
+      middleware(RequireMember, "staff")
 
       resolve(fn args, %{context: ctx} ->
-        page = page_args(args)
+        scope = own_client_scope(ctx)
+        page = page_args(args) ++ scope
 
         {:ok,
          %{
            items: Salon.list_clients(ctx.venue_id, args[:q], page),
-           total_count: Salon.count_clients(ctx.venue_id, args[:q])
+           total_count: Salon.count_clients(ctx.venue_id, args[:q], scope)
          }}
       end)
     end
 
     field :client, :client do
       arg(:id, non_null(:id))
-      middleware(RequireMember, "receptionist")
+      middleware(RequireMember, "staff")
 
       resolve(fn %{id: id}, %{context: ctx} ->
-        found(fn -> {:ok, Salon.get_client!(ctx.venue_id, id)} end)
+        # A staff member guessing a colleague's client id gets the same "Not
+        # found." as a genuinely missing one.
+        found(fn -> {:ok, Salon.get_client!(ctx.venue_id, id, own_client_scope(ctx))} end)
       end)
     end
 
@@ -731,6 +823,49 @@ defmodule BlastekWeb.Schema do
     field :venue_members, list_of(:venue_membership) do
       middleware(RequireMember, "manager")
       resolve(fn _, %{context: ctx} -> {:ok, Venues.list_members(ctx.venue_id)} end)
+    end
+
+    @desc "Invitations sent but not yet accepted."
+    field :pending_invitations, list_of(:invitation) do
+      middleware(RequireMember, "manager")
+      resolve(fn _, %{context: ctx} -> {:ok, Invitations.list_pending(ctx.venue_id)} end)
+    end
+
+    @desc """
+    What an invitation link offers, without redeeming it.
+
+    Public: the holder of the link has not signed in yet, and asking them to
+    before telling them what they are joining is how people accept things
+    blindly. The token is the secret; the venue's name is not.
+    """
+    field :invitation, :invitation_preview do
+      arg(:token, non_null(:string))
+
+      resolve(fn %{token: token}, _ ->
+        case Invitations.preview(token) do
+          {:ok, %{invitation: invitation, venue: venue}} ->
+            {:ok,
+             %{
+               role: invitation.role,
+               venue_name: venue && venue.name,
+               venue_slug: venue && venue.slug,
+               expires_at: invitation.expires_at
+             }}
+
+          other ->
+            format_errors(other)
+        end
+      end)
+    end
+
+    @desc "Recent changes to who can do what here."
+    field :audit_log, list_of(:audit_entry) do
+      arg(:limit, :integer, default_value: 50)
+      middleware(RequireMember, "owner")
+
+      resolve(fn args, %{context: ctx} ->
+        {:ok, Audit.list_for_venue(ctx.venue_id, limit: args[:limit])}
+      end)
     end
 
     ## --- customer ---
@@ -1378,7 +1513,7 @@ defmodule BlastekWeb.Schema do
       middleware(RequireMember, "owner")
 
       resolve(fn %{id: id, role: role}, %{context: ctx} ->
-        Venues.update_member_role(ctx.venue_id, id, role) |> format_errors()
+        Venues.update_member_role(ctx.venue_id, id, role, ctx.current_user) |> format_errors()
       end)
     end
 
@@ -1387,7 +1522,68 @@ defmodule BlastekWeb.Schema do
       middleware(RequireMember, "owner")
 
       resolve(fn %{id: id}, %{context: ctx} ->
-        Venues.remove_member(ctx.venue_id, id) |> format_errors()
+        Venues.remove_member(ctx.venue_id, id, ctx.current_user) |> format_errors()
+      end)
+    end
+
+    @desc """
+    Invites someone to the team by phone or email.
+
+    Owner-only: handing out access is the one thing a manager must not be able
+    to do for themselves.
+    """
+    field :invite_member, :invitation_created do
+      arg(:role, non_null(:string))
+      arg(:phone, :string)
+      arg(:email, :string)
+
+      @desc "Attach the new member to an existing calendar column."
+      arg(:staff_id, :id)
+
+      arg(:locale, :string)
+
+      middleware(RequireMember, "owner")
+
+      resolve(fn args, %{context: ctx} ->
+        attrs = Map.update(args, :staff_id, nil, &int_or_nil/1)
+
+        case Invitations.invite(ctx.current_venue, attrs, ctx.current_user) do
+          {:ok, %{invitation: invitation, token: token}} ->
+            {:ok, %{invitation: invitation, url: "#{accept_url()}?token=#{token}"}}
+
+          other ->
+            format_errors(other)
+        end
+      end)
+    end
+
+    @desc "Withdraws an invitation that has not been accepted."
+    field :revoke_invitation, :invitation do
+      arg(:id, non_null(:id))
+      middleware(RequireMember, "owner")
+
+      resolve(fn %{id: id}, %{context: ctx} ->
+        Invitations.revoke(ctx.venue_id, to_int(id), ctx.current_user) |> format_errors()
+      end)
+    end
+
+    @desc """
+    Redeems an invitation for the signed-in account.
+
+    Requires a session because a membership has to belong to somebody. The web
+    flow signs the invitee in first — by code, so they need no password — and
+    then calls this.
+    """
+    field :accept_invitation, :venue_membership do
+      arg(:token, non_null(:string))
+
+      middleware(RequireAuth)
+
+      resolve(fn %{token: token}, %{context: %{current_user: user}} ->
+        case Invitations.accept(token, user) do
+          {:ok, membership} -> {:ok, Repo.preload(membership, [:venue, :user])}
+          other -> format_errors(other)
+        end
       end)
     end
   end
@@ -1484,6 +1680,18 @@ defmodule BlastekWeb.Schema do
 
   defp own_staff_scope(_), do: []
 
+  # The same narrowing for the client list. A `staff` membership with no calendar
+  # column has served nobody, and `staff_id: nil` would read as "no restriction"
+  # — so it is given an id that matches nothing rather than the whole venue.
+  defp own_client_scope(%{membership: %{role: "staff"}} = context) do
+    case own_staff_scope(context) do
+      [staff_id: staff_id] -> [staff_id: staff_id]
+      [] -> [staff_id: 0]
+    end
+  end
+
+  defp own_client_scope(_), do: []
+
   defp stat(client, _args, %{context: %{venue_id: venue_id}}, key) do
     batch({__MODULE__, :batch_client_stats, venue_id}, client.id, fn results ->
       {:ok, get_in(results, [client.id, key]) || zero(key)}
@@ -1570,6 +1778,9 @@ defmodule BlastekWeb.Schema do
   defp header_list(headers) do
     Enum.map(headers, fn {name, value} -> %{name: name, value: value} end)
   end
+
+  defp accept_url,
+    do: Application.get_env(:blastek, :invitation_accept_url, "http://localhost:5173/join")
 
   defp ids(list), do: Enum.map(list, &to_int/1)
 

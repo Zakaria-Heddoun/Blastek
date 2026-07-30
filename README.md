@@ -116,6 +116,24 @@ since it means two parties are holding it.
 > a self-contained signed token with no server record, so there is nothing to
 > migrate — everyone signs in once more.
 
+### Team & roles
+
+A venue's **Roster** (who takes appointments) and its **Access** (who can sign
+in) are separate lists on the Team page, because most people are both but some
+are only one — and merging them makes "remove their access" delete a year of
+history.
+
+Four roles, strongest last: `staff` → `receptionist` → `manager` → `owner`.
+Each dashboard field declares its own minimum, and
+[role_matrix_test.exs](api/test/blastek_web/role_matrix_test.exs) asserts all of
+them against all four roles — including a check that fails when a new gated
+field is added without a row.
+
+An owner invites by phone or email; the invitee gets a one-time link
+(`/join?token=…`, 7-day expiry), signs in by code, and joins. Role changes and
+removals take effect on the member's very next request, and are recorded in
+`audit_log`.
+
 ### Search
 
 The venue directory is full-text searched over a per-venue `tsvector` that
