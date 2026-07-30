@@ -12,6 +12,7 @@ defmodule BlastekWeb.VenueSettingsTest do
 
   alias Blastek.Salon
   alias Blastek.Venues
+  alias Blastek.Venues.Onboarding
   alias Blastek.Venues.Settings
   alias BlastekWeb.Schema
 
@@ -103,6 +104,45 @@ defmodule BlastekWeb.VenueSettingsTest do
 
       assert venue["settingsJson"]["slot_step_min"] == 30
       assert venue["settingsJson"]["instant_confirmation"] == false
+    end
+
+    test "a venue's own configuration is not readable by strangers", ctx do
+      run(
+        "mutation { updateVenueSettings(input: {bookingLeadMin: 120}) { id } }",
+        ctx.owner,
+        ctx.venue
+      )
+
+      venue = Venues.get_venue(ctx.venue.id)
+      Blastek.Discovery.reindex_venue(venue)
+      fields = "id settingsJson rejectedReason onboarding { currentStep }"
+
+      # Marketplace search really does hand `venue_summary` to anyone, which is
+      # why the gate belongs on the type and not on the queries that exist now.
+      {:ok, %{data: %{"venues" => items}}} =
+        run(~s|{ venues(q: "#{venue.name}") { #{fields} } }|, nil, nil)
+
+      found = Enum.find(items, &(&1["id"] == to_string(venue.id)))
+      assert found, "the venue should be in public search results at all"
+      assert found["settingsJson"] == nil
+      assert found["rejectedReason"] == nil
+      assert found["onboarding"] == nil
+
+      # A signed-in shopper who is nobody's staff sees exactly as much.
+      shopper = user_fixture("shopper-#{unique()}@example.com")
+
+      {:ok, %{data: %{"venues" => as_shopper}}} =
+        run(~s|{ venues(q: "#{venue.name}") { #{fields} } }|, shopper, nil)
+
+      assert Enum.find(as_shopper, &(&1["id"] == to_string(venue.id)))["settingsJson"] == nil
+
+      # Its own owner sees all three.
+      {:ok, %{data: %{"myVenues" => mine}}} =
+        run("{ myVenues { venue { #{fields} } } }", ctx.owner, nil)
+
+      own = Enum.find(mine, &(&1["venue"]["id"] == to_string(venue.id)))["venue"]
+      assert own["settingsJson"]["booking_lead_min"] == 120
+      assert own["onboarding"] != nil
     end
 
     test "unknown keys never reach storage", ctx do
@@ -370,18 +410,73 @@ defmodule BlastekWeb.VenueSettingsTest do
       assert to_string(ctx.venue.id) in Enum.map(queued, & &1["id"])
     end
 
-    test "duplicate detection flags a shared phone", ctx do
-      {:ok, _} = Venues.update_venue(Venues.get_venue(ctx.venue.id), %{phone: "+212522334455"})
+    test "duplicate detection flags a shared phone whichever way round it is typed", ctx do
+      # Deliberately both directions. An earlier version normalised the venue
+      # being checked in Elixir and the rows it was compared against in SQL, so
+      # it matched only when the *stored* number already happened to be E.164 —
+      # and a test that picked that direction passed while half the real cases
+      # slipped through.
+      for {stored, typed} <- [
+            {"+212522334455", "0522 33 44 55"},
+            {"0522 33 44 55", "+212522334455"},
+            {"05-22-33-44-55", "00212522334455"}
+          ] do
+        {:ok, _} = Venues.update_venue(Venues.get_venue(ctx.venue.id), %{phone: stored})
+
+        twin = venue_fixture("Twin Salon #{unique()}")
+        {:ok, twin_venue} = Venues.update_venue(twin.venue, %{phone: typed})
+
+        assert ctx.venue.id in Enum.map(Onboarding.possible_duplicates(twin_venue), & &1.id),
+               "#{typed} should have matched the venue stored as #{stored}"
+      end
+    end
+
+    test "duplicate detection is not defeated by an accent", ctx do
+      {:ok, original} =
+        Venues.update_venue(Venues.get_venue(ctx.venue.id), %{
+          name: "Café Beauté",
+          city: "Casablanca",
+          phone: ""
+        })
 
       twin = venue_fixture("Twin Salon #{unique()}")
-      {:ok, twin_venue} = Venues.update_venue(twin.venue, %{phone: "0522 33 44 55"})
 
-      admin = admin_fixture("dupe-#{unique()}@example.com")
+      {:ok, twin_venue} =
+        Venues.update_venue(twin.venue, %{name: "cafe beaute", city: "casablanca", phone: ""})
 
-      {:ok, %{data: %{"venueDuplicates" => duplicates}}} =
-        run(~s|{ venueDuplicates(id: "#{twin_venue.id}") { id name } }|, admin, nil)
+      assert original.id in Enum.map(Onboarding.possible_duplicates(twin_venue), & &1.id)
+    end
 
-      assert to_string(ctx.venue.id) in Enum.map(duplicates, & &1["id"])
+    test "an empty phone does not make every venue a duplicate of every other", ctx do
+      # Two venues that have not filled in a number share "" — and stripped to
+      # digits, "" equals "". Without a guard they would flag each other.
+      {:ok, blank} = Venues.update_venue(Venues.get_venue(ctx.venue.id), %{phone: ""})
+      other = venue_fixture("Unrelated Salon #{unique()}")
+      {:ok, _} = Venues.update_venue(other.venue, %{phone: ""})
+
+      refute other.venue.id in Enum.map(Onboarding.possible_duplicates(blank), & &1.id)
+    end
+
+    test "rejecting hands the venue back rather than requeuing it", ctx do
+      admin = admin_fixture("reject-#{unique()}@example.com")
+      run("mutation { submitVenue { id } }", ctx.owner, ctx.venue)
+
+      assert ctx.venue.id in Enum.map(Onboarding.review_queue(), & &1.id)
+
+      {:ok, _} = Onboarding.reject(ctx.venue.id, "Please add a photo of the salon.", admin)
+
+      # Out of the admin's queue…
+      refute ctx.venue.id in Enum.map(Onboarding.review_queue(), & &1.id)
+
+      # …and back in the owner's hands, with the reason, rather than still
+      # showing them "sent for review" forever.
+      venue = Venues.get_venue(ctx.venue.id)
+      assert venue.rejected_reason == "Please add a photo of the salon."
+      refute Map.has_key?(venue.onboarding, "submitted_at")
+
+      # Fixing and resubmitting puts it back in the queue.
+      {:ok, _} = Onboarding.submit(venue)
+      assert ctx.venue.id in Enum.map(Onboarding.review_queue(), & &1.id)
     end
   end
 

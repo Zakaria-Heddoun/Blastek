@@ -39,7 +39,6 @@ defmodule Blastek.Venues.Onboarding do
   """
   import Ecto.Query
 
-  alias Blastek.Accounts.Phone
   alias Blastek.Audit
   alias Blastek.Notifications
   alias Blastek.Repo
@@ -158,6 +157,12 @@ defmodule Blastek.Venues.Onboarding do
 
   The reason is required. "Rejected" with no explanation produces a support
   conversation instead of a corrected listing.
+
+  Clearing `submitted_at` is what actually hands the venue back: the queue is
+  "pending *and* submitted", so a rejection that left the marker in place would
+  put the venue straight back at the top of the admin's list — and the owner's
+  wizard would go on saying "sent for review" instead of showing them what to
+  fix. The ball has to be in exactly one court.
   """
   def reject(venue_id, reason, actor) do
     reason = to_string(reason) |> String.trim()
@@ -168,7 +173,11 @@ defmodule Blastek.Venues.Onboarding do
 
       venue = Venues.get_venue(venue_id) ->
         {:ok, updated} =
-          Venues.update_venue(venue, %{status: "pending", rejected_reason: reason})
+          Venues.update_venue(venue, %{
+            status: "pending",
+            rejected_reason: reason,
+            onboarding: Map.delete(venue.onboarding || %{}, "submitted_at")
+          })
 
         Audit.record("venue.rejected", %{
           venue_id: venue.id,
@@ -188,6 +197,24 @@ defmodule Blastek.Venues.Onboarding do
 
   ## ---------- duplicate detection (E5-T10) ----------
 
+  # Both sides of every comparison are normalised by the *same* expression, in
+  # Postgres. Folding the needle in Elixir and the haystack in SQL is what let
+  # every accented name through: `String.downcase("Café Anfa")` is "café anfa",
+  # which never equals `unaccent`ed "cafe anfa" — and in Morocco the accents are
+  # on half the salon names.
+  defmacrop folded(value) do
+    quote do: fragment("lower(unaccent(trim(coalesce(?, ''))))", unquote(value))
+  end
+
+  # The trailing nine digits, because the same number is written +212 6 12 34 56
+  # 78, 06 12 34 56 78 and 00212612345678. Comparing whole digit strings only
+  # matched venues that happened to have been typed in the same style.
+  defmacrop subscriber(value) do
+    quote do
+      fragment("right(regexp_replace(coalesce(?, ''), '[^0-9]', '', 'g'), 9)", unquote(value))
+    end
+  end
+
   @doc """
   Venues that look like the same business as this one.
 
@@ -199,22 +226,25 @@ defmodule Blastek.Venues.Onboarding do
   two ways the same business gets entered twice.
   """
   def possible_duplicates(%Venue{} = venue) do
-    phone = normalized_phone(venue.phone)
-    name = normalize_text(venue.name)
-    city = normalize_text(venue.city)
+    phone = to_string(venue.phone)
+    name = to_string(venue.name)
+    city = to_string(venue.city)
 
-    query =
+    # Only compare on a field that says something. Two venues with no phone
+    # number are not the same business.
+    by_phone? = String.length(String.replace(phone, ~r/\D/, "")) >= 9
+    by_name? = String.trim(name) != "" and String.trim(city) != ""
+
+    Repo.all(
       from v in Venue,
         where: v.id != ^venue.id,
         where:
-          (^phone != "" and fragment("regexp_replace(?, '[^0-9]', '', 'g')", v.phone) == ^phone) or
-            (^name != "" and ^city != "" and
-               fragment("lower(unaccent(trim(?)))", v.name) == ^name and
-               fragment("lower(unaccent(trim(?)))", v.city) == ^city),
+          (^by_phone? and subscriber(v.phone) == subscriber(type(^phone, :string))) or
+            (^by_name? and folded(v.name) == folded(type(^name, :string)) and
+               folded(v.city) == folded(type(^city, :string))),
         order_by: [asc: v.id],
         limit: 5
-
-    Repo.all(query)
+    )
   end
 
   ## ---------- housekeeping ----------
@@ -331,15 +361,6 @@ defmodule Blastek.Venues.Onboarding do
         select: fragment("coalesce(nullif(?, ''), ?)", u.phone, u.email)
     )
   end
-
-  defp normalized_phone(phone) do
-    case Phone.normalize(phone) do
-      {:ok, normalized} -> String.replace(normalized, ~r/\D/, "")
-      _ -> phone |> to_string() |> String.replace(~r/\D/, "")
-    end
-  end
-
-  defp normalize_text(value), do: value |> to_string() |> String.trim() |> String.downcase()
 
   defp iso_now, do: NaiveDateTime.utc_now() |> NaiveDateTime.to_iso8601()
 

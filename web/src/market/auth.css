@@ -250,6 +250,17 @@
 }
 .wiz-progress span.done { background: #1e1e1e; }
 
+.wiz-rejected {
+  padding: 14px 16px;
+  margin-bottom: 20px;
+  border: 1px solid #e6c9c9;
+  border-radius: 12px;
+  background: #fdf5f5;
+  font-size: 14px;
+}
+.wiz-rejected b { display: block; margin-bottom: 4px; color: #a13b3b; }
+.wiz-rejected p { margin: 0 0 4px; }
+
 .wiz-done {
   display: grid;
   place-items: center;

@@ -32,6 +32,10 @@ defmodule Blastek.Venues.Settings do
     {"locale", {:one_of, ["fr", "ar", "en"]}, "fr"}
   ]
 
+  # Built once at compile time. Both read paths need the same lookup, and two
+  # linear scans of the same list is one implementation too many.
+  @by_key Map.new(@schema, fn {key, type, default} -> {key, {type, default}} end)
+
   def slot_steps, do: @slot_steps
 
   @doc "Every known key with its default — the shape a fresh venue starts with."
@@ -70,38 +74,35 @@ defmodule Blastek.Venues.Settings do
   def get(settings, key) when is_map(settings) do
     key = to_string(key)
 
-    case Map.fetch(settings, key) do
-      {:ok, nil} -> default_for(key)
-      {:ok, value} -> coerce_or_default(key, value)
-      :error -> default_for(key)
-    end
-  end
-
-  def get(_settings, key), do: default_for(to_string(key))
-
-  ## ---------- internals ----------
-
-  defp default_for(key) do
-    case Enum.find(@schema, fn {k, _, _} -> k == key end) do
-      {_key, _type, default} -> default
-      nil -> nil
-    end
-  end
-
-  # A value already in the database may predate a tightening of its type, so
-  # reads repair rather than crash.
-  defp coerce_or_default(key, value) do
-    case Enum.find(@schema, fn {k, _, _} -> k == key end) do
-      nil ->
+    case {Map.fetch(settings, key), Map.fetch(@by_key, key)} do
+      # Not a setting this module knows about: hand back whatever is stored.
+      {{:ok, value}, :error} ->
         value
 
-      {_key, type, default} ->
+      {_, :error} ->
+        nil
+
+      {{:ok, value}, {:ok, {type, default}}} when not is_nil(value) ->
+        # A value already in the database may predate a tightening of its type,
+        # so reads repair rather than crash.
         case coerce(type, value) do
           {:ok, coerced} -> coerced
           :error -> default
         end
+
+      {_, {:ok, {_type, default}}} ->
+        default
     end
   end
+
+  def get(_settings, key) do
+    case Map.fetch(@by_key, to_string(key)) do
+      {:ok, {_type, default}} -> default
+      :error -> nil
+    end
+  end
+
+  ## ---------- internals ----------
 
   defp coerce(:boolean, true), do: {:ok, true}
   defp coerce(:boolean, false), do: {:ok, false}
@@ -109,11 +110,21 @@ defmodule Blastek.Venues.Settings do
   defp coerce(:boolean, "false"), do: {:ok, false}
   defp coerce(:boolean, _), do: :error
 
+  # A venue lists its parking and its wifi, not an essay. Bounded because the
+  # column is JSONB with no schema to stop a client writing a megabyte into
+  # every row it can authenticate against.
+  @max_list_items 40
+  @max_item_length 60
+
   defp coerce({:list, :string}, values) when is_list(values) do
-    if Enum.all?(values, &is_binary/1) do
+    if Enum.all?(values, &is_binary/1) and length(values) <= @max_list_items do
       # Trimmed and de-duplicated: an amenities list is rendered as chips, and
       # "Parking" twice looks like a bug to the reader.
-      {:ok, values |> Enum.map(&String.trim/1) |> Enum.reject(&(&1 == "")) |> Enum.uniq()}
+      {:ok,
+       values
+       |> Enum.map(&(&1 |> String.trim() |> String.slice(0, @max_item_length)))
+       |> Enum.reject(&(&1 == ""))
+       |> Enum.uniq()}
     else
       :error
     end
@@ -166,7 +177,10 @@ defmodule Blastek.Venues.Settings do
     do: "#{humanize(key)} must be one of: #{Enum.join(allowed, ", ")}."
 
   defp message_for(key, :boolean), do: "#{humanize(key)} must be true or false."
-  defp message_for(key, {:list, :string}), do: "#{humanize(key)} must be a list of text."
+
+  defp message_for(key, {:list, :string}),
+    do: "#{humanize(key)} must be a list of at most #{@max_list_items} short entries."
+
   defp message_for(key, _), do: "#{humanize(key)} is not valid."
 
   defp humanize(key), do: key |> String.replace("_", " ") |> String.capitalize()

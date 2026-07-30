@@ -345,7 +345,13 @@
 
 .adm .identity-form { display: grid; gap: 14px; max-width: 460px; }
 .adm .identity-form label { display: grid; gap: 5px; font-size: 13px; color: var(--fg-2); }
-.adm .identity-form input,
+
+/* A checkbox row is a checkbox beside its label, not a stacked field — and it
+   must not inherit the 40px-tall bordered box the text inputs get. */
+.adm .identity-form label.set-toggle { display: flex; align-items: flex-start; gap: 10px; }
+.adm .identity-form label.set-toggle input { height: auto; width: auto; padding: 0; }
+
+.adm .identity-form input:not([type="checkbox"]),
 .adm .identity-form select {
   height: 40px;
   padding: 0 12px;

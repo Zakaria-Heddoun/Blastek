@@ -353,7 +353,7 @@ something about the test itself rather than only about the code:
 
 ### E5 · Venue settings & onboarding — F0.4, F0.5
 
-**Status: ✅ DONE — 399 tests green, browser-verified end to end.**
+**Status: ✅ DONE — 417 tests green, reviewed and browser-verified end to end.**
 
 | ID | Task | Est | Labels | Status |
 |---|---|---|---|---|
@@ -435,6 +435,43 @@ The `venue_view` bug is the one worth remembering: the E5 domain work added a
 `template_id` dimension to `staff_hours`, and every *read* had to learn about
 it. The booking engine did. The page that tells customers when to turn up did
 not, and no domain test noticed because both layers were asked separately.
+
+**Principal-engineer review before E6**
+
+The review found one defect that outweighed everything else, plus a cluster of
+smaller ones. All are fixed.
+
+*Five settings were write-only.* `slot_step_min`, `booking_lead_min`,
+`booking_horizon_days`, `cancellation_window_hours` and `instant_confirmation`
+were validated, stored, exposed through GraphQL and rendered in the dashboard —
+and **read by nothing**. The slot engine used a hardcoded `@slot_step 15`. Only
+`women_only`, `amenities` and `locale` were ever consumed. This is worse than
+not shipping the panel: the owner sets a two-hour notice period, sees it save,
+and takes bookings for twenty minutes' time. Every one is now enforced, and
+`test/blastek/booking_settings_test.exs` asserts each *changes booking
+behaviour* rather than that it round-trips — verified by reverting all five
+mechanisms and watching exactly those tests fail. `Booking rules` is now its own
+settings section, since which grid customers see is a different decision from
+fixing a typo in the tagline.
+
+| Where | Defect |
+|---|---|
+| `Onboarding.possible_duplicates/1` | Folded the venue being checked **in Elixir** and the rows it was compared against **in SQL**. `String.downcase("Café Beauté")` never equals `unaccent`ed "cafe beaute", so every accented name — half of them, in Morocco — escaped detection, and phone matching only worked when the stored number happened to be E.164 already. The existing test passed because it picked that direction. Both sides now fold through the same Postgres expression, and phones match on the trailing nine digits. |
+| `Onboarding.reject/3` | Left `submitted_at` in place, and the queue is "pending **and** submitted" — so a rejected venue went straight back to the top of the admin's list, and the owner's wizard went on saying "sent for review" instead of showing them what to fix. The ball was in both courts at once. Rejection now clears the marker and the owner meets the wizard again with the reason. |
+| `venue_summary` | `rejectedReason`, `onboarding` and `settingsJson` were ungated on a type that marketplace search hands to anybody. Nothing leaked, because nothing returns a pending venue to a stranger — a property of today's queries, not of the type. Now gated on membership or admin. |
+| `Salon.availability/4` | Re-queried the active template, its hour rows and the day's closures **once per candidate staff member** — a salon with five stylists ran twenty queries to answer one request, on the marketplace's hottest path. The comment claimed closures were fetched once per date; they were not. Hoisted into one per-request context. |
+| `ScheduleSettings` | A **failed** conflict pre-check rendered as "nothing is booked in that period" — the one outcome the feature exists to prevent. It also left a stale answer on screen while the owner edited the dates underneath it. Both now clear, and a failure says so. |
+| `Schedule.upsert_template/3` | Accepted a day whose end preceded its start, which `Closure` rejects outright; the slot engine then offered nothing with no explanation. Stored as closed. |
+| `Schedule.activate_template/2` | Two concurrent switches both cleared the active flag and both set it; the partial unique index rejected the loser as a 500. Now a rollback with a message. |
+| `Schedule.create_closure/2` | Reached for `String.to_existing_atom`, turning an unrecognised key from any future caller into a raise rather than the "ignored" `cast/3` already gives. |
+| `Venues.Settings` | `amenities` was an unbounded list of unbounded strings written into a schemaless JSONB column. Capped at 40 × 60 characters. |
+| `admin.css` | A checkbox inside `.identity-form` inherited the 40px bordered box meant for text inputs, rendering as a large blue square above its own label. |
+| `CalendarPage` | A closure lying entirely outside the visible hours produced a band with a negative height — invalid CSS that happens to look like nothing. Clipped in the helper. |
+
+Two things were noted and deliberately **not** changed. `possible_duplicates/1`
+scans the venues table without a functional index; the admin queue is low-volume
+and a migration is not worth it yet. `Onboarding.abandoned/1` has no caller —
+it is a seam for a future archiving job, not dead code left behind.
 
 <!-- Original task table retained for reference:
 | ID | Task | Est | Labels |

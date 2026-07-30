@@ -302,6 +302,8 @@ export default function SettingsPage() {
 
       <ScheduleSettings />
 
+      {venue && <BookingRulesSection venue={venue} onSaved={load} />}
+
       <section className="card pad set-section">
         <div className="set-section-head">
           <h2>Listing</h2>
@@ -328,7 +330,7 @@ export default function SettingsPage() {
   );
 }
 
-/** Name, tagline, address, and how booking behaves. */
+/** Name, tagline, address — the details customers read. */
 function IdentitySection({ venue, onSaved }: { venue: VenueSummary; onSaved: () => void }) {
   const toast = useToast();
   const [form, setForm] = useState({
@@ -338,10 +340,6 @@ function IdentitySection({ venue, onSaved }: { venue: VenueSummary; onSaved: () 
     city: venue.city ?? '',
     phone: venue.phone ?? '',
   });
-
-  const settings = (venue.settingsJson ?? {}) as Record<string, unknown>;
-  const [slotStep, setSlotStep] = useState(Number(settings.slot_step_min ?? 15));
-  const [horizon, setHorizon] = useState(Number(settings.booking_horizon_days ?? 90));
   const [busy, setBusy] = useState(false);
 
   const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -351,11 +349,8 @@ function IdentitySection({ venue, onSaved }: { venue: VenueSummary; onSaved: () 
     if (busy) return;
     setBusy(true);
     try {
-      // Two mutations because these are two different kinds of write: identity
-      // is columns, the rest is the typed settings blob.
       await gql(UPDATE_VENUE, { input: form });
-      await gql(UPDATE_SETTINGS, { input: { slotStepMin: slotStep, bookingHorizonDays: horizon } });
-      toast('Settings saved');
+      toast('Details saved');
       onSaved();
     } catch (e) {
       toast((e as Error).message, true);
@@ -385,9 +380,64 @@ function IdentitySection({ venue, onSaved }: { venue: VenueSummary; onSaved: () 
         <label>City<input value={form.city} onChange={set('city')} /></label>
         <label>Phone<input value={form.phone} onChange={set('phone')} /></label>
 
+        <button className="btn btn-primary" disabled={busy || !form.name.trim()} onClick={save}>
+          {busy ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * The rules the booking engine actually enforces.
+ *
+ * Their own section rather than tacked onto the address form: these change what
+ * a customer is offered and what they may undo, which is a different decision
+ * from fixing a typo in the tagline.
+ */
+function BookingRulesSection({ venue, onSaved }: { venue: VenueSummary; onSaved: () => void }) {
+  const toast = useToast();
+  const s = (venue.settingsJson ?? {}) as Record<string, unknown>;
+
+  const [rules, setRules] = useState({
+    slotStepMin: Number(s.slot_step_min ?? 15),
+    bookingHorizonDays: Number(s.booking_horizon_days ?? 90),
+    bookingLeadMin: Number(s.booking_lead_min ?? 0),
+    cancellationWindowHours: Number(s.cancellation_window_hours ?? 24),
+    instantConfirmation: s.instant_confirmation !== false,
+  });
+  const [busy, setBusy] = useState(false);
+
+  const pick = (key: keyof typeof rules) => (e: React.ChangeEvent<HTMLSelectElement>) =>
+    setRules((r) => ({ ...r, [key]: Number(e.target.value) }));
+
+  const save = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await gql(UPDATE_SETTINGS, { input: rules });
+      toast('Booking rules saved');
+      onSaved();
+    } catch (e) {
+      toast((e as Error).message, true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="card pad set-section">
+      <div className="set-section-head">
+        <h2>Booking rules</h2>
+        <p className="mutetext">
+          What online customers are offered, and what they can undo without telephoning you.
+        </p>
+      </div>
+
+      <div className="identity-form">
         <label>
           Booking slots every
-          <select value={slotStep} onChange={(e) => setSlotStep(Number(e.target.value))}>
+          <select value={rules.slotStepMin} onChange={pick('slotStepMin')}>
             {[5, 10, 15, 20, 30, 60].map((m) => (
               <option key={m} value={m}>{m} minutes</option>
             ))}
@@ -396,14 +446,55 @@ function IdentitySection({ venue, onSaved }: { venue: VenueSummary; onSaved: () 
 
         <label>
           Bookable up to
-          <select value={horizon} onChange={(e) => setHorizon(Number(e.target.value))}>
+          <select value={rules.bookingHorizonDays} onChange={pick('bookingHorizonDays')}>
             {[14, 30, 60, 90, 180, 365].map((d) => (
               <option key={d} value={d}>{d} days ahead</option>
             ))}
           </select>
         </label>
 
-        <button className="btn btn-primary" disabled={busy || !form.name.trim()} onClick={save}>
+        <label>
+          Notice needed
+          <select value={rules.bookingLeadMin} onChange={pick('bookingLeadMin')}>
+            <option value={0}>None — up to the last minute</option>
+            {[30, 60, 120, 240, 480, 1440].map((m) => (
+              <option key={m} value={m}>
+                {m < 60 ? `${m} minutes` : `${m / 60} hour${m === 60 ? '' : 's'}`}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Customers may cancel online until
+          <select
+            value={rules.cancellationWindowHours}
+            onChange={pick('cancellationWindowHours')}
+          >
+            <option value={0}>Any time before the appointment</option>
+            {[2, 4, 12, 24, 48, 72].map((h) => (
+              <option key={h} value={h}>{h} hours before</option>
+            ))}
+          </select>
+        </label>
+
+        <label className="set-toggle">
+          <input
+            type="checkbox"
+            checked={rules.instantConfirmation}
+            onChange={(e) =>
+              setRules((r) => ({ ...r, instantConfirmation: e.target.checked }))
+            }
+          />
+          <span>
+            Confirm online bookings automatically
+            <span className="fainttext">
+              Off means they arrive as requests for you to confirm on the calendar.
+            </span>
+          </span>
+        </label>
+
+        <button className="btn btn-primary" disabled={busy} onClick={save}>
           {busy ? 'Saving…' : 'Save'}
         </button>
       </div>

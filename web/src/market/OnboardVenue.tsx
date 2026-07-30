@@ -33,7 +33,7 @@ interface Template {
 }
 
 const MY_VENUES = `{
-  myVenues { id role venue { id slug name status onboarding {
+  myVenues { id role venue { id slug name status rejectedReason onboarding {
     currentStep completed submitted complete data
   } } }
 }`;
@@ -161,6 +161,16 @@ export default function OnboardVenue() {
           <span key={s} className={i < progress ? 'done' : ''} />
         ))}
       </div>
+
+      {/* A rejection hands the venue back, so the owner meets the wizard again
+          — and has to be told what to change before they walk through it. */}
+      {venue?.rejectedReason && (
+        <div className="wiz-rejected">
+          <b>We could not publish it yet.</b>
+          <p>{venue.rejectedReason}</p>
+          <p className="fainttext">Fix it and send it again — everything you entered is still here.</p>
+        </div>
+      )}
 
       <div className="auth-err">{error}</div>
 
@@ -517,12 +527,6 @@ function SubmittedStep({
         Nothing is on hold in the meantime — your dashboard is already live, so you can take
         bookings by phone, finish your catalog and invite your team. Only the public page waits.
       </p>
-
-      {venue?.rejectedReason && (
-        <p className="auth-err">
-          Last time we asked for a change: {venue.rejectedReason}. We have your update now.
-        </p>
-      )}
 
       <button className="auth-submit" onClick={onDashboard}>
         Go to my dashboard

@@ -158,6 +158,24 @@ Which schedule is active changes what the marketplace advertises, not only what
 the booking engine offers — otherwise a venue on Ramadan hours would keep
 showing its winter times to shoppers.
 
+### Booking rules
+
+Five settings under **Booking rules** decide what an online customer is offered
+and what they can undo without telephoning:
+
+| Setting | Effect |
+|---|---|
+| Booking slots every | Spacing of the offered grid — 5 to 60 minutes |
+| Bookable up to | Beyond the horizon nothing is offered at all |
+| Notice needed | Minimum lead time; reaches across midnight, so a 22:00 request cannot take tomorrow's 00:30 slot |
+| Cancel online until | Inside the window cancelling becomes a phone call, since the salon has already turned other customers away |
+| Confirm automatically | Off means online bookings arrive as `booked` for the salon to confirm, rather than `confirmed` |
+
+They are stored in a schemaless JSONB column but **written through a typed
+schema** (`Blastek.Venues.Settings`): unknown keys are dropped rather than
+stored, each known key is coerced and range-checked, and reads fall back to a
+default so a venue predating a setting behaves sensibly.
+
 ### Listing a salon
 
 `/for-business` is a six-step wizard: identity, what you do, your menu, team

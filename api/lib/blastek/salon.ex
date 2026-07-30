@@ -13,6 +13,7 @@ defmodule Blastek.Salon do
 
   alias Blastek.Repo
   alias Blastek.Venues
+  alias Blastek.Venues.Settings
 
   alias Blastek.Salon.{
     Category,
@@ -26,7 +27,6 @@ defmodule Blastek.Salon do
     Review
   }
 
-  @slot_step 15
   @appt_preloads [:client, :service, :staff]
 
   ## ---------- catalog ----------
@@ -492,33 +492,79 @@ defmodule Blastek.Salon do
     services = Repo.all(from s in scope(Service, venue_id), where: s.id in ^service_ids)
     by_id = Map.new(services, &{&1.id, &1})
 
-    cond do
-      Enum.any?(service_ids, &(not Map.has_key?(by_id, &1))) ->
-        {:error, "unknown service"}
+    if Enum.any?(service_ids, &(not Map.has_key?(by_id, &1))) do
+      {:error, "unknown service"}
+    else
+      # Summed per requested id, not per distinct service, so booking the
+      # same treatment twice reserves twice the time.
+      total = Enum.sum(Enum.map(service_ids, &by_id[&1].duration_min))
 
-      true ->
-        # Summed per requested id, not per distinct service, so booking the
-        # same treatment twice reserves twice the time.
-        total = Enum.sum(Enum.map(service_ids, &by_id[&1].duration_min))
+      candidates =
+        case staff_id do
+          nil -> eligible_staff(venue_id, service_ids)
+          "any" -> eligible_staff(venue_id, service_ids)
+          id -> scoped_staff_candidate(venue_id, id)
+        end
 
-        candidates =
-          case staff_id do
-            nil -> eligible_staff(venue_id, service_ids)
-            "any" -> eligible_staff(venue_id, service_ids)
-            id -> scoped_staff_candidate(venue_id, id)
-          end
-
-        slots =
-          candidates
-          |> Enum.flat_map(fn st ->
-            slots_for_staff(venue_id, st.id, date, total) |> Enum.map(&{&1, st.id})
-          end)
-          |> Enum.sort()
-          |> Enum.uniq_by(fn {start, _} -> start end)
-          |> Enum.map(fn {start, sid} -> %{start_min: start, staff_id: sid} end)
-
-        {:ok, %{total_duration: total, slots: slots}}
+      {:ok, %{total_duration: total, slots: slots_for(venue_id, candidates, date, total)}}
     end
+  end
+
+  # Everything a date costs that does not vary by staff member — the active
+  # template, its hour rows, the closures, and the venue's booking rules —
+  # fetched once. Doing it inside `slots_for_staff` meant a salon with five
+  # stylists ran twenty queries to answer one availability request.
+  defp slots_for(_venue_id, [], _date, _duration_min), do: []
+
+  defp slots_for(venue_id, candidates, date, duration_min) do
+    venue = Venues.get_venue(venue_id)
+    settings = (venue && venue.settings) || %{}
+
+    if beyond_horizon?(settings, date) do
+      []
+    else
+      staff_ids = Enum.map(candidates, & &1.id)
+      template = Venues.Schedule.active_template(venue_id)
+
+      day = %{
+        template: template,
+        index: staff_hour_index(venue_id, template, staff_ids),
+        closed: Venues.Schedule.closed_windows(venue_id, date),
+        step: Settings.get(settings, :slot_step_min),
+        earliest: earliest_bookable(settings, date),
+        weekday: Date.day_of_week(date, :sunday) - 1
+      }
+
+      candidates
+      |> Enum.flat_map(fn st ->
+        venue_id |> slots_for_staff(st.id, date, duration_min, day) |> Enum.map(&{&1, st.id})
+      end)
+      |> Enum.sort()
+      |> Enum.uniq_by(fn {start, _} -> start end)
+      |> Enum.map(fn {start, sid} -> %{start_min: start, staff_id: sid} end)
+    end
+  end
+
+  @doc """
+  How far ahead a venue takes online bookings.
+
+  Beyond it the marketplace offers nothing at all, rather than a grid a salon
+  has no intention of honouring twelve months out.
+  """
+  def beyond_horizon?(settings, date) do
+    Date.diff(date, Date.utc_today()) > Settings.get(settings, :booking_horizon_days)
+  end
+
+  # The first minute of `date` a customer may book, as minutes from its
+  # midnight. A venue asking for two hours' notice at 16:00 must not be
+  # bookable at 17:00, and the notice has to reach across midnight — otherwise a
+  # 22:00 request could take tomorrow's 00:30 slot.
+  defp earliest_bookable(settings, date) do
+    now = NaiveDateTime.local_now()
+    lead = Settings.get(settings, :booking_lead_min)
+    days_ahead = Date.diff(date, NaiveDateTime.to_date(now))
+
+    now.hour * 60 + now.minute + lead - days_ahead * Venues.Schedule.minutes_in_day()
   end
 
   # A staff id from user input is only honored if it belongs to this venue.
@@ -546,10 +592,8 @@ defmodule Blastek.Salon do
     )
   end
 
-  def slots_for_staff(venue_id, staff_id, date, duration_min) do
-    weekday = Date.day_of_week(date, :sunday) - 1
-
-    case working_hours(venue_id, staff_id, weekday) do
+  defp slots_for_staff(venue_id, staff_id, date, duration_min, day) do
+    case resolve_hours(day.index, day.template, staff_id, day.weekday) do
       nil ->
         []
 
@@ -564,27 +608,17 @@ defmodule Blastek.Salon do
           )
 
         # A closure is an exception to the weekly grid — Eid, or a Tuesday
-        # afternoon off — so it is subtracted here rather than folded into
-        # hours. One query per date, shared by every candidate staff member of
-        # the venue on that date.
-        closed = Venues.Schedule.closed_windows(venue_id, date)
-        blocked = busy ++ closed
-
-        now = NaiveDateTime.local_now()
-
-        min_start =
-          if Date.compare(date, NaiveDateTime.to_date(now)) == :eq,
-            do: now.hour * 60 + now.minute,
-            else: -1
+        # afternoon off — so it is subtracted here rather than folded into hours.
+        blocked = busy ++ day.closed
 
         open_min
-        |> Stream.iterate(&(&1 + @slot_step))
+        |> Stream.iterate(&(&1 + day.step))
         # `close_min` may exceed 1440 for a shift running past midnight
         # (21:00–00:30 is 1260–1470). This is minute arithmetic, so a later
         # number is simply later; nothing here needs to know about days.
         |> Enum.take_while(&(&1 + duration_min <= close_min))
         |> Enum.filter(fn start ->
-          start > min_start and
+          start >= day.earliest and
             not Enum.any?(blocked, fn {bs, be} -> start < be and start + duration_min > bs end)
         end)
     end
@@ -780,6 +814,37 @@ defmodule Blastek.Salon do
 
   defp slot_taken, do: "That time was just taken — please pick another slot."
 
+  # A venue that vets its bookings gets them as `booked` and confirms by hand;
+  # one that does not gets `confirmed` immediately, which is what the customer
+  # is told on the confirmation screen.
+  defp online_booking_status(venue_id) do
+    venue = Venues.get_venue(venue_id)
+
+    if Settings.get((venue && venue.settings) || %{}, :instant_confirmation),
+      do: "confirmed",
+      else: "booked"
+  end
+
+  @doc """
+  Whether a client may still cancel this appointment themselves.
+
+  Inside the venue's cancellation window it becomes a phone call: the salon has
+  already turned other customers away for that slot, and F0.4 leaves the
+  judgement with them rather than the software.
+  """
+  def cancellable_by_client?(%Appointment{} = appt) do
+    venue = Venues.get_venue(appt.venue_id)
+    hours = Settings.get((venue && venue.settings) || %{}, :cancellation_window_hours)
+
+    appt.status in ["booked", "confirmed"] and
+      minutes_until(appt) >= hours * 60
+  end
+
+  defp minutes_until(%Appointment{date: date, start_min: start_min}) do
+    now = NaiveDateTime.local_now()
+    Date.diff(date, NaiveDateTime.to_date(now)) * 1440 + start_min - (now.hour * 60 + now.minute)
+  end
+
   # Serializes concurrent bookings for the same staff member and day. Released
   # when the transaction ends. Staff ids are globally unique, so (staff_id,
   # day-number) is a collision-free key — a hashed key would occasionally
@@ -791,6 +856,7 @@ defmodule Blastek.Salon do
 
   defp insert_booking(venue_id, args, staff_id) do
     ref = new_booking_ref()
+    status = online_booking_status(venue_id)
 
     {appointments, end_min} =
       Enum.map_reduce(args.service_ids, args.start_min, fn sid, cursor ->
@@ -809,7 +875,8 @@ defmodule Blastek.Salon do
             end_min: cursor + service.duration_min,
             price_cents: service.price_cents,
             notes: args[:notes] || "",
-            source: "online"
+            source: "online",
+            status: status
           })
           |> Repo.insert()
           |> case do
