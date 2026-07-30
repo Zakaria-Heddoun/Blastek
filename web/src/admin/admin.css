@@ -249,3 +249,94 @@
 .adm .set-toggle { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
 .adm .set-toggle input { margin-top: 3px; }
 .adm .set-toggle span { display: grid; gap: 2px; font-size: 13px; }
+
+/* ---------- team: roster / access tabs and membership rows (E4-T4) ---------- */
+
+.adm .team-tabs {
+  display: inline-flex;
+  margin-left: 18px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px;
+  gap: 2px;
+}
+.adm .team-tabs button {
+  border: 0;
+  background: none;
+  border-radius: 999px;
+  padding: 6px 16px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--fg-2);
+  cursor: pointer;
+}
+.adm .team-tabs button.active { background: var(--fg); color: var(--surface); }
+
+.adm .member-rows { display: grid; gap: 10px; margin-bottom: 22px; }
+
+.adm .member-row { display: flex; align-items: center; gap: 14px; }
+.adm .member-row.is-pending { border-style: dashed; }
+
+.adm .member-you {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg-2);
+}
+
+.adm .member-row select {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+}
+.adm .member-row select:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.adm .invite-form { display: grid; gap: 16px; }
+.adm .invite-form > label { display: grid; gap: 6px; font-size: 13px; color: var(--fg-2); }
+.adm .invite-form input,
+.adm .invite-form select {
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+}
+
+.adm .invite-roles { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; }
+.adm .invite-roles legend { font-size: 13px; color: var(--fg-2); padding: 0 0 6px; }
+.adm .invite-roles label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.adm .invite-roles label.active { border-color: var(--fg); background: var(--surface-2); }
+.adm .invite-roles label span { display: grid; gap: 2px; font-size: 13px; }
+
+.adm .invite-done { display: grid; gap: 14px; }
+.adm .invite-done input {
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--fg);
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+}
+.adm .invite-done button { justify-self: end; }
+
+.adm .modal-actions { display: flex; justify-content: flex-end; gap: 10px; }

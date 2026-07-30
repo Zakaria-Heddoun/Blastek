@@ -94,6 +94,7 @@ defmodule Blastek.Venues do
   authorizes every dashboard operation.
   """
   import Ecto.Query
+  alias Blastek.Audit
   alias Blastek.Repo
   alias Blastek.Venues.{Venue, VenueMember}
 
@@ -268,17 +269,50 @@ defmodule Blastek.Venues do
     end
   end
 
-  def update_member_role(venue_id, id, role) do
+  @doc """
+  Changes a member's role.
+
+  Takes effect on the caller's very next request: `BlastekWeb.AuthContext`
+  resolves memberships per request rather than caching them into the session, so
+  there is no window in which a demoted manager still has manager powers.
+  """
+  def update_member_role(venue_id, id, role, actor \\ nil) do
     with {:ok, member} <- get_member(venue_id, id),
-         :ok <- ensure_not_last_owner(member, role) do
-      member |> VenueMember.changeset(%{role: role}) |> Repo.update()
+         :ok <- ensure_not_last_owner(member, role),
+         {:ok, updated} <- member |> VenueMember.changeset(%{role: role}) |> Repo.update() do
+      Audit.record("member.role_changed", %{
+        venue_id: venue_id,
+        actor: actor,
+        subject_type: "membership",
+        subject_id: member.id,
+        # Both halves: "the role changed" is nearly useless without "from what".
+        metadata: %{from: member.role, to: updated.role, user_id: member.user_id}
+      })
+
+      {:ok, updated}
     end
   end
 
-  def remove_member(venue_id, id) do
+  @doc """
+  Removes someone's access to a venue.
+
+  Deletes the **membership**, never the `staff` row it points at. A departing
+  stylist's appointments, sales and calendar column are the venue's history and
+  outlive their login — F0.3 is explicit about this.
+  """
+  def remove_member(venue_id, id, actor \\ nil) do
     with {:ok, member} <- get_member(venue_id, id),
-         :ok <- ensure_not_last_owner(member, nil) do
-      Repo.delete(member)
+         :ok <- ensure_not_last_owner(member, nil),
+         {:ok, deleted} <- Repo.delete(member) do
+      Audit.record("member.removed", %{
+        venue_id: venue_id,
+        actor: actor,
+        subject_type: "membership",
+        subject_id: member.id,
+        metadata: %{role: member.role, user_id: member.user_id, staff_id: member.staff_id}
+      })
+
+      {:ok, deleted}
     end
   end
 

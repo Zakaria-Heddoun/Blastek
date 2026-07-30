@@ -54,6 +54,11 @@ defmodule Blastek.Salon.Service do
     |> validate_required([:name, :duration_min, :price_cents, :category_id, :venue_id])
     |> validate_number(:duration_min, greater_than: 0)
     |> validate_number(:price_cents, greater_than_or_equal_to: 0)
+    # Without this, a category id that does not exist raises out of the resolver
+    # as an unhandled `Ecto.ConstraintError` — an HTTP 500 for what is an
+    # ordinary bad argument. Same failure the E1 review fixed for cross-tenant
+    # reads, in the opposite direction.
+    |> foreign_key_constraint(:category_id, message: "does not exist")
   end
 end
 

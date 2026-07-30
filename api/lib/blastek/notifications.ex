@@ -71,6 +71,22 @@ defmodule Blastek.Notifications do
     })
   end
 
+  @doc "Sends a venue invitation link (E4-T1)."
+  @spec deliver_invitation(String.t(), String.t(), String.t(), String.t(), keyword) ::
+          :ok | {:error, term}
+  def deliver_invitation(to, venue_name, role, url, opts \\ []) do
+    locale = locale(opts[:locale])
+
+    deliver(%{
+      to: to,
+      channel: :sms,
+      body:
+        render(:invitation, locale, venue: venue_name, role: role_name(role, locale), url: url),
+      template: :invitation,
+      locale: locale
+    })
+  end
+
   defp deliver(message), do: provider().deliver(message)
 
   defp locale(requested) when requested in @locales, do: requested
@@ -116,6 +132,34 @@ defmodule Blastek.Notifications do
 
   defp render(:password_reset, _en, url: url),
     do: "Reset your Blastek password: #{url} (valid for 1 hour)."
+
+  defp render(:invitation, "fr", venue: venue, role: role, url: url),
+    do: "#{venue} vous invite à rejoindre son équipe sur Blastek (#{role}) : #{url}"
+
+  defp render(:invitation, "ar", venue: venue, role: role, url: url),
+    do: "#{venue} يدعوك للانضمام إلى الفريق على بلاستيك (#{role}): #{url}"
+
+  defp render(:invitation, _en, venue: venue, role: role, url: url),
+    do: "#{venue} invited you to join their team on Blastek as #{role}: #{url}"
+
+  # Roles are stored in English; the invitation is read by the invitee.
+  defp role_name(role, "fr") do
+    %{
+      "owner" => "propriétaire",
+      "manager" => "responsable",
+      "receptionist" => "réception",
+      "staff" => "praticien"
+    }[role] || role
+  end
+
+  defp role_name(role, "ar") do
+    %{"owner" => "مالك", "manager" => "مدير", "receptionist" => "استقبال", "staff" => "موظف"}[
+      role
+    ] ||
+      role
+  end
+
+  defp role_name(role, _en), do: role
 end
 
 defmodule Blastek.Notifications.DevLogger do
