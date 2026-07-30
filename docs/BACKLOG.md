@@ -489,18 +489,71 @@ it is a seam for a future archiving job, not dead code left behind.
 -->
 
 ### E6 · Notifications & WhatsApp — F0.10
-| ID | Task | Est | Labels |
-|---|---|---|---|
-| E6-T1 | Add Oban; queues, telemetry, dashboard config | S | api,infra |
-| E6-T2 | `Notifications` context: templates, locale rendering, send log table, prefs | M | api |
-| E6-T3 | Provider behaviour + `DevLogger`; config-driven selection | S | api |
-| E6-T4 | WhatsApp Cloud API provider: send, template mgmt, webhook (delivery + inbound STOP) | L | api,infra |
-| E6-T5 | SMS provider (chosen gateway) + WhatsApp→SMS fallback chain | M | api |
-| E6-T6 | Booking/cancel/reschedule hooks → confirmation jobs (customer + salon) | S | api |
-| E6-T7 | Reminder scheduling (T-24h/T-3h), cancellation-aware, venue-configurable offsets | M | api |
-| E6-T8 | Signed one-tap action links (confirm/cancel) HTTP endpoints | S | api |
-| E6-T9 | Meta template approval pack (FR/AR copy for all v1 templates) | S | design |
-| E6-T10 | Web: notification prefs UI; dashboard live toast on online booking (uses E2-T4) | S | web |
+
+**Status: ✅ DONE — 473 tests green, browser-verified end to end.**
+
+| ID | Task | Est | Labels | Status |
+|---|---|---|---|---|
+| E6-T1 | Add Oban; queues, telemetry, dashboard config | S | api,infra | ✅ |
+| E6-T2 | `Notifications` context: templates, locale rendering, send log table, prefs | M | api | ✅ |
+| E6-T3 | Provider behaviour + `DevLogger`; config-driven selection | S | api | ✅ |
+| E6-T4 | WhatsApp Cloud API provider: send, template mgmt, webhook (delivery + inbound STOP) | L | api,infra | ✅ |
+| E6-T5 | SMS provider + WhatsApp→SMS fallback chain | M | api | ✅ |
+| E6-T6 | Booking/cancel/reschedule hooks → confirmation jobs (customer + salon) | S | api | ✅ |
+| E6-T7 | Reminder scheduling (T-24h/T-3h), cancellation-aware, venue-configurable offsets | M | api | ✅ |
+| E6-T8 | Signed one-tap action links (confirm/cancel) HTTP endpoints | S | api | ✅ |
+| E6-T9 | Meta template approval pack (FR/AR copy for all v1 templates) | S | design | ✅ |
+| E6-T10 | Web: notification prefs UI; dashboard live toast on online booking (uses E2-T4) | S | web | ✅ |
+
+**Notes**
+
+* **The chain is a list, not a strategy object.** `config :blastek,
+  :notifications_provider` holds providers tried in order until one succeeds.
+  A Moroccan number with no WhatsApp account is the ordinary case rather than
+  an exception, so "WhatsApp, then SMS" is the mechanism itself instead of a
+  branch at every call site. A provider that *raises* falls through too — an
+  SMS that still arrives is worth more than a clean stack trace about Meta.
+* **The log row is written before the provider is called.** A message that
+  vanished because the node died mid-send is exactly the one worth being able
+  to see, and a row created only on success cannot record a failure to create
+  it.
+* **Cancellation is enforced at firing time, not by deleting jobs.** Cancelling
+  an appointment does delete its pending reminders, but that is an
+  optimisation: a job already fetched by a worker cannot be deleted. The
+  guarantee is `Reminders.still_due/2`, which re-reads the appointment as the
+  job fires. Trusting the delete is how somebody gets reminded about an
+  appointment they cancelled yesterday.
+* **Only reminders can be switched off.** F0.10 is explicit that transactional
+  messages always send, and the reason is worth restating: somebody who turned
+  off "your booking is confirmed" is left with no record of their own booking.
+  An **opt-out** is different and outranks even that — it is keyed by address
+  rather than by account, so replying STOP survives signing up again.
+* **One-tap links are signed, not stored.** `Phoenix.Token` carries the
+  appointment and the action; there is no table to leak and nothing to clean
+  up, and rotating the endpoint secret invalidates every outstanding link at
+  once. The trade is that individual links cannot be revoked, which is
+  acceptable because the actions are idempotent and move no money.
+* **The webhook needs the unparsed body.** Meta signs the exact bytes, and
+  decoding JSON then re-encoding it does not reproduce them, so
+  `BlastekWeb.RawBodyReader` stashes the raw body for that one path.
+* **Arabic interpolation is direction-isolated.** Every value dropped into an
+  RTL template is wrapped in `U+2066…U+2069`; without it "Le Salon Anfa"
+  renders with its words reordered and `14:30` can come out as `30:14`.
+
+**Defects found while verifying**
+
+| Where | Defect | Found by |
+|---|---|---|
+| `Reminders.still_due/2` | Gated **every** appointment message on the appointment still being live, not just reminders — so the `cancelled_by_customer` and `cancelled_by_salon` notices were skipped precisely because the appointment had been cancelled. The Oban job completed successfully having sent nothing. The one message the other party has no other way of learning. | Browser drive: the job was `completed` but the send log had no row |
+| `Provider.declared_channel/1` | Used bare `function_exported?/3`, which answers false for a module that has not been loaded yet — so the first message after a boot saw no declared channel on any provider and would have offered an email address to the SMS gateway. Disappears the moment you look for it, since inspecting the module loads it. | A `handles?` unit test |
+| `Blastek.Accounts.User` | The migration added `notification_prefs` but the schema never declared the field, so every preference read raised. | Preference tests |
+| `otp_test.exs`, `invitations_test.exs` | Both swapped the provider through **`Application.put_env`** — global — while `async: true`. Any concurrent test sending a notification got the failing provider, which surfaced as "an unrelated OTP test intermittently delivers no code". The override is now per-process, like the geocoder stub and the collector. | Chasing a flake that predated E6 but only bit once E6 made the suite busier |
+| `role_matrix_test.exs` | Covered `RequireMember` fields but not `RequireAdmin` ones — the *more* dangerous of the two to add unnoticed, since they cross venues. Extended with a declared inventory, so adding a cross-venue field without gating it now fails. | Adding `notificationLog` and noticing nothing complained |
+
+**Not done, deliberately**: no template is submitted to Meta yet, so every
+WhatsApp send is attempted as free-form text, fails outside a session window
+and falls through to SMS. `docs/whatsapp-templates.md` is the pack to submit;
+until then this is the intended interim behaviour, not an outage.
 
 ### E7 · i18n — F0.11
 | ID | Task | Est | Labels |

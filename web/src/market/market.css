@@ -503,3 +503,19 @@
   font: inherit;
 }
 .mkt .sess-password button { justify-self: start; }
+
+/* ---------- notification preferences (E6-T10) ---------- */
+
+.acct-prefs { display: grid; gap: 18px; }
+
+.acct-toggle { display: flex; align-items: flex-start; gap: 12px; cursor: pointer; }
+.acct-toggle input { margin-top: 4px; width: 18px; height: 18px; flex: none; }
+.acct-toggle span { display: grid; gap: 3px; font-size: 14px; }
+.acct-toggle .fainttext { font-size: 13px; }
+
+.acct-prefs-note {
+  margin: 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--line, #e4e8f0);
+  font-size: 13px;
+}

@@ -14,6 +14,9 @@ defmodule Blastek.Application do
       {Phoenix.PubSub, name: Blastek.PubSub},
       # Owns the rate-limit ETS table; must be up before requests are served.
       Blastek.RateLimit,
+      # Background jobs. After the repo it queries and before the endpoint that
+      # enqueues into it.
+      {Oban, Application.fetch_env!(:blastek, Oban)},
       # Start to serve requests, typically the last entry
       BlastekWeb.Endpoint,
       # Subscription registry — must start after the endpoint it hangs off.

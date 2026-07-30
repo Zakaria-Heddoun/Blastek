@@ -11,6 +11,7 @@ defmodule BlastekWeb.InvitationsTest do
 
   import Blastek.Fixtures
 
+  alias Blastek.Notifications.TestProvider
   alias Blastek.Audit
   alias Blastek.Notifications.Collector
   alias Blastek.Venues
@@ -194,17 +195,10 @@ defmodule BlastekWeb.InvitationsTest do
       created = invite!(ctx)
       assert created["delivered"] == true
 
-      original = Application.get_env(:blastek, :notifications_provider)
-
-      Application.put_env(
-        :blastek,
-        :notifications_provider,
-        Blastek.Notifications.FailingProvider
-      )
-
-      on_exit(fn -> Application.put_env(:blastek, :notifications_provider, original) end)
-
-      failed = invite!(ctx, ~s|role: "staff", phone: "0611229988"|)
+      failed =
+        TestProvider.with_provider(Blastek.Notifications.FailingProvider, fn ->
+          invite!(ctx, ~s|role: "staff", phone: "0611229988"|)
+        end)
 
       # The invitation still works — the owner has the link — but the UI must
       # not claim it was sent.

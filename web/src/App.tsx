@@ -19,6 +19,7 @@ import AuthPage from './market/AuthPage';
 import ForgotPassword from './market/ForgotPassword';
 import JoinVenue from './market/JoinVenue';
 import OnboardVenue from './market/OnboardVenue';
+import AppointmentAction from './market/AppointmentAction';
 import Account from './market/Account';
 import BungeePage from './bungee/BungeePage';
 
@@ -58,6 +59,9 @@ export default function App() {
           <Route path="/join" element={<JoinVenue />} />
           {/* Self-serve venue signup (E5-T9), linked from "For professionals". */}
           <Route path="/for-business" element={<OnboardVenue />} />
+          {/* One-tap confirm/cancel from a WhatsApp reminder (E6-T8). No login:
+              the signed token in the URL is the whole credential. */}
+          <Route path="/a/:action/:token" element={<AppointmentAction />} />
           {/* Marketplace: the directory, then one venue addressed by slug. */}
           <Route path="/venues" element={<VenueList />} />
           <Route path="/v/:slug" element={<MarketLayout />}>

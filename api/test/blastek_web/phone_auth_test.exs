@@ -48,7 +48,16 @@ defmodule BlastekWeb.PhoneAuthTest do
         extra
       )
 
-    {Collector.last_code(), details}
+    # A nil code turns into a MatchError three calls later, on a line that has
+    # nothing to do with the cause. Fail here, holding what was actually
+    # delivered.
+    code = Collector.last_code()
+
+    assert code,
+           "requestOtp reported success but delivered no code. " <>
+             "Collected: #{inspect(Collector.delivered())}"
+
+    {code, details}
   end
 
   defp sign_in(ctx) do

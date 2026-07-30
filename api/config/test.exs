@@ -40,6 +40,13 @@ config :blastek, :geocoder, Blastek.Geocode.Stub
 # "sent" — the same way a user reads their text message.
 config :blastek, :notifications_provider, Blastek.Notifications.Collector
 
+# Jobs run inline, in the calling process, inside the same sandbox transaction.
+# A queue polling in the background would be a second connection that cannot see
+# the test's uncommitted data, and would make every notification assertion a
+# race. Tests that care about scheduling assert on the enqueued job instead —
+# see `Oban.Testing`.
+config :blastek, Oban, testing: :manual, repo: Blastek.Repo, queues: false, plugins: false
+
 # Password and OTP hashing is deliberately slow in production — that slowness is
 # the security property. In tests it is pure cost, and the suite hashes on
 # nearly every fixture, so the work factor drops to its minimum here.

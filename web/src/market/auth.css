@@ -115,6 +115,18 @@
 .auth-submit:hover { opacity: 0.86; }
 .auth-submit:disabled { opacity: 0.5; cursor: default; }
 
+/* The same control as a link — the one-tap landing page's primary action
+   navigates rather than submits. An anchor is inline, so `width: 100%` does
+   nothing, and it carries its own colour, so the label came out dark on dark:
+   between them the button rendered as an empty black pill. */
+a.auth-submit {
+  display: block;
+  box-sizing: border-box;
+  color: var(--paper);
+  text-align: center;
+  text-decoration: none;
+}
+
 .auth-toggle {
   width: 100%;
   margin-top: 18px;

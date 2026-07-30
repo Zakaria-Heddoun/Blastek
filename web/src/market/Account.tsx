@@ -9,6 +9,7 @@ import { Icon } from '../lib/icons';
 import { StatusBadge, useToast } from '../components/ui';
 import MarketTopbar from './MarketTopbar';
 import AccountSecurity from './AccountSecurity';
+import AccountNotifications from './AccountNotifications';
 import { fmtDateLong, fmtMAD, fmtTime, todayStr } from '../lib/format';
 import './market.css';
 
@@ -100,6 +101,7 @@ export default function Account() {
           ? <div className="empty">Nothing here yet.</div>
           : past.slice(0, 15).map((a) => row(a, false)))}
 
+        <AccountNotifications />
         <AccountSecurity />
       </div>
     </div>

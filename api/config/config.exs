@@ -43,6 +43,37 @@ config :blastek, :geocoder, Blastek.Geocode.Nominatim
 # transfers itself, so no ExAws HTTP client is configured.
 config :ex_aws, json_codec: Jason
 
+# Elixir ships a UTC-only timezone database, under which every conversion to
+# Africa/Casablanca raises. Reminders are scheduled in local wall-clock time
+# ("the evening before"), so that raise is the difference between a reminder at
+# 20:00 and one at 21:00 — and during Ramadan, when Morocco moves to UTC+0, two
+# hours.
+config :elixir, :time_zone_database, Tz.TimeZoneDatabase
+
+# Background jobs (E6-T1 / F0.10).
+#
+# Two queues rather than one. `notifications` carries work a person is waiting
+# on — a confirmation the customer expects within seconds — and `scheduled`
+# carries reminders, which are enqueued at booking time and sit for a day. A
+# morning's worth of reminders coming due at once must not delay the
+# confirmation of a booking made in that same minute.
+#
+# `Pruner` keeps the table from growing without bound; the send log in
+# `notifications` is the durable record, not `oban_jobs`.
+config :blastek, Oban,
+  repo: Blastek.Repo,
+  queues: [notifications: 10, scheduled: 5],
+  plugins: [
+    {Oban.Plugins.Pruner, max_age: 60 * 60 * 24 * 7},
+    # Jobs whose node died mid-run are otherwise stuck `executing` forever.
+    {Oban.Plugins.Lifeline, rescue_after: :timer.minutes(30)}
+  ]
+
+# Message delivery. `DevLogger` prints instead of sending; `runtime.exs`
+# switches to the real chain when credentials are present. See
+# `Blastek.Notifications.Provider`.
+config :blastek, :notifications_provider, Blastek.Notifications.DevLogger
+
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"

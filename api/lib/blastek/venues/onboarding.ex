@@ -349,18 +349,7 @@ defmodule Blastek.Venues.Onboarding do
     end
   end
 
-  defp owner_contact(venue_id) do
-    Repo.one(
-      from m in Blastek.Venues.VenueMember,
-        join: u in assoc(m, :user),
-        where: m.venue_id == ^venue_id and m.role == "owner",
-        order_by: [asc: m.id],
-        limit: 1,
-        # A phone-first owner has no email, an email-first one has no phone;
-        # whichever exists is where the decision goes.
-        select: fragment("coalesce(nullif(?, ''), ?)", u.phone, u.email)
-    )
-  end
+  defp owner_contact(venue_id), do: Venues.owner_contact(venue_id)
 
   defp iso_now, do: NaiveDateTime.utc_now() |> NaiveDateTime.to_iso8601()
 

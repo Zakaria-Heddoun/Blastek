@@ -21,6 +21,8 @@ export interface User {
   profileComplete: boolean;
   /** Phone-first accounts start without one. */
   hasPassword: boolean;
+  /** Which optional messages this account accepts (E6). */
+  notificationPrefs: { reminders: boolean; marketing: boolean };
   venues: VenueMembership[];
 }
 
@@ -57,6 +59,7 @@ export const useAuth = () => useContext(Ctx);
 
 const USER_FIELDS = `id email role firstName lastName phone
   phoneVerified profileComplete hasPassword
+  notificationPrefs { reminders marketing }
   venues { id role venue { id slug name city status } }`;
 
 const ME = `{ me { ${USER_FIELDS} } }`;

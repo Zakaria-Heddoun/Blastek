@@ -48,6 +48,17 @@ defmodule Blastek.MixProject do
       {:absinthe_phoenix, "~> 2.0"},
       {:cors_plug, "~> 3.0"},
       {:pbkdf2_elixir, "~> 2.2"},
+      # Background jobs, on Postgres rather than a second datastore. Notification
+      # delivery must survive a provider outage, and a reminder scheduled for
+      # 20:00 tomorrow has to survive a deploy at 19:00 — both are `oban_jobs`
+      # rows in the database we already run.
+      {:oban, "~> 2.18"},
+      # A real timezone database. Elixir ships with a UTC-only one, under which
+      # every "24 hours before, local time" reminder silently lands an hour
+      # late — and two hours off during Ramadan, when Morocco moves to UTC+0.
+      # This app has a Ramadan schedule feature; it cannot be vague about the
+      # Moroccan clock.
+      {:tz, "~> 0.28"},
       # Image handling (libvips): generates the thumb/card/hero variants and
       # doubles as upload validation — a file libvips cannot decode is not an
       # image, whatever its content-type header claims.

@@ -11,7 +11,7 @@ defmodule Blastek.Notifications.Collector do
   (defeating the point). Reading it from the delivered message is exactly what a
   real user does.
   """
-  @behaviour Blastek.Notifications
+  @behaviour Blastek.Notifications.Provider
 
   @key :notifications_collector
 
@@ -49,8 +49,39 @@ end
 
 defmodule Blastek.Notifications.FailingProvider do
   @moduledoc "Test provider that always fails, for the undeliverable-OTP path."
-  @behaviour Blastek.Notifications
+  @behaviour Blastek.Notifications.Provider
 
   @impl true
   def deliver(_message), do: {:error, :unreachable}
+end
+
+defmodule Blastek.Notifications.TestProvider do
+  @moduledoc """
+  Swapping the provider for one test, without affecting the others.
+
+  `Application.put_env` is global: while a test that swaps in a failing provider
+  runs, every concurrent test sending a notification gets it too. That produced
+  a genuinely nasty flake — an unrelated OTP test intermittently receiving no
+  code — so the override is per-process instead.
+  """
+  alias Blastek.Notifications.Provider
+
+  @doc "Runs `fun` with `providers` in force for this process only."
+  def with_provider(providers, fun) do
+    previous = Provider.put_override(providers)
+
+    try do
+      fun.()
+    after
+      if previous, do: Provider.put_override(previous), else: Provider.clear_override()
+    end
+  end
+end
+
+defmodule Blastek.Notifications.RaisingProvider do
+  @moduledoc "Test provider that blows up, for the chain's crash isolation."
+  @behaviour Blastek.Notifications.Provider
+
+  @impl true
+  def deliver(_message), do: raise("provider exploded")
 end

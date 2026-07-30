@@ -1,182 +1,345 @@
 defmodule Blastek.Notifications do
   @moduledoc """
-  Outbound messages to customers (E3-T8 / F0.2, standing in for F0.10).
+  Outbound messages: templated, localized, logged, retried (E6-T2 / F0.10).
 
-  **Deliberately minimal.** E6 builds the real `Notifications` context —
-  templates in the database, per-user preferences, a send log, WhatsApp with SMS
-  fallback, and Oban to retry. Auth needs exactly one thing from all of that: a
-  way to get six digits onto a phone. So this is the seam and nothing more.
+  ## The shape
 
-  What it does establish, because these are the parts that would be painful to
-  retrofit:
+  Every send is a row in `notifications` written **before** the provider is
+  called, then updated with what happened. A message that vanished because the
+  node died mid-send is exactly the one worth being able to see, and a row
+  created only on success cannot record a failure to create it.
 
-    * a provider **behaviour**, so swapping the dev logger for WhatsApp is a
-      config change rather than a rewrite of every call site;
-    * **locale-aware templates**, because the copy is French and Arabic from day
-      one and English is the fallback, not the default;
-    * a return value callers must handle — delivery fails, and an OTP flow that
-      assumes success leaves a user waiting for a code that never comes.
+  Delivery is asynchronous, through Oban: a customer's confirmation must not
+  make them wait on Meta's API inside their booking request, and a provider
+  outage must cost a retry rather than a lost message. `deliver/2` enqueues;
+  `Blastek.Notifications.Worker` renders, sends and records.
 
-  Never log or return the code itself except through `DevLogger`, which exists
-  precisely so nobody is tempted to leak it into an API response.
+  ## What can be turned off
+
+  Only reminders. F0.10 is explicit that transactional messages — the
+  confirmation for a booking somebody just made, the code they asked for — are
+  not optional, because suppressing them leaves the person with no record of
+  their own action. `Templates.category/1` decides, not the caller.
+
+  An **opt-out** is different from a preference and outranks it: someone who
+  replied STOP has withdrawn consent for the address, and that survives them
+  signing up again with a second account.
+
+  ## Compatibility
+
+  `deliver_otp/4` and friends stay synchronous. Auth cannot enqueue a code and
+  tell the user to check their phone — if the send fails, the flow has to say
+  so, and E3 built the return value that says it.
   """
-  @type message :: %{
-          to: String.t(),
-          channel: :sms | :whatsapp,
-          body: String.t(),
-          template: atom,
-          locale: String.t()
-        }
+  import Ecto.Query
 
-  @callback deliver(message) :: :ok | {:error, term}
+  alias Blastek.Notifications.Notification
+  alias Blastek.Notifications.OptOut
+  alias Blastek.Notifications.Provider
+  alias Blastek.Notifications.Templates
+  alias Blastek.Notifications.Worker
+  alias Blastek.Repo
 
-  @default_locale "fr"
-  @locales ~w(fr ar en)
+  @default_prefs %{"reminders" => true, "marketing" => false}
 
-  def provider,
-    do: Application.get_env(:blastek, :notifications_provider, Blastek.Notifications.DevLogger)
+  def default_prefs, do: @default_prefs
+
+  ## ---------- sending ----------
 
   @doc """
-  Sends a one-time code.
+  Queues a message.
 
-  `purpose` only changes the wording — the code itself is issued and checked by
-  `Blastek.Accounts.Otp`.
+  `opts` carries `:user_id`, `:venue_id`, `:appointment_id`, `:locale`, `:to`
+  and the template's own assigns under `:assigns`. Returns `{:ok, job}`,
+  or `{:ok, :skipped}` when the recipient has opted out or turned this category
+  off — a skip is a success from the caller's point of view, and it is recorded
+  in the log either way.
   """
-  @spec deliver_otp(String.t(), String.t(), atom, keyword) :: :ok | {:error, term}
-  def deliver_otp(phone, code, purpose, opts \\ []) do
-    locale = locale(opts[:locale])
+  def deliver(template, to, opts \\ []) do
+    cond do
+      to in [nil, ""] ->
+        {:ok, :skipped}
 
-    deliver(%{
-      to: phone,
-      # WhatsApp first with SMS fallback is F0.10's job; until then everything
-      # is nominally SMS.
-      channel: :sms,
-      body: render(purpose, locale, code: code),
-      template: purpose,
-      locale: locale
-    })
+      not Templates.known?(template) ->
+        {:error, {:unknown_template, template}}
+
+      true ->
+        case suppression(template, to, opts[:user]) do
+          nil -> enqueue(template, to, opts)
+          reason -> record_skip(template, to, opts, reason)
+        end
+    end
   end
 
-  @doc "Sends a password-reset link (the email variant of the reset flow)."
-  @spec deliver_password_reset(String.t(), String.t(), keyword) :: :ok | {:error, term}
-  def deliver_password_reset(email, url, opts \\ []) do
-    locale = locale(opts[:locale])
+  defp enqueue(template, to, opts) do
+    %{
+      "template" => to_string(template),
+      "to" => to,
+      "locale" => Templates.locale(opts[:locale]),
+      "assigns" => stringify(opts[:assigns] || %{}),
+      "user_id" => opts[:user_id],
+      "venue_id" => opts[:venue_id],
+      "appointment_id" => opts[:appointment_id]
+    }
+    |> Worker.new(scheduled_at: opts[:scheduled_at], queue: opts[:queue] || :notifications)
+    |> Oban.insert()
+  end
 
-    deliver(%{
-      to: email,
-      channel: :sms,
-      body: render(:password_reset, locale, url: url),
-      template: :password_reset,
-      locale: locale
+  @doc """
+  Renders and sends one message now, recording the attempt.
+
+  Called by the worker. Public so a test — and an admin retrying a failure —
+  can drive the same path the queue does.
+  """
+  def send_now(template, to, opts \\ []) do
+    locale = Templates.locale(opts[:locale])
+    assigns = opts[:assigns] || %{}
+    body = Templates.render(template, locale, assigns)
+
+    {:ok, log} =
+      %Notification{}
+      |> Notification.changeset(%{
+        user_id: opts[:user_id],
+        venue_id: opts[:venue_id],
+        appointment_id: opts[:appointment_id],
+        to: to,
+        template: to_string(template),
+        channel: to_string(opts[:channel] || :sms),
+        locale: locale,
+        body: body,
+        payload: stringify(assigns),
+        status: "queued"
+      })
+      |> Repo.insert()
+
+    case Provider.deliver(%{to: to, body: body, template: template, locale: locale}) do
+      {:ok, provider, channel, id} ->
+        {:ok,
+         update_log(log, %{
+           status: "sent",
+           channel: to_string(channel),
+           provider: inspect(provider),
+           provider_message_id: id,
+           attempts: log.attempts + 1,
+           sent_at: now()
+         })}
+
+      {:error, reason} ->
+        {:error,
+         update_log(log, %{
+           status: "failed",
+           error: inspect(reason),
+           attempts: log.attempts + 1
+         })}
+    end
+  end
+
+  defp update_log(log, attrs) do
+    log |> Notification.changeset(attrs) |> Repo.update!()
+  end
+
+  defp record_skip(template, to, opts, reason) do
+    %Notification{}
+    |> Notification.changeset(%{
+      user_id: opts[:user_id],
+      venue_id: opts[:venue_id],
+      appointment_id: opts[:appointment_id],
+      to: to,
+      template: to_string(template),
+      channel: "inapp",
+      locale: Templates.locale(opts[:locale]),
+      body: "",
+      payload: stringify(opts[:assigns] || %{}),
+      status: "skipped",
+      error: to_string(reason)
     })
+    |> Repo.insert!()
+
+    {:ok, :skipped}
+  end
+
+  ## ---------- suppression ----------
+
+  @doc """
+  Why this message must not be sent, or nil.
+
+  Order matters: an opt-out is a withdrawal of consent and outranks everything,
+  including the caller's belief that a message is transactional.
+  """
+  def suppression(template, to, user \\ nil) do
+    cond do
+      opted_out?(to) -> :opted_out
+      Templates.category(template) == :transactional -> nil
+      not allows?(user, Templates.category(template)) -> :prefs
+      true -> nil
+    end
+  end
+
+  @doc "Whether a user permits a category of message. Unknown user → default."
+  def allows?(nil, category), do: Map.get(@default_prefs, to_string(category), true)
+
+  def allows?(%{notification_prefs: prefs}, category) when is_map(prefs) do
+    case Map.fetch(prefs, to_string(category)) do
+      {:ok, value} -> value == true
+      :error -> Map.get(@default_prefs, to_string(category), true)
+    end
+  end
+
+  def allows?(_user, category), do: Map.get(@default_prefs, to_string(category), true)
+
+  def opted_out?(to) do
+    Repo.exists?(from o in OptOut, where: o.to == ^to)
+  end
+
+  @doc "Records a STOP. Idempotent — a second STOP is not an error."
+  def opt_out(to, reason \\ "user request", channel \\ "any") do
+    %OptOut{}
+    |> OptOut.changeset(%{to: to, channel: channel, reason: reason})
+    |> Repo.insert(on_conflict: :nothing, conflict_target: [:to, :channel])
+  end
+
+  def opt_in(to) do
+    Repo.delete_all(from o in OptOut, where: o.to == ^to)
+    :ok
+  end
+
+  ## ---------- preferences ----------
+
+  @doc """
+  Merges preference changes for a user.
+
+  Only known categories are stored, and only booleans — the column is
+  schemaless, and the same reasoning as `Venues.Settings` applies: a typo must
+  not write a key nobody reads.
+  """
+  def update_prefs(user, changes) do
+    known = Map.keys(@default_prefs)
+
+    clean =
+      changes
+      |> stringify()
+      |> Map.take(known)
+      |> Map.new(fn {key, value} -> {key, value == true} end)
+
+    user
+    |> Ecto.Changeset.change(%{notification_prefs: Map.merge(prefs(user), clean)})
+    |> Repo.update()
+  end
+
+  @doc "A user's preferences, with defaults filled in."
+  def prefs(%{notification_prefs: prefs}) when is_map(prefs), do: Map.merge(@default_prefs, prefs)
+  def prefs(_user), do: @default_prefs
+
+  ## ---------- the log ----------
+
+  @doc """
+  The send log, newest first (F0.12 admin view).
+
+  Filters: `:venue_id`, `:user_id`, `:status`, `:template`, `:appointment_id`.
+  """
+  def list_log(opts \\ []) do
+    limit = min(Keyword.get(opts, :limit, 50), 200)
+
+    Notification
+    |> filter(:venue_id, opts[:venue_id])
+    |> filter(:user_id, opts[:user_id])
+    |> filter(:status, opts[:status])
+    |> filter(:appointment_id, opts[:appointment_id])
+    |> filter(:template, opts[:template] && to_string(opts[:template]))
+    |> order_by(desc: :inserted_at, desc: :id)
+    |> limit(^limit)
+    |> offset(^Keyword.get(opts, :offset, 0))
+    |> Repo.all()
+  end
+
+  def count_log(opts \\ []) do
+    Notification
+    |> filter(:venue_id, opts[:venue_id])
+    |> filter(:user_id, opts[:user_id])
+    |> filter(:status, opts[:status])
+    |> filter(:appointment_id, opts[:appointment_id])
+    |> filter(:template, opts[:template] && to_string(opts[:template]))
+    |> Repo.aggregate(:count)
+  end
+
+  defp filter(query, _field, nil), do: query
+  defp filter(query, field, value), do: from(n in query, where: field(n, ^field) == ^value)
+
+  @doc """
+  Marks a message delivered, from a provider webhook.
+
+  Keyed by the provider's own id because that is all a delivery receipt carries.
+  Unknown ids are ignored rather than raising: providers retry their webhooks,
+  and receipts for messages this deployment never sent are normal.
+  """
+  def record_receipt(provider_message_id, status, error \\ nil)
+
+  def record_receipt(nil, _status, _error), do: :ok
+
+  def record_receipt(provider_message_id, status, error) when status in ["delivered", "failed"] do
+    attrs =
+      case status do
+        "delivered" -> %{status: "delivered", delivered_at: now()}
+        "failed" -> %{status: "failed", error: error}
+      end
+
+    case Repo.one(from n in Notification, where: n.provider_message_id == ^provider_message_id) do
+      nil -> :ok
+      log -> {:ok, update_log(log, attrs)}
+    end
+  end
+
+  def record_receipt(_id, _status, _error), do: :ok
+
+  ## ---------- synchronous senders (E3, E4, E5) ----------
+  #
+  # These predate the queue and stay synchronous on purpose: an OTP flow that
+  # enqueues a code and tells the user to check their phone has no way to say
+  # "that number is unreachable", which is the one thing it must be able to say.
+
+  @doc "Sends a one-time code. `purpose` selects the wording."
+  def deliver_otp(phone, code, purpose, opts \\ []) do
+    sync(purpose, phone, %{code: code}, opts)
+  end
+
+  @doc "Sends a password-reset link."
+  def deliver_password_reset(email, url, opts \\ []) do
+    sync(:password_reset, email, %{url: url}, opts)
   end
 
   @doc "Sends a venue invitation link (E4-T1)."
-  @spec deliver_invitation(String.t(), String.t(), String.t(), String.t(), keyword) ::
-          :ok | {:error, term}
   def deliver_invitation(to, venue_name, role, url, opts \\ []) do
-    locale = locale(opts[:locale])
-
-    deliver(%{
-      to: to,
-      channel: :sms,
-      body:
-        render(:invitation, locale, venue: venue_name, role: role_name(role, locale), url: url),
-      template: :invitation,
-      locale: locale
-    })
+    locale = Templates.locale(opts[:locale])
+    assigns = %{venue: venue_name, role: role_name(role, locale), url: url}
+    sync(:invitation, to, assigns, Keyword.put(opts, :locale, locale))
   end
 
   @doc "Tells an owner whether their venue was approved (E5-T8)."
-  @spec deliver_venue_decision(String.t(), String.t(), :approved | :rejected, String.t(), keyword) ::
-          :ok | {:error, term}
   def deliver_venue_decision(to, venue_name, decision, reason, opts \\ []) do
-    locale = locale(opts[:locale])
-
-    deliver(%{
-      to: to,
-      channel: :sms,
-      body: render(decision_template(decision), locale, venue: venue_name, reason: reason),
-      template: decision_template(decision),
-      locale: locale
-    })
+    template = if decision == :approved, do: :venue_approved, else: :venue_rejected
+    sync(template, to, %{venue: venue_name, reason: reason}, opts)
   end
 
-  defp decision_template(:approved), do: :venue_approved
-  defp decision_template(_), do: :venue_rejected
+  # The synchronous path still writes a log row and still honours opt-outs —
+  # only the queue is skipped.
+  defp sync(template, to, assigns, opts) do
+    opts = Keyword.merge(opts, assigns: assigns)
 
-  defp deliver(message), do: provider().deliver(message)
+    cond do
+      to in [nil, ""] ->
+        {:error, :no_address}
 
-  defp locale(requested) when requested in @locales, do: requested
-  defp locale(_), do: @default_locale
+      suppression(template, to, opts[:user]) ->
+        {:ok, :skipped} = record_skip(template, to, opts, suppression(template, to, opts[:user]))
+        :ok
 
-  ## ---------- templates ----------
-  #
-  # Inline for now. F0.10 moves these into the database so a venue can edit its
-  # own copy and Meta can approve the WhatsApp variants; the shape stays.
-
-  defp render(:login, "fr", code: code),
-    do: "Votre code Blastek : #{code}. Il expire dans 5 minutes."
-
-  defp render(:login, "ar", code: code),
-    do: "رمز بلاستيك الخاص بك: #{code}. ينتهي خلال 5 دقائق."
-
-  defp render(:login, _en, code: code),
-    do: "Your Blastek code is #{code}. It expires in 5 minutes."
-
-  defp render(:verify, "fr", code: code),
-    do: "Code de vérification Blastek : #{code}. Il expire dans 5 minutes."
-
-  defp render(:verify, "ar", code: code),
-    do: "رمز التحقق من بلاستيك: #{code}. ينتهي خلال 5 دقائق."
-
-  defp render(:verify, _en, code: code),
-    do: "Your Blastek verification code is #{code}. It expires in 5 minutes."
-
-  defp render(:reset, "fr", code: code),
-    do: "Code de réinitialisation Blastek : #{code}. Il expire dans 5 minutes."
-
-  defp render(:reset, "ar", code: code),
-    do: "رمز إعادة تعيين كلمة المرور: #{code}. ينتهي خلال 5 دقائق."
-
-  defp render(:reset, _en, code: code),
-    do: "Your Blastek password reset code is #{code}. It expires in 5 minutes."
-
-  defp render(:password_reset, "fr", url: url),
-    do: "Réinitialisez votre mot de passe Blastek : #{url} (valable 1 heure)."
-
-  defp render(:password_reset, "ar", url: url),
-    do: "أعد تعيين كلمة مرور بلاستيك: #{url} (صالح لمدة ساعة)."
-
-  defp render(:password_reset, _en, url: url),
-    do: "Reset your Blastek password: #{url} (valid for 1 hour)."
-
-  defp render(:invitation, "fr", venue: venue, role: role, url: url),
-    do: "#{venue} vous invite à rejoindre son équipe sur Blastek (#{role}) : #{url}"
-
-  defp render(:invitation, "ar", venue: venue, role: role, url: url),
-    do: "#{venue} يدعوك للانضمام إلى الفريق على بلاستيك (#{role}): #{url}"
-
-  defp render(:invitation, _en, venue: venue, role: role, url: url),
-    do: "#{venue} invited you to join their team on Blastek as #{role}: #{url}"
-
-  defp render(:venue_approved, "fr", venue: venue, reason: _),
-    do: "#{venue} est en ligne sur Blastek. Vos clients peuvent réserver dès maintenant."
-
-  defp render(:venue_approved, "ar", venue: venue, reason: _),
-    do: "#{venue} أصبح متاحًا على بلاستيك. يمكن لعملائك الحجز الآن."
-
-  defp render(:venue_approved, _en, venue: venue, reason: _),
-    do: "#{venue} is live on Blastek. Your customers can book now."
-
-  defp render(:venue_rejected, "fr", venue: venue, reason: reason),
-    do: "#{venue} n'a pas encore été validé : #{reason} Corrigez et renvoyez."
-
-  defp render(:venue_rejected, "ar", venue: venue, reason: reason),
-    do: "#{venue} لم تتم الموافقة عليه بعد: #{reason} صحّح وأعد الإرسال."
-
-  defp render(:venue_rejected, _en, venue: venue, reason: reason),
-    do: "#{venue} was not approved yet: #{reason} Fix it and resubmit."
+      true ->
+        case send_now(template, to, opts) do
+          {:ok, _log} -> :ok
+          {:error, log} -> {:error, log.error}
+        end
+    end
+  end
 
   # Roles are stored in English; the invitation is read by the invitee.
   defp role_name(role, "fr") do
@@ -196,29 +359,11 @@ defmodule Blastek.Notifications do
   end
 
   defp role_name(role, _en), do: role
-end
 
-defmodule Blastek.Notifications.DevLogger do
-  @moduledoc """
-  Prints messages to the log instead of sending them.
+  defp now, do: NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
 
-  The default everywhere except production. It logs the **full body, including
-  the code** — that is the entire point in development, and it is why this
-  provider must never be the configured one in production.
-  """
-  @behaviour Blastek.Notifications
+  defp stringify(map) when is_map(map),
+    do: Map.new(map, fn {key, value} -> {to_string(key), value} end)
 
-  require Logger
-
-  @impl true
-  def deliver(%{to: to, body: body, channel: channel}) do
-    Logger.info("""
-
-    ┌─ #{String.upcase(to_string(channel))} → #{to}
-    │  #{body}
-    └─ (Blastek.Notifications.DevLogger — not actually sent)
-    """)
-
-    :ok
-  end
+  defp stringify(other), do: other
 end
