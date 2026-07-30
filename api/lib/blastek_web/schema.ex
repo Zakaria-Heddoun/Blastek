@@ -440,9 +440,16 @@ defmodule BlastekWeb.Schema do
     field :profile_complete, :boolean
   end
 
-  @desc "A code was sent. The number is masked; the server knows the real one."
+  @desc "A code was sent."
   object :otp_request do
-    field :phone, :string
+    @desc """
+    The destination, partly hidden: `06 •• •• 56 78`.
+
+    Named for what it is. A field called `phone` returning a masked string
+    invites a client to store or resend it.
+    """
+    field :masked_phone, :string
+
     field :expires_at, :naive_datetime
 
     @desc "Seconds before another code may be requested."
@@ -1147,7 +1154,7 @@ defmodule BlastekWeb.Schema do
 
       arg(:locale, :string)
 
-      middleware(RateLimitOtp)
+      middleware(RateLimitOtp, :request)
 
       resolve(fn args, %{context: ctx} ->
         opts = [locale: args[:locale]]
@@ -1163,7 +1170,7 @@ defmodule BlastekWeb.Schema do
           {:ok, details} ->
             {:ok,
              %{
-               phone: Blastek.Accounts.Phone.mask(details.phone),
+               masked_phone: Blastek.Accounts.Phone.mask(details.phone),
                expires_at: details.expires_at,
                resend_after: details.resend_after
              }}
@@ -1184,7 +1191,7 @@ defmodule BlastekWeb.Schema do
       arg(:phone, non_null(:string))
       arg(:code, non_null(:string))
 
-      middleware(RateLimitOtp)
+      middleware(RateLimitOtp, :verify)
 
       resolve(fn %{phone: phone, code: code}, %{context: ctx} ->
         case Accounts.verify_login_code(phone, code, session_opts(ctx)) do
@@ -1213,7 +1220,7 @@ defmodule BlastekWeb.Schema do
       arg(:code, non_null(:string))
 
       middleware(RequireAuth)
-      middleware(RateLimitOtp)
+      middleware(RateLimitOtp, :verify)
 
       resolve(fn %{phone: phone, code: code}, %{context: %{current_user: user}} ->
         Accounts.confirm_phone(user, phone, code) |> format_errors()
@@ -1316,7 +1323,7 @@ defmodule BlastekWeb.Schema do
       arg(:code, non_null(:string))
       arg(:password, non_null(:string))
 
-      middleware(RateLimitOtp)
+      middleware(RateLimitOtp, :verify)
 
       resolve(fn args, _ ->
         case Accounts.reset_password_by_phone(args.phone, args.code, args.password) do

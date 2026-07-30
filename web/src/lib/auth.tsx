@@ -26,7 +26,7 @@ export interface User {
 
 /** What `requestOtp` reports back: a masked number and the two countdowns. */
 export interface OtpRequest {
-  phone: string;
+  maskedPhone: string;
   expiresAt: string;
   resendAfter: number;
 }
@@ -111,10 +111,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     refreshMe()
       .catch((e) => {
-        // A rejected session is stale — drop the token so it stops being sent.
-        // An unreachable server says nothing about the session, so keep it and
-        // let the next request retry.
-        if (!(e instanceof ConnectionError)) localStorage.removeItem('blastek-token');
+        // A rejected session is stale — drop both tokens so neither is sent
+        // again. Clearing only the access token would strand the refresh token
+        // in storage, where nothing would ever reach it. An unreachable server
+        // says nothing about the session, so keep them and let the next request
+        // retry.
+        if (!(e instanceof ConnectionError)) clearTokens();
         setUser(null);
       })
       .finally(() => setLoading(false));
@@ -150,7 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const requestOtp = async (phone: string) => {
     const d = await gql<{ requestOtp: OtpRequest }>(
       `mutation($phone: String!) {
-        requestOtp(phone: $phone) { phone expiresAt resendAfter } }`,
+        requestOtp(phone: $phone) { maskedPhone expiresAt resendAfter } }`,
       { phone });
     return d.requestOtp;
   };

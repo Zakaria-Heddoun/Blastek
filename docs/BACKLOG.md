@@ -218,6 +218,30 @@ back to `/login` because the session is really gone server-side.
 (2 × MODERATE) still need framework major bumps and still belong in their own
 CH-1 change rather than a feature commit.
 
+**Post-implementation principal review (2026-07-30)** — full suite still green
+(278 tests, up from 261) after the following. Two were security bugs shipped in
+the first pass:
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **Refresh reuse detection did not exist.** Rotation overwrites `refresh_hash`, so a token captured before a rotation matched *no row* and returned `:invalid` — indistinguishable from a random string. The module documented a theft defence it did not have; rotation alone only meant a thief had to be quick | **High** | Sessions keep `previous_refresh_hash` for exactly one generation (new migration). Replaying it now proves two parties hold one session and ends it for both. Verified live: the second use of a rotated token returns `session_reused` |
+| **Password reset links were replayable for their full hour.** `Phoenix.Token` is stateless and nothing marked one spent, so anyone who intercepted the email could reuse it *after* the owner had already reset | **High** | The token now carries a fingerprint of the password hash it was issued against. Using it changes that hash, so the link dies the moment it works — and an older link dies when a newer one is used |
+| Request and verify shared one rate-limit bucket. A sign-in costs one request plus up to three attempts, so **two honest sign-ins inside the window locked the user out** | Medium | Separate budgets per action (`RateLimitOtp, :request` / `:verify`), with limits that match what each one actually costs |
+| `Sessions.verify/1` wrote `last_used_at` on **every authenticated request** — a row lock and a WAL record behind every GraphQL call, for a value read as "3 hours ago" | Medium | Written only once the value is more than 5 minutes stale, as a single `update_all` with the staleness test in the WHERE clause |
+| An expired code was reported as "not valid", sending users hunting for a typo that was not there. `Otp.message(:expired)` was unreachable | Low | Expiry is judged after the lookup rather than filtered inside it, so `:expired` is distinguishable. It leaks nothing — only someone who received a code can see it |
+| `request_phone_verification/3` took a `%User{}` and ignored it, so a number already verified elsewhere was only refused *after* a stranger had been texted a code | Low | The conflict is checked before sending. `confirm_phone/3` still re-checks, since the number can be claimed in between — and there is now a test for exactly that race |
+| `otp_request.phone` returned a masked string from a field named like a real one, inviting a client to store or resend it | Low | Renamed to `maskedPhone` |
+| A rejected session cleared only the access token in the browser, stranding the refresh token in `localStorage` where nothing would reach it | Low | Both cleared together |
+| Dead code: `Notifications.masked/1` (no callers), `Otp.pending?/2` (documented as used by the reset flow; it was not) | — | Removed |
+
+**Test gap closed:** the `AuthContext` plug had no HTTP-level test at all —
+every other auth test hands Absinthe a context map it built itself, so none of
+them exercised the plug that *produces* it. `auth_context_test.exs` now drives
+real requests: a live token authenticates, a revoked one stops working on the
+very next request, an expired one is refused, a refresh token is not accepted
+as a bearer token, a forged `x-venue-slug` cannot reach another venue, and
+`last_used_at` is not rewritten per request.
+
 ### E4 · Team & permissions — F0.3
 | ID | Task | Est | Labels |
 |---|---|---|---|

@@ -6,6 +6,8 @@ defmodule Blastek.Accounts.Session do
     belongs_to :user, Blastek.Accounts.User
     field :token_hash, :binary
     field :refresh_hash, :binary
+    # The hash this session rotated away from, kept so its reuse is detectable.
+    field :previous_refresh_hash, :binary
     field :device, :string, default: ""
     field :ip, :string, default: ""
     field :expires_at, :naive_datetime
@@ -47,12 +49,16 @@ defmodule Blastek.Accounts.Sessions do
 
   ## Reuse detection
 
-  Rotation creates a tell. If a refresh token that was already rotated away is
-  presented again, then two parties hold it — the legitimate device and a
-  thief — and there is no way to know which one is calling. The safe response is
-  to assume the worst and revoke the whole session, forcing a fresh sign-in on
-  a device the attacker does not have. Without this, rotation only means the
-  thief has to be quick.
+  Rotation creates a tell, but only if the previous token is remembered.
+  Overwriting `refresh_hash` alone would make a stolen pre-rotation token match
+  nothing — indistinguishable from a random string — so each session also keeps
+  `previous_refresh_hash`.
+
+  A request presenting that previous hash proves two parties hold tokens from
+  one session: the real device and someone else. There is no way to tell which
+  is calling, so the session is ended and both must sign in again — which only
+  the legitimate owner can do. Without this, rotation just means the thief has
+  to be quick.
   """
   import Ecto.Query
 
@@ -135,30 +141,39 @@ defmodule Blastek.Accounts.Sessions do
   @doc """
   Exchanges a refresh token for a fresh pair, retiring the old one.
 
-  Presenting a refresh token that has already been rotated away revokes the
-  whole session — see the module docs on reuse detection.
+  Presenting a token this session has already rotated away, or one belonging to
+  a session that has been revoked, ends the session — see the module docs on
+  reuse detection.
   """
   @spec refresh(String.t(), keyword) :: {:ok, tokens} | {:error, :invalid | :reused}
   def refresh(refresh_token, opts \\ []) when is_binary(refresh_token) do
     hashed = hash(refresh_token)
     now = now()
 
-    case Repo.one(from s in Session, where: s.refresh_hash == ^hashed) do
+    # Matches the current hash *or* the one just rotated away, so the two cases
+    # can be told apart rather than both reading as "no such token".
+    query =
+      from s in Session,
+        where: s.refresh_hash == ^hashed or s.previous_refresh_hash == ^hashed,
+        limit: 1
+
+    case Repo.one(query) do
       nil ->
         {:error, :invalid}
 
-      %Session{revoked_at: revoked} = session when not is_nil(revoked) ->
-        # Already-revoked *and* still matching this hash means the token was
-        # captured before rotation. The session is dead either way; say so.
+      %Session{previous_refresh_hash: ^hashed} = session ->
+        # Someone is replaying a token the real device already exchanged. Which
+        # of them is calling is unknowable, so end it for both.
         revoke_session(session)
         {:error, :reused}
 
+      %Session{revoked_at: revoked} when not is_nil(revoked) ->
+        {:error, :invalid}
+
       %Session{refresh_expires_at: expires_at} = session ->
-        if NaiveDateTime.compare(expires_at, now) == :lt do
-          {:error, :invalid}
-        else
-          rotate(session, opts)
-        end
+        if NaiveDateTime.compare(expires_at, now) == :lt,
+          do: {:error, :invalid},
+          else: rotate(session, opts)
     end
   end
 
@@ -190,8 +205,12 @@ defmodule Blastek.Accounts.Sessions do
   @doc "Revokes the session behind a bearer token — the logout path."
   def revoke_token(token) when is_binary(token) do
     case Repo.one(from s in Session, where: s.token_hash == ^hash(token)) do
-      nil -> :ok
-      session -> revoke_session(session) && :ok
+      nil ->
+        :ok
+
+      session ->
+        revoke_session(session)
+        :ok
     end
   end
 
@@ -212,7 +231,7 @@ defmodule Blastek.Accounts.Sessions do
 
     query = if except, do: from(s in query, where: s.id != ^except), else: query
 
-    {count, _} = Repo.update_all(query, set: [revoked_at: now()])
+    {count, _} = Repo.update_all(query, set: [revoked_at: now(), previous_refresh_hash: nil])
     count
   end
 
@@ -273,6 +292,9 @@ defmodule Blastek.Accounts.Sessions do
       |> Ecto.Changeset.change(%{
         token_hash: hash(token),
         refresh_hash: hash(refresh),
+        # Remembered for exactly one generation — this is what makes a replay of
+        # the token being retired here detectable rather than merely invalid.
+        previous_refresh_hash: session.refresh_hash,
         expires_at: expires_at,
         # Rolling: an actively used session should not be logged out because it
         # has been sixty days since the *first* sign-in.
@@ -287,13 +309,37 @@ defmodule Blastek.Accounts.Sessions do
   end
 
   defp revoke_session(session) do
-    session |> Ecto.Changeset.change(%{revoked_at: now()}) |> Repo.update!()
+    session
+    # Clearing the hashes on the way out keeps a dead session from matching any
+    # future lookup, including the reuse check.
+    |> Ecto.Changeset.change(%{revoked_at: now(), previous_refresh_hash: nil})
+    |> Repo.update!()
   end
 
-  # Written with `update_all` and no reload: this fires on every authenticated
-  # request, and it must not turn a read into a read-modify-write.
-  defp touch(session) do
-    Repo.update_all(from(s in Session, where: s.id == ^session.id), set: [last_used_at: now()])
+  @doc """
+  How stale `last_used_at` is allowed to get.
+
+  This field exists so a person can recognise their own device in a list, where
+  "an hour ago" and "52 minutes ago" are the same answer. Writing it on *every*
+  authenticated request would put an UPDATE — and a row lock, and a WAL record —
+  behind every single GraphQL query, which is a large price for a number nobody
+  reads at that resolution.
+  """
+  @touch_interval_seconds 300
+
+  def touch_interval_seconds, do: @touch_interval_seconds
+
+  # `update_all` with the staleness test in the WHERE clause: one statement,
+  # no read-modify-write, and no write at all in the common case.
+  defp touch(%Session{last_used_at: last_used_at, id: id}) do
+    now = now()
+
+    if last_used_at == nil or
+         NaiveDateTime.diff(now, last_used_at) >= @touch_interval_seconds do
+      Repo.update_all(from(s in Session, where: s.id == ^id), set: [last_used_at: now])
+    end
+
+    :ok
   end
 
   defp random_token,

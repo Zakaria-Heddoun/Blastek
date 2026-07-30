@@ -20,10 +20,6 @@ defmodule Blastek.Notifications do
   Never log or return the code itself except through `DevLogger`, which exists
   precisely so nobody is tempted to leak it into an API response.
   """
-  require Logger
-
-  alias Blastek.Accounts.Phone
-
   @type message :: %{
           to: String.t(),
           channel: :sms | :whatsapp,
@@ -120,18 +116,6 @@ defmodule Blastek.Notifications do
 
   defp render(:password_reset, _en, url: url),
     do: "Reset your Blastek password: #{url} (valid for 1 hour)."
-
-  @doc false
-  def masked(to) do
-    if String.contains?(to, "@"), do: mask_email(to), else: Phone.mask(to)
-  end
-
-  defp mask_email(email) do
-    case String.split(email, "@") do
-      [name, domain] -> String.slice(name, 0, 2) <> "•••@" <> domain
-      _ -> "•••"
-    end
-  end
 end
 
 defmodule Blastek.Notifications.DevLogger do

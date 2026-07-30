@@ -53,7 +53,7 @@ export default function PhoneAuth({ onDone }: { onDone: () => void }) {
   const send = () =>
     attempt(async () => {
       const request = await requestOtp(phone);
-      setMasked(request.phone);
+      setMasked(request.maskedPhone);
       setResendIn(request.resendAfter);
       setStep('code');
     });
