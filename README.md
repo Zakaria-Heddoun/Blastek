@@ -85,6 +85,19 @@ The adapter is chosen at boot by the presence of `S3_BUCKET`
 | `S3_PUBLIC_BASE_URL` | `http://localhost:9000` | Where the **browser** reaches it |
 | `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | `blastek` / `blastek-dev-secret` | Credentials |
 
+### Message delivery
+
+All unset in dev, which leaves `DevLogger` in force. Setting either pair
+switches the real chain on; production refuses to boot with neither.
+
+| Variable | Purpose |
+|---|---|
+| `WHATSAPP_TOKEN` / `WHATSAPP_PHONE_NUMBER_ID` | Cloud API credentials; both needed |
+| `WHATSAPP_APP_SECRET` | Verifies the HMAC on delivery receipts. Without it the webhook rejects everything |
+| `WHATSAPP_VERIFY_TOKEN` | Echoed back during Meta's subscription handshake |
+| `SMS_GATEWAY_URL` / `SMS_GATEWAY_KEY` / `SMS_SENDER` | The fallback gateway |
+| `PUBLIC_WEB_URL` | Where one-tap links point. The API and the browser reach different addresses |
+
 The two URLs are genuinely different hosts, and both matter: SigV4 signs the
 `Host` header, so a URL handed to a browser must be signed for the address the
 browser will actually call.
@@ -189,6 +202,51 @@ duplicates (same name in the same city, or a shared phone number) without
 blocking them: two salons in one city really can share a name. The dashboard
 works immediately either way — only the public page waits for approval.
 
+### Messages
+
+Confirmations, reminders and cancellation notices go out over **WhatsApp with
+SMS as a fallback** — in Morocco WhatsApp is how people are actually reached,
+and a number with no WhatsApp account is the ordinary case rather than an
+error. The chain is a list tried in order:
+
+```elixir
+config :blastek, :notifications_provider, [
+  Blastek.Notifications.Providers.WhatsApp,
+  Blastek.Notifications.Providers.Sms
+]
+```
+
+With neither configured, `DevLogger` prints instead of sending — which is what
+keeps a bare checkout and CI working. Production refuses to boot on it.
+
+Everything is sent through **Oban**, so a provider outage costs a retry rather
+than a lost confirmation, and every attempt is a row in `notifications` written
+*before* the provider is called. `notificationLog` (admin-only) is how you find
+out what happened to a message somebody says never arrived.
+
+**Reminders** go at T-24h and T-3h, both venue-configurable, both scheduled at
+booking time. Cancelling deletes the pending jobs — but the guarantee is that
+each job re-reads the appointment as it fires and declines to send if it is no
+longer on. Trusting the delete is how somebody gets reminded about an
+appointment they cancelled yesterday.
+
+A reminder carries a **one-tap cancel link**: a signed token, no login, opened
+on a phone at a bus stop. Tapping it cancels, tells the salon, drops the
+remaining reminders, and updates any dashboard that happens to be open.
+
+Only reminders and offers can be switched off, under **My account → Messages**.
+Confirmations and sign-in codes always send: somebody who turned off "your
+booking is confirmed" would be left with no record of their own booking. An
+opt-out — replying STOP on WhatsApp — is different and outranks everything,
+and is keyed by number rather than by account so it survives signing up again.
+
+```
+docker compose logs api --tail 40 | grep -A 2 "SMS →"
+```
+
+WhatsApp template copy for Meta approval lives in
+[docs/whatsapp-templates.md](docs/whatsapp-templates.md).
+
 ### Search
 
 The venue directory is full-text searched over a per-venue `tsvector` that
@@ -212,6 +270,8 @@ docker compose exec api mix run -e "IO.puts(Blastek.Discovery.reindex_all())"
 | Auth & identity | [api/lib/blastek/accounts.ex](api/lib/blastek/accounts.ex) — sessions, OTP and phone normalization in [api/lib/blastek/accounts/](api/lib/blastek/accounts/) |
 | Discovery (search + geo) | [api/lib/blastek/discovery.ex](api/lib/blastek/discovery.ex), [api/lib/blastek/geocode.ex](api/lib/blastek/geocode.ex) |
 | Schedules, closures, settings | [api/lib/blastek/venues/schedule.ex](api/lib/blastek/venues/schedule.ex), [api/lib/blastek/venues/settings.ex](api/lib/blastek/venues/settings.ex) |
+| Notifications | [api/lib/blastek/notifications.ex](api/lib/blastek/notifications.ex) — copy in [templates.ex](api/lib/blastek/notifications/templates.ex), providers in [providers/](api/lib/blastek/notifications/providers/), reminders in [reminders.ex](api/lib/blastek/notifications/reminders.ex) |
+| Background jobs | Oban, on Postgres — queues configured in [api/config/config.exs](api/config/config.exs) |
 | Venue onboarding | [api/lib/blastek/venues/onboarding.ex](api/lib/blastek/venues/onboarding.ex), [web/src/market/OnboardVenue.tsx](web/src/market/OnboardVenue.tsx) |
 | Media (photos) | [api/lib/blastek/media.ex](api/lib/blastek/media.ex), [api/lib/blastek/storage.ex](api/lib/blastek/storage.ex) |
 | React frontend | [web/src/](web/src/) — admin in [web/src/admin/](web/src/admin/), marketplace in [web/src/market/](web/src/market/) |

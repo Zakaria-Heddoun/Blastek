@@ -16,6 +16,11 @@ defmodule Blastek.Accounts.User do
     # Set once an OTP has proven the number. Only then is it an identity, which
     # is why the unique index on `phone` is conditional on it.
     field :phone_verified_at, :naive_datetime
+    # Which optional messages this account accepts (E6-T2). Schemaless for the
+    # same reason venue settings are: the list of things a person can decline
+    # grows every epic. Written through `Blastek.Notifications.update_prefs/2`,
+    # never cast from user input directly.
+    field :notification_prefs, :map, default: %{}
     has_many :memberships, Blastek.Venues.VenueMember
     timestamps(type: :naive_datetime)
   end

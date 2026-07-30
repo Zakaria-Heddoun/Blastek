@@ -106,6 +106,18 @@ defmodule BlastekWeb.RoleMatrixTest do
     {:audit_log, "{ auditLog { id } }", "owner"}
   ]
 
+  # Fields gated on `RequireAdmin` rather than on a venue role: they cross
+  # venues, which is precisely why no venue role may reach them. Declared here
+  # so that adding one without noticing fails the suite.
+  @admin_operations ~w(
+    admin_venues
+    approve_venue
+    notification_log
+    reject_venue
+    venue_duplicates
+    venue_review_queue
+  )
+
   setup do
     venue = venue_fixture("Matrix Salon")
 
@@ -222,6 +234,100 @@ defmodule BlastekWeb.RoleMatrixTest do
       assert MapSet.size(missing) == 0,
              "these role-gated fields have no row in the matrix: #{inspect(MapSet.to_list(missing))}"
     end
+
+    test "every platform-admin field refuses a venue owner", ctx do
+      # `RequireMember` and `RequireAdmin` are different gates and the table
+      # above only reviews the first. An admin-only field is the *more*
+      # dangerous of the two to add unnoticed — it is admin-only because it
+      # crosses venues — so it gets its own sweep rather than its own row.
+      admin_fields =
+        [{"query", :query}, {"mutation", :mutation}]
+        |> Enum.flat_map(fn {keyword, type} ->
+          object = Absinthe.Schema.lookup_type(Schema, type)
+
+          object.fields
+          |> Map.values()
+          |> Enum.filter(&admin_gated?(&1, object))
+          |> Enum.map(&{keyword, &1})
+        end)
+
+      assert length(admin_fields) >= 4,
+             "introspection found only #{length(admin_fields)} admin-gated fields — " <>
+               "`admin_gated?/2` has probably stopped matching"
+
+      # The set is declared, not merely counted. Comparing introspection against
+      # a written list is what makes this a completeness check rather than a
+      # spot check: adding a cross-venue field and forgetting `RequireAdmin`
+      # fails here, and so does quietly removing the gate from one of these.
+      assert MapSet.new(admin_fields, fn {_keyword, field} -> field.name end) ==
+               MapSet.new(@admin_operations),
+             "the set of platform-admin fields changed — review the addition, then update " <>
+               "`@admin_operations`"
+
+      owner = ctx.members["owner"]
+
+      for {keyword, field} <- admin_fields do
+        result = run(probe_query(keyword, field), owner, ctx.venue)
+
+        refute authorized?(field.name, result),
+               "#{field.name} is gated on RequireAdmin but a venue owner got through"
+      end
+    end
+  end
+
+  # A syntactically valid query for a field whose arguments we do not care
+  # about. Required arguments get a placeholder of the right *type* — omitting
+  # them fails GraphQL validation before the middleware runs, which
+  # `authorized?/2` rightly refuses to count as a refusal.
+  defp probe_query(keyword, field) do
+    args =
+      field.args
+      |> Map.values()
+      |> Enum.filter(&match?(%Absinthe.Type.NonNull{}, &1.type))
+      |> Enum.map_join(", ", &"#{external(&1.name)}: #{placeholder(&1.type)}")
+
+    arguments = if args == "", do: "", else: "(#{args})"
+    "#{keyword} { #{external(field.name)}#{arguments}#{selection(field)} }"
+  end
+
+  # Introspection reports a field's internal name; a document has to use the
+  # external one the adapter exposes.
+  defp external(name),
+    do: Absinthe.Adapter.LanguageConventions.to_external_name(name, :field)
+
+  defp placeholder(%Absinthe.Type.NonNull{of_type: inner}), do: placeholder(inner)
+  defp placeholder(%Absinthe.Type.List{}), do: "[]"
+
+  defp placeholder(type) do
+    case Absinthe.Schema.lookup_type(Schema, type) do
+      %{name: "Int"} -> "1"
+      %{name: "Boolean"} -> "false"
+      %{name: "Float"} -> "1.0"
+      %{name: "Date"} -> ~s|"2026-07-01"|
+      _ -> ~s|"1"|
+    end
+  end
+
+  # Scalars take no selection set; object types require one.
+  defp selection(field) do
+    case Absinthe.Schema.lookup_type(Schema, field.type) do
+      %Absinthe.Type.Object{} -> " { __typename }"
+      _ -> ""
+    end
+  end
+
+  defp admin_gated?(field, object) do
+    Schema
+    |> Absinthe.Middleware.expand(field.middleware, field, object)
+    |> Enum.flat_map(fn
+      {{Absinthe.Middleware, :shim}, _} = shim -> Absinthe.Middleware.unshim([shim], Schema)
+      plain -> [plain]
+    end)
+    |> Enum.any?(fn
+      {{BlastekWeb.Schema.RequireAdmin, :call}, _} -> true
+      BlastekWeb.Schema.RequireAdmin -> true
+      _ -> false
+    end)
   end
 
   # Absinthe stores a field's middleware behind a lazy shim, so the declared

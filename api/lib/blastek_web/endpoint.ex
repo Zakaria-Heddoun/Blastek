@@ -55,7 +55,10 @@ defmodule BlastekWeb.Endpoint do
   plug Plug.Parsers,
     parsers: [:urlencoded, :multipart, :json],
     pass: ["*/*"],
-    json_decoder: Phoenix.json_library()
+    json_decoder: Phoenix.json_library(),
+    # Keeps the unparsed bytes for the endpoints whose signatures are computed
+    # over them — see `BlastekWeb.RawBodyReader`.
+    body_reader: {BlastekWeb.RawBodyReader, :read_body, []}
 
   plug Plug.MethodOverride
   plug Plug.Head

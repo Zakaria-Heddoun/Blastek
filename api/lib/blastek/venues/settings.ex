@@ -29,7 +29,13 @@ defmodule Blastek.Venues.Settings do
     {"booking_horizon_days", {:integer_range, 1, 365}, 90},
     {"cancellation_window_hours", {:integer_range, 0, 168}, 24},
     {"instant_confirmation", :boolean, true},
-    {"locale", {:one_of, ["fr", "ar", "en"]}, "fr"}
+    {"locale", {:one_of, ["fr", "ar", "en"]}, "fr"},
+    # Minutes before an appointment to remind the customer. Zero switches that
+    # reminder off — a barber whose customers walk in anyway would rather send
+    # nothing than train them to ignore messages. Capped at a week, because a
+    # reminder further out than that is not a reminder.
+    {"reminder_24h_min", {:integer_range, 0, 10_080}, 24 * 60},
+    {"reminder_3h_min", {:integer_range, 0, 10_080}, 180}
   ]
 
   # Built once at compile time. Both read paths need the same lookup, and two

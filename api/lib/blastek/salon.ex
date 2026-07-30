@@ -11,6 +11,7 @@ defmodule Blastek.Salon do
   import Ecto.Query
   import Blastek.Scope
 
+  alias Blastek.Notifications
   alias Blastek.Repo
   alias Blastek.Venues
   alias Blastek.Venues.Settings
@@ -430,9 +431,22 @@ defmodule Blastek.Salon do
 
     with {:ok, _staff} <- fetch_staff(venue_id, next.staff_id),
          :ok <- maybe_check_clash(venue_id, appt, next, moved or reactivated) do
-      appt |> Appointment.changeset(next) |> Repo.update() |> preload_result()
+      appt
+      |> Appointment.changeset(next)
+      |> Repo.update()
+      |> preload_result()
+      |> notify_of_change(appt, args[:actor] || :staff)
     end
   end
+
+  # Both sides of the transition, because what to send depends on what changed:
+  # a cancellation and a reschedule are the same `update` from here.
+  defp notify_of_change({:ok, updated} = result, before, actor) do
+    Notifications.Bookings.changed(before, updated, actor)
+    result
+  end
+
+  defp notify_of_change(other, _before, _actor), do: other
 
   # Only a change into a slot the appointment will actually occupy can clash;
   # cancelling or marking a no-show frees the slot instead.
@@ -890,6 +904,11 @@ defmodule Blastek.Salon do
       end)
 
     staff = get_staff!(venue_id, staff_id)
+
+    # Inside the booking transaction on purpose: the jobs are rows too, so a
+    # rollback takes the confirmation with it. A customer told about a booking
+    # that never committed is worse than no message at all.
+    Notifications.Bookings.booked(appointments, cancel_url: args[:cancel_url])
 
     %{
       booking_ref: ref,

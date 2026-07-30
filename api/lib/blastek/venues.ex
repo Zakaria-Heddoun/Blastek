@@ -119,6 +119,36 @@ defmodule Blastek.Venues do
 
   def get_by_slug(_), do: nil
 
+  @doc """
+  Where to reach the venue itself — its owner's phone, or their email.
+
+  A phone-first owner has no email and an email-first one has no phone, so
+  whichever exists is where a "you have a new booking" message goes. The
+  earliest owner wins when a venue has several, which keeps the destination
+  stable rather than depending on row order.
+  """
+  def owner_contact(venue_id) do
+    Repo.one(
+      from m in VenueMember,
+        join: u in assoc(m, :user),
+        where: m.venue_id == ^venue_id and m.role == "owner",
+        order_by: [asc: m.id],
+        limit: 1,
+        select: fragment("coalesce(nullif(?, ''), ?)", u.phone, u.email)
+    )
+  end
+
+  @doc "The owner's user id, for attributing a notification to an account."
+  def owner_user_id(venue_id) do
+    Repo.one(
+      from m in VenueMember,
+        where: m.venue_id == ^venue_id and m.role == "owner",
+        order_by: [asc: m.id],
+        limit: 1,
+        select: m.user_id
+    )
+  end
+
   @doc "Public lookup — only venues that are live on the marketplace."
   def get_public_by_slug(slug) do
     case get_by_slug(slug) do

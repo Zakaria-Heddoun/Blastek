@@ -19,6 +19,7 @@ defmodule BlastekWeb.Schema do
   alias Blastek.Audit
   alias Blastek.Discovery
   alias Blastek.Media
+  alias Blastek.Notifications
   alias Blastek.Repo
   alias Blastek.Salon
   alias Blastek.Venues
@@ -638,6 +639,56 @@ defmodule BlastekWeb.Schema do
     field :venues, list_of(:venue_membership) do
       resolve(fn user, _, _ -> {:ok, Venues.list_memberships(user.id)} end)
     end
+
+    @desc """
+    Which optional messages this account accepts.
+
+    Transactional messages — booking confirmations, one-time codes — are not
+    listed because they cannot be turned off.
+    """
+    field :notification_prefs, :notification_prefs do
+      resolve(fn user, _, _ -> {:ok, Notifications.prefs(user)} end)
+    end
+  end
+
+  @desc "Optional message categories. Transactional messages always send."
+  object :notification_prefs do
+    field :reminders, :boolean do
+      resolve(fn prefs, _, _ -> {:ok, Map.get(prefs, "reminders", true)} end)
+    end
+
+    field :marketing, :boolean do
+      resolve(fn prefs, _, _ -> {:ok, Map.get(prefs, "marketing", false)} end)
+    end
+  end
+
+  @desc "One attempt to reach one person — the send log (F0.12)."
+  object :notification do
+    field :id, :id
+    field :to, :string
+    field :template, :string
+    field :channel, :string
+    field :locale, :string
+    field :body, :string
+
+    @desc "queued | sent | delivered | failed | skipped"
+    field :status, :string
+
+    @desc "Why it failed, or why it was skipped."
+    field :error, :string
+
+    field :provider, :string
+    field :attempts, :integer
+    field :sent_at, :naive_datetime
+    field :delivered_at, :naive_datetime
+    field :inserted_at, :naive_datetime
+    field :venue_id, :id
+    field :appointment_id, :id
+  end
+
+  object :notification_page do
+    field :items, list_of(:notification)
+    field :total_count, :integer
   end
 
   object :auth_payload do
@@ -1083,6 +1134,42 @@ defmodule BlastekWeb.Schema do
           nil -> {:error, "Unknown venue."}
           venue -> {:ok, Venues.Onboarding.possible_duplicates(venue)}
         end
+      end)
+    end
+
+    @desc """
+    The notification send log, newest first (E6-T2 / F0.12).
+
+    Admin-only, because it holds the body of every message sent to every
+    customer — phone numbers, names, and the times they turn up somewhere.
+    A venue's own view of what it sent to whom belongs to a later epic with a
+    narrower query; there is no safe way to hand this one out per-venue while
+    the filters are caller-supplied.
+    """
+    field :notification_log, non_null(:notification_page) do
+      arg(:venue_id, :id)
+      arg(:user_id, :id)
+
+      @desc "queued | sent | delivered | failed | skipped"
+      arg(:status, :string)
+
+      arg(:template, :string)
+      arg(:limit, :integer, default_value: 50)
+      arg(:offset, :integer, default_value: 0)
+
+      middleware(RequireAdmin)
+
+      resolve(fn args, _ ->
+        opts = [
+          venue_id: int_or_nil(args[:venue_id]),
+          user_id: int_or_nil(args[:user_id]),
+          status: args[:status],
+          template: args[:template],
+          limit: args[:limit],
+          offset: args[:offset]
+        ]
+
+        {:ok, %{items: Notifications.list_log(opts), total_count: Notifications.count_log(opts)}}
       end)
     end
 
@@ -1884,11 +1971,36 @@ defmodule BlastekWeb.Schema do
         appt = Salon.get_appointment_for_client(to_int(id), Accounts.client_ids(user))
 
         if appt && Salon.cancellable_by_client?(appt) do
-          Salon.update_appointment(appt.venue_id, appt.id, %{status: "cancelled"})
+          # `actor: :customer` so the salon is the one notified — the person
+          # pressing the button already knows.
+          Salon.update_appointment(appt.venue_id, appt.id, %{
+            status: "cancelled",
+            actor: :customer
+          })
           |> format_errors()
         else
           {:error, "This appointment can no longer be cancelled online — please call the salon."}
         end
+      end)
+    end
+
+    @desc """
+    Turns optional messages on or off for the signed-in account.
+
+    Reminders and marketing only. A booking confirmation is not something a
+    person can decline and still have a record of their own booking, so it is
+    not offered here.
+    """
+    field :update_notification_prefs, :user do
+      arg(:reminders, :boolean)
+      arg(:marketing, :boolean)
+
+      middleware(RequireAuth)
+
+      resolve(fn args, %{context: %{current_user: user}} ->
+        user
+        |> Notifications.update_prefs(Map.drop(args, [:__struct__]))
+        |> format_errors()
       end)
     end
 
@@ -2007,35 +2119,10 @@ defmodule BlastekWeb.Schema do
     end
   end
 
-  # Publishes an appointment change to that venue's subscribers. Called after
-  # the write commits, so a subscriber that immediately re-queries cannot
-  # observe a state older than the event. Failures are swallowed: a dropped
-  # notification must never fail the booking that caused it.
-  defp publish_appointment(%{venue_id: venue_id} = appointment) do
-    Absinthe.Subscription.publish(BlastekWeb.Endpoint, appointment,
-      appointment_changed: "venue:#{venue_id}"
-    )
-
-    :ok
-  rescue
-    _ -> :ok
-  end
-
-  defp broadcast({:ok, appointment} = result) do
-    publish_appointment(appointment)
-    result
-  end
-
-  defp broadcast(other), do: other
-
-  # A booking creates several appointments under one reference; the calendar
-  # needs each of them.
-  defp broadcast_booking({:ok, %{appointments: appointments}} = result) do
-    Enum.each(appointments, &publish_appointment/1)
-    result
-  end
-
-  defp broadcast_booking(other), do: other
+  # Live updates live in `BlastekWeb.LiveUpdates` — the schema is no longer the
+  # only path an appointment changes by.
+  defdelegate broadcast(result), to: BlastekWeb.LiveUpdates
+  defdelegate broadcast_booking(result), to: BlastekWeb.LiveUpdates
 
   ## ---------- helpers ----------
 

@@ -54,6 +54,72 @@ if config_env() != :test and bucket do
     secret_access_key: System.get_env("S3_SECRET_ACCESS_KEY")
 end
 
+# ---------------------------------------------------------------------------
+# Message delivery (E6 / F0.10)
+#
+# The chain is assembled from whichever credentials are present, in the order
+# WhatsApp → SMS. With neither, `DevLogger` stays in force and messages are
+# printed rather than sent — which is what keeps a bare checkout and CI working,
+# and is the same bargain the storage adapter makes above.
+#
+# `DevLogger` logs full message bodies including one-time codes, so production
+# refuses to start on it: a deployment that silently logs everybody's login
+# codes instead of sending them is worse than a deployment that will not boot.
+if config_env() != :test do
+  whatsapp = System.get_env("WHATSAPP_TOKEN")
+  whatsapp_phone_id = System.get_env("WHATSAPP_PHONE_NUMBER_ID")
+  sms_url = System.get_env("SMS_GATEWAY_URL")
+
+  if whatsapp && whatsapp_phone_id do
+    config :blastek, Blastek.Notifications.Providers.WhatsApp,
+      token: whatsapp,
+      phone_number_id: whatsapp_phone_id,
+      # Verifies the signature on delivery receipts; without it the webhook
+      # rejects everything, which is the safe direction.
+      app_secret: System.get_env("WHATSAPP_APP_SECRET"),
+      verify_token: System.get_env("WHATSAPP_VERIFY_TOKEN")
+  end
+
+  if sms_url do
+    config :blastek, Blastek.Notifications.Providers.Sms,
+      url: sms_url,
+      api_key: System.get_env("SMS_GATEWAY_KEY"),
+      sender: System.get_env("SMS_SENDER") || "Blastek"
+  end
+
+  chain =
+    [
+      whatsapp && whatsapp_phone_id && Blastek.Notifications.Providers.WhatsApp,
+      sms_url && Blastek.Notifications.Providers.Sms
+    ]
+    |> Enum.filter(&is_atom/1)
+    |> Enum.reject(&is_nil/1)
+
+  case {config_env(), chain} do
+    {:prod, []} ->
+      raise """
+      No notification provider is configured.
+
+      Set WHATSAPP_TOKEN + WHATSAPP_PHONE_NUMBER_ID, or SMS_GATEWAY_URL.
+      Running production on DevLogger would write every one-time code to the
+      application log instead of sending it.
+      """
+
+    {_env, []} ->
+      :ok
+
+    {_env, providers} ->
+      config :blastek, :notifications_provider, providers
+  end
+
+  # Where a one-tap link points. The API and the browser reach different
+  # addresses, and a link built from the API's own host is unopenable from a
+  # phone — the lesson presigned upload URLs taught in E8.
+  config :blastek,
+         :public_web_url,
+         System.get_env("PUBLIC_WEB_URL") || "http://localhost:5173"
+end
+
 if config_env() == :prod do
   database_url =
     System.get_env("DATABASE_URL") ||

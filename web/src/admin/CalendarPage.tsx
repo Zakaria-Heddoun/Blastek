@@ -2,6 +2,7 @@
 // appointment create/detail/checkout flows.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { gql } from '../lib/gql';
+import { subscribe } from '../lib/live';
 import type { Appointment, Client, Staff } from '../lib/types';
 import { useAppData } from './AdminLayout';
 import { Modal, StatusBadge, useToast } from '../components/ui';
@@ -21,6 +22,9 @@ export const APPT_FIELDS = `fragment ApptFields on Appointment {
   staff { id name color }
 }`;
 
+const APPOINTMENT_CHANGED = `${APPT_FIELDS}
+  subscription { appointmentChanged { ...ApptFields } }`;
+
 const clientName = (a: Appointment) => `${a.client.firstName} ${a.client.lastName}`.trim();
 
 function timeOptions(from = 480, to = 1185) {
@@ -31,6 +35,7 @@ function timeOptions(from = 480, to = 1185) {
 
 export default function CalendarPage() {
   const { staff } = useAppData();
+  const toast = useToast();
   const active = staff.filter((s) => s.active);
   const [view, setView] = useState<'day' | 'week'>('day');
   const [date, setDate] = useState(todayStr());
@@ -58,6 +63,33 @@ export default function CalendarPage() {
   }, [from, to]);
 
   useEffect(() => { load(); }, [load]);
+
+  // A booking made online lands on a calendar somebody is already looking at.
+  // Without this the receptionist finds out by refreshing, which is how two
+  // people get told the same slot is free (E6-T10, over E2-T4's subscription).
+  useEffect(() => {
+    let stop: (() => void) | undefined;
+
+    subscribe<{ appointmentChanged: Appointment }>(APPOINTMENT_CHANGED, (data) => {
+      const appointment = data.appointmentChanged;
+      if (!appointment) return;
+
+      // Only announce what a person did from outside this dashboard. Echoing
+      // back the receptionist's own edit as a toast trains them to ignore it.
+      if (appointment.source === 'online' && appointment.status !== 'cancelled') {
+        toast(`New online booking — ${appointment.client?.firstName ?? 'a customer'} at ${fmtTime(appointment.startMin)}`);
+      }
+
+      // Reload rather than splice: the change may be a cancellation, a move, or
+      // a checkout, and the query already knows how to answer "what is on this
+      // day".
+      load();
+    }).then((subscription) => {
+      stop = subscription.unsubscribe;
+    });
+
+    return () => stop?.();
+  }, [load, toast]);
 
   const cols = useMemo(() => {
     if (view === 'day') {

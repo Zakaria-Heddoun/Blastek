@@ -7,6 +7,7 @@ defmodule Blastek.OtpTest do
   """
   use Blastek.DataCase, async: true
 
+  alias Blastek.Notifications.TestProvider
   alias Blastek.Accounts.Otp
   alias Blastek.Accounts.OtpCode
   alias Blastek.Notifications.Collector
@@ -92,19 +93,11 @@ defmodule Blastek.OtpTest do
 
     test "a failed delivery still consumes the cooldown" do
       # Otherwise a provider outage becomes an unlimited resend loop.
-      original = Application.get_env(:blastek, :notifications_provider)
-
-      Application.put_env(
-        :blastek,
-        :notifications_provider,
-        Blastek.Notifications.FailingProvider
-      )
-
-      on_exit(fn -> Application.put_env(:blastek, :notifications_provider, original) end)
-
-      assert {:error, message} = Otp.request(@phone, :login)
-      assert message =~ "could not send"
-      assert {:error, {:cooldown, _}} = Otp.request(@phone, :login)
+      TestProvider.with_provider(Blastek.Notifications.FailingProvider, fn ->
+        assert {:error, message} = Otp.request(@phone, :login)
+        assert message =~ "could not send"
+        assert {:error, {:cooldown, _}} = Otp.request(@phone, :login)
+      end)
     end
   end
 
