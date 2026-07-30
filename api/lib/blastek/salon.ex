@@ -612,49 +612,87 @@ defmodule Blastek.Salon do
   Returns `nil` when nobody is working.
   """
   def working_hours(venue_id, staff_id, weekday) do
-    case Venues.Schedule.active_template(venue_id) do
-      nil ->
-        case staff_hour(venue_id, staff_id, weekday, nil) do
-          nil -> nil
-          hour -> {hour.start_min, hour.end_min}
-        end
+    template = Venues.Schedule.active_template(venue_id)
 
-      template ->
-        template_hours(venue_id, staff_id, weekday, template)
+    venue_id
+    |> staff_hour_index(template, [staff_id])
+    |> resolve_hours(template, staff_id, weekday)
+  end
+
+  @doc """
+  The venue's advertised opening hours, one entry per weekday.
+
+  The union of what its active staff work *under the template currently in
+  use*, so switching to Ramadan hours changes what the marketplace advertises
+  and not merely what the booking engine offers. `open` and `close` are nil on a
+  day nobody works.
+  """
+  def venue_week(venue_id) do
+    template = Venues.Schedule.active_template(venue_id)
+    staff_ids = Repo.all(from s in scope(Staff, venue_id), where: s.active, select: s.id)
+    index = staff_hour_index(venue_id, template, staff_ids)
+
+    for weekday <- 0..6 do
+      spans =
+        for id <- staff_ids, span = resolve_hours(index, template, id, weekday), do: span
+
+      case spans do
+        [] ->
+          %{weekday: weekday, open: nil, close: nil}
+
+        spans ->
+          %{
+            weekday: weekday,
+            open: spans |> Enum.map(&elem(&1, 0)) |> Enum.min(),
+            close: spans |> Enum.map(&elem(&1, 1)) |> Enum.max()
+          }
+      end
     end
   end
 
-  defp template_hours(venue_id, staff_id, weekday, template) do
-    own = staff_hour(venue_id, staff_id, weekday, template.id)
+  # Every row that could apply — the active template's and the template-less
+  # ones — in one query, keyed by {staff_id, template_id, weekday}. Resolving a
+  # whole week for a whole team is a page render, not a slot lookup.
+  defp staff_hour_index(venue_id, template, staff_ids) do
+    query =
+      from h in StaffHour,
+        join: s in Staff,
+        on: s.id == h.staff_id and s.venue_id == ^venue_id,
+        where: h.staff_id in ^staff_ids and h.working,
+        select: {h.staff_id, h.template_id, h.weekday, h.start_min, h.end_min}
+
+    query =
+      case template do
+        nil -> from(h in query, where: is_nil(h.template_id))
+        %{id: id} -> from(h in query, where: is_nil(h.template_id) or h.template_id == ^id)
+      end
+
+    query
+    |> Repo.all()
+    |> Map.new(fn {staff_id, template_id, weekday, start_min, end_min} ->
+      {{staff_id, template_id, weekday}, {start_min, end_min}}
+    end)
+  end
+
+  # The precedence documented on `working_hours/3`, over a prefetched index.
+  defp resolve_hours(index, nil, staff_id, weekday), do: index[{staff_id, nil, weekday}]
+
+  defp resolve_hours(index, template, staff_id, weekday) do
+    own = index[{staff_id, template.id, weekday}]
 
     # Rows with no template *are* the default week, so they still apply when the
     # default template is the active one — but under no other, or a seasonal
     # switch would silently keep serving the old hours.
     fallback =
       if template.name == Venues.Schedule.default_template_name(),
-        do: staff_hour(venue_id, staff_id, weekday, nil)
+        do: index[{staff_id, nil, weekday}]
 
     cond do
-      own -> {own.start_min, own.end_min}
-      fallback -> {fallback.start_min, fallback.end_min}
+      own -> own
+      fallback -> fallback
       day = template_day(template, weekday) -> {day["start_min"], day["end_min"]}
       true -> nil
     end
-  end
-
-  defp staff_hour(venue_id, staff_id, weekday, template_id) do
-    query =
-      from h in StaffHour,
-        join: s in Staff,
-        on: s.id == h.staff_id and s.venue_id == ^venue_id,
-        where: h.staff_id == ^staff_id and h.weekday == ^weekday and h.working
-
-    query =
-      if template_id,
-        do: from(h in query, where: h.template_id == ^template_id),
-        else: from(h in query, where: is_nil(h.template_id))
-
-    Repo.one(query)
   end
 
   defp template_day(nil, _weekday), do: nil
@@ -1022,20 +1060,6 @@ defmodule Blastek.Salon do
         _ -> Float.round(Enum.sum(Enum.map(reviews, & &1.rating)) / length(reviews), 1)
       end
 
-    hours =
-      for wd <- 0..6 do
-        row =
-          Repo.one(
-            from h in StaffHour,
-              join: s in Staff,
-              on: s.id == h.staff_id and s.venue_id == ^venue_id,
-              where: h.weekday == ^wd and h.working and s.active,
-              select: %{open: min(h.start_min), close: max(h.end_min)}
-          )
-
-        %{weekday: wd, open: row && row.open, close: row && row.close}
-      end
-
     %{
       id: venue.id,
       slug: venue.slug,
@@ -1059,7 +1083,7 @@ defmodule Blastek.Salon do
       staff: list_staff(venue_id, active_only: true),
       reviews: reviews,
       rating: rating,
-      hours: hours,
+      hours: venue_week(venue_id),
       stats: %{
         bookings:
           Repo.aggregate(

@@ -36,6 +36,7 @@ export default function CalendarPage() {
   const [date, setDate] = useState(todayStr());
   const [weekStaff, setWeekStaff] = useState(active[0]?.id ?? '');
   const [appts, setAppts] = useState<Appointment[]>([]);
+  const [closures, setClosures] = useState<Closure[]>([]);
   const [createAt, setCreateAt] = useState<{ staffId: string; date: string; startMin: number } | null>(null);
   const [detail, setDetail] = useState<Appointment | null>(null);
   const [checkout, setCheckout] = useState<Appointment[] | null>(null);
@@ -45,11 +46,15 @@ export default function CalendarPage() {
   const to = view === 'day' ? date : addDays(monday, 6);
 
   const load = useCallback(async () => {
-    const d = await gql<{ appointments: Appointment[] }>(
-      `${APPT_FIELDS} query($from: Date!, $to: Date!) { appointments(from: $from, to: $to) { ...ApptFields } }`,
+    const d = await gql<{ appointments: Appointment[]; venueClosures: Closure[] }>(
+      `${APPT_FIELDS} query($from: Date!, $to: Date!) {
+        appointments(from: $from, to: $to) { ...ApptFields }
+        venueClosures(from: $from, to: $to) { id date endDate startMin endMin reason }
+      }`,
       { from, to },
     );
     setAppts(d.appointments);
+    setClosures(d.venueClosures ?? []);
   }, [from, to]);
 
   useEffect(() => { load(); }, [load]);
@@ -139,6 +144,23 @@ export default function CalendarPage() {
                   {timeOptions(DAY_START + 60, DAY_END - 15).filter((m) => m % 60 === 0).map((m) => (
                     <div key={m} className="hourline" style={{ top: (m - DAY_START) * PX_MIN }} />
                   ))}
+                  {/* Closures sit above the off-hours shading and carry their
+                      reason, so a blank Thursday reads as "Eid" rather than as
+                      a scheduling mistake. */}
+                  {closedBands(closures, c.date).map((band, i) => (
+                    <div
+                      key={`${c.key}-closure-${i}`}
+                      className="closure-band"
+                      title={band.reason || 'Closed'}
+                      style={{
+                        top: (Math.max(band.from, DAY_START) - DAY_START) * PX_MIN,
+                        height: (Math.min(band.to, DAY_END) - Math.max(band.from, DAY_START)) * PX_MIN,
+                      }}
+                    >
+                      <span>{band.reason || 'Closed'}</span>
+                    </div>
+                  ))}
+
                   {(!h || !h.working) ? (
                     <div className="offhours" style={{ top: 0, height }} />
                   ) : (
@@ -441,4 +463,31 @@ function CheckoutModal({ appts, onClose, onDone }:
       </div>
     </Modal>
   );
+}
+
+/** A closure as the calendar draws it: a minute band on one day. */
+interface Closure {
+  id: string;
+  date: string;
+  endDate: string | null;
+  startMin: number | null;
+  endMin: number | null;
+  reason: string;
+}
+
+/**
+ * The shaded bands for one date.
+ *
+ * A whole-day closure has null times and covers everything; a part-day one
+ * covers its window. Spans are expanded per day here rather than server-side so
+ * the calendar can draw each column independently.
+ */
+function closedBands(closures: Closure[], date: string) {
+  return closures
+    .filter((c) => date >= c.date && date <= (c.endDate || c.date))
+    .map((c) => ({
+      from: c.startMin ?? 0,
+      to: c.endMin ?? 24 * 60,
+      reason: c.reason,
+    }));
 }

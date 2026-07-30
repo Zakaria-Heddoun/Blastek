@@ -75,6 +75,26 @@ defmodule BlastekWeb.RoleMatrixTest do
     {:geocode_venue, "mutation { geocodeVenue { id } }", "manager"},
     {:set_venue_women_only, "mutation { setVenueWomenOnly(value: true) { id } }", "manager"},
 
+    # --- opening hours and closures (E5) ---
+    {:venue_closures, "{ venueClosures { id } }", "staff"},
+    {:venue_hour_templates, "{ venueHourTemplates { name active } }", "manager"},
+    {:venue_week, "{ venueWeek { weekday open close } }", "manager"},
+    {:closure_conflicts, ~s|{ closureConflicts(date: "2026-08-01") { id } }|, "manager"},
+    {:create_closure, ~s|mutation { createClosure(date: "2026-08-01") { id } }|, "manager"},
+    {:delete_closure, ~s|mutation { deleteClosure(id: "1") { id } }|, "manager"},
+    {:save_hour_template,
+     ~s|mutation { saveHourTemplate(name: "ramadan", days: [{weekday: 1, working: true, | <>
+       ~s|startMin: 1260, endMin: 1470}]) { name } }|, "manager"},
+    {:set_hour_template, ~s|mutation { setHourTemplate(name: "default") { name } }|, "manager"},
+    {:update_venue_settings, "mutation { updateVenueSettings(input: {slotStepMin: 30}) { id } }",
+     "manager"},
+
+    # --- onboarding (E5) ---
+    {:apply_service_templates, ~s|mutation { applyServiceTemplates(templateIds: ["1"]) { id } }|,
+     "manager"},
+    {:update_onboarding, ~s|mutation { updateOnboarding(step: "basics") { id } }|, "manager"},
+    {:submit_venue, "mutation { submitVenue { id } }", "owner"},
+
     # --- handing out access, and the venue itself ---
     {:update_venue, ~s|mutation { updateVenue(input: {name: "X"}) { id } }|, "owner"},
     {:invite_member, ~s|mutation { inviteMember(role: "staff", phone: "0611111111") { url } }|,

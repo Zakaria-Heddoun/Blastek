@@ -134,6 +134,43 @@ An owner invites by phone or email; the invitee gets a one-time link
 removals take effect on the member's very next request, and are recorded in
 `audit_log`.
 
+### Opening hours, seasons and closures
+
+A venue's week is a **schedule** it can keep more than one of and switch
+between with one tap. Ramadan is the reason: it moves the working day rather
+than cancelling it, so a salon that opens 21:00–00:30 for a month needs a
+second grid, not thirty closures. Minutes past 1440 are just arithmetic —
+00:30 is `1470` — and the slot engine, the calendar and the public page all
+read the same one.
+
+A **closure** is an exception to whatever the grid says: a day, a range of
+days, or a window within a day. Before creating one, **Check bookings** lists
+the appointments it would strand, with client names and phone numbers:
+
+> **9 appointments would need moving.** Adding the closure does not cancel
+> them — call these customers first.
+
+Nothing is ever silently cancelled. A salon closing for a funeral still has to
+telephone the four people booked that afternoon, and the software's job is to
+tell it who they are.
+
+Which schedule is active changes what the marketplace advertises, not only what
+the booking engine offers — otherwise a venue on Ramadan hours would keep
+showing its winter times to shoppers.
+
+### Listing a salon
+
+`/for-business` is a six-step wizard: identity, what you do, your menu, team
+size, hours, review. It is **resumable** — the step and its answers live on the
+venue, so closing the tab on a phone loses nothing — and the menu step is
+seeded from starter catalogs (hair, barber, nails, skin, massage) with FR/AR/EN
+names, so an owner picks treatments rather than typing them.
+
+Submitting sends the venue to the admin review queue, which flags likely
+duplicates (same name in the same city, or a shared phone number) without
+blocking them: two salons in one city really can share a name. The dashboard
+works immediately either way — only the public page waits for approval.
+
 ### Search
 
 The venue directory is full-text searched over a per-venue `tsvector` that
@@ -156,6 +193,8 @@ docker compose exec api mix run -e "IO.puts(Blastek.Discovery.reindex_all())"
 | Migrations + seeds | [api/priv/repo/](api/priv/repo/) |
 | Auth & identity | [api/lib/blastek/accounts.ex](api/lib/blastek/accounts.ex) — sessions, OTP and phone normalization in [api/lib/blastek/accounts/](api/lib/blastek/accounts/) |
 | Discovery (search + geo) | [api/lib/blastek/discovery.ex](api/lib/blastek/discovery.ex), [api/lib/blastek/geocode.ex](api/lib/blastek/geocode.ex) |
+| Schedules, closures, settings | [api/lib/blastek/venues/schedule.ex](api/lib/blastek/venues/schedule.ex), [api/lib/blastek/venues/settings.ex](api/lib/blastek/venues/settings.ex) |
+| Venue onboarding | [api/lib/blastek/venues/onboarding.ex](api/lib/blastek/venues/onboarding.ex), [web/src/market/OnboardVenue.tsx](web/src/market/OnboardVenue.tsx) |
 | Media (photos) | [api/lib/blastek/media.ex](api/lib/blastek/media.ex), [api/lib/blastek/storage.ex](api/lib/blastek/storage.ex) |
 | React frontend | [web/src/](web/src/) — admin in [web/src/admin/](web/src/admin/), marketplace in [web/src/market/](web/src/market/) |
 | Design system CSS | [web/src/styles.css](web/src/styles.css) (Blastek tokens: burgundy/ivory/gold, Sora/Inter/JetBrains Mono) |

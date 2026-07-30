@@ -14,7 +14,14 @@ export default function MarketTopbar({ inFlow = false }: { inFlow?: boolean }) {
           <span className="mkt-flowhint">Booking</span>
         ) : (
           <div className="mkt-actions">
-            <a className="btn btn-ghost btn-sm" href="/dashboard" target="_blank" rel="noreferrer">
+            {/* Someone who already runs a venue wants their dashboard; someone
+                who does not wants to create one, not a login wall. */}
+            <a
+              className="btn btn-ghost btn-sm"
+              href={memberships.length > 0 ? '/dashboard' : '/for-business'}
+              target="_blank"
+              rel="noreferrer"
+            >
               {memberships.length > 0 ? 'My dashboard' : 'For professionals'}
             </a>
             {user ? (

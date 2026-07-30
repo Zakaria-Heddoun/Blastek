@@ -167,6 +167,19 @@ export interface VenueSummary {
   coverUrl?: string | null;
   photos?: Photo[];
   womenOnly?: boolean;
+  /** The settings blob as JSON. Written through `updateVenueSettings`. */
+  settingsJson?: Record<string, unknown>;
+  rejectedReason?: string;
+  onboarding?: OnboardingState;
+}
+
+/** How far through the setup wizard a venue is (F0.5). */
+export interface OnboardingState {
+  currentStep: string | null;
+  completed: string[];
+  submitted: boolean;
+  complete: boolean;
+  data: Record<string, Record<string, unknown>>;
 }
 
 export interface Venue {
