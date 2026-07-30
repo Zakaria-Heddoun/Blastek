@@ -389,6 +389,14 @@ defmodule BlastekWeb.Schema do
   object :invitation_created do
     field :invitation, non_null(:invitation)
     field :url, non_null(:string)
+
+    @desc """
+    Whether the message actually went out.
+
+    False is not a failure — the invitation works and `url` can be shared by
+    hand. It exists so the UI does not claim "sent" when nothing was.
+    """
+    field :delivered, non_null(:boolean)
   end
 
   @desc "What an invitation link is offering, shown before asking anyone to sign in."
@@ -412,8 +420,16 @@ defmodule BlastekWeb.Schema do
 
     @desc "Who did it. Null when the account has since been deleted."
     field :actor, :team_member do
-      resolve(fn entry, _, _ ->
-        {:ok, entry.actor_user_id && Accounts.get_user(entry.actor_user_id)}
+      # Batched: a fifty-row log would otherwise be fifty user lookups, and the
+      # same handful of people appear over and over.
+      resolve(fn
+        %{actor_user_id: nil}, _, _ ->
+          {:ok, nil}
+
+        entry, _, _ ->
+          batch({__MODULE__, :batch_users, nil}, entry.actor_user_id, fn users ->
+            {:ok, Map.get(users, entry.actor_user_id)}
+          end)
       end)
     end
 
@@ -1548,8 +1564,9 @@ defmodule BlastekWeb.Schema do
         attrs = Map.update(args, :staff_id, nil, &int_or_nil/1)
 
         case Invitations.invite(ctx.current_venue, attrs, ctx.current_user) do
-          {:ok, %{invitation: invitation, token: token}} ->
-            {:ok, %{invitation: invitation, url: "#{accept_url()}?token=#{token}"}}
+          {:ok, created} ->
+            {:ok,
+             %{invitation: created.invitation, url: created.url, delivered: created.delivered}}
 
           other ->
             format_errors(other)
@@ -1680,13 +1697,16 @@ defmodule BlastekWeb.Schema do
 
   defp own_staff_scope(_), do: []
 
-  # The same narrowing for the client list. A `staff` membership with no calendar
-  # column has served nobody, and `staff_id: nil` would read as "no restriction"
-  # — so it is given an id that matches nothing rather than the whole venue.
+  # The same narrowing for the client list.
+  #
+  # A `staff` membership with no calendar column has served nobody. That must
+  # not collapse into `staff_id: nil`, which reads as "no restriction" and would
+  # hand the venue's whole client list to the least privileged role — so the
+  # absence is stated explicitly rather than encoded as a magic id.
   defp own_client_scope(%{membership: %{role: "staff"}} = context) do
     case own_staff_scope(context) do
       [staff_id: staff_id] -> [staff_id: staff_id]
-      [] -> [staff_id: 0]
+      [] -> [staff_id: :none]
     end
   end
 
@@ -1731,6 +1751,9 @@ defmodule BlastekWeb.Schema do
 
   @doc false
   def batch_venue_photos(_, venue_ids), do: Media.photos_for(venue_ids)
+
+  @doc false
+  def batch_users(_, user_ids), do: Accounts.get_users(user_ids)
 
   # Every sign-in path ends the same way: start a session, return the pair.
   defp session_payload(user, context) do
@@ -1778,9 +1801,6 @@ defmodule BlastekWeb.Schema do
   defp header_list(headers) do
     Enum.map(headers, fn {name, value} -> %{name: name, value: value} end)
   end
-
-  defp accept_url,
-    do: Application.get_env(:blastek, :invitation_accept_url, "http://localhost:5173/join")
 
   defp ids(list), do: Enum.map(list, &to_int/1)
 

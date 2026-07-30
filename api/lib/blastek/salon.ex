@@ -200,6 +200,11 @@ defmodule Blastek.Salon do
     if staff_id, do: served_by(query, staff_id), else: query
   end
 
+  # `:none` is a staff member with no calendar column — they have served nobody.
+  # Spelled out rather than left to `nil`, which every other option here means
+  # "unrestricted".
+  defp served_by(query, :none), do: from(c in query, where: false)
+
   # EXISTS rather than a join: a client with twenty appointments is still one
   # row in the list.
   defp served_by(query, staff_id) do

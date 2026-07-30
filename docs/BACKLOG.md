@@ -323,6 +323,34 @@ Calendar and Clients and no revenue.
 **Deferred, unchanged:** `phoenix` 1.7.23 (HIGH) and `react-router` 6.x
 (2 × MODERATE) still need framework major bumps under CH-1.
 
+**Post-implementation principal review (2026-07-30)** — full suite still green
+(349 tests, up from 345). Two were real bugs in the shipped epic:
+
+| Finding | Severity | Fix |
+|---|---|---|
+| **One invitation link could produce two memberships.** `accept/2` read the invitation, created the membership, then consumed the link — and discarded the `update_all` row count. Two people clicking at once both passed the read, and both were let in. The module documented single use, which was true only in sequence | **High** | Claim the invitation *first*, with a conditional `UPDATE … WHERE accepted_at IS NULL`, and roll back when it matches no rows. The UPDATE's row lock is what serializes the two callers |
+| **`staffId` was taken from the client unchecked**, so an owner could attach a membership in their venue to a `staff` row in someone else's — a cross-tenant foreign key, against the discipline the whole tenancy model rests on | **Medium** | Validated in `Venues.add_member/4` (the funnel, so every caller is covered) and rejected early in `invite/3` with a message |
+| `auditLog` resolved `actor` per row — a fifty-entry log was fifty user lookups of the same handful of people | Low | Batched through `Accounts.get_users/1` |
+| The client scope used `staff_id: 0` as "matches nothing" — a magic id in the one place where getting it wrong hands the venue's whole client list to its least privileged role | Low | An explicit `:none`, handled by its own `served_by/2` clause |
+| The accept URL was built in two places, so the link returned by the API and the link in the message could drift apart | Low | One `Invitations.accept_url/1` |
+| A failed SMS still reported "Invitation sent", leaving an owner waiting for a message that was never going out | Low | `delivered` is returned and the UI says "share this link instead" when it is false |
+| Dead code: `attrs_to_opts/1` (an option no caller passes), an unreachable `false -> :ok` clause | — | Removed |
+
+**Two tests in this epic were passing vacuously**, both caught by asserting
+something about the test itself rather than only about the code:
+
+* The **permission matrix completeness check** found zero gated fields, because
+  Absinthe hides field middleware behind a lazy shim. A lower-bound assertion on
+  what introspection returns exposed it; with `expand` + `unshim` it immediately
+  found 28 unreviewed fields (see the defect table above).
+* The **first concurrency test** shared the sandbox connection, so its two tasks
+  serialized and it passed against the buggy code. It now lives in
+  `invitation_race_test.exs`, runs unboxed on real connections, and was verified
+  by reintroducing the bug — against which it reports "expected exactly one
+  winner, got 2". That test commits rows, so it sweeps its own prefix on the way
+  **in** as well as out; an interrupted run would otherwise leave a stray venue
+  in everyone else's search results.
+
 ### E5 · Venue settings & onboarding — F0.4, F0.5
 | ID | Task | Est | Labels |
 |---|---|---|---|

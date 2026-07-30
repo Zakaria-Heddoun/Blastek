@@ -104,6 +104,11 @@ defmodule Blastek.Accounts do
 
   def get_user(id), do: Repo.get(User, id)
 
+  @doc "Many users at once, as `%{id => user}` — for batched resolvers."
+  def get_users(ids) do
+    Repo.all(from u in User, where: u.id in ^ids) |> Map.new(&{&1.id, &1})
+  end
+
   def get_by_email(email) do
     case email |> to_string() |> String.trim() |> String.downcase() do
       "" ->

@@ -220,20 +220,22 @@ function InviteModal({
   const [staffId, setStaffId] = useState('');
   const [busy, setBusy] = useState(false);
   const [link, setLink] = useState('');
+  const [delivered, setDelivered] = useState(true);
 
   const send = async () => {
     if (busy) return;
     setBusy(true);
     try {
-      const d = await gql<{ inviteMember: { url: string } }>(
+      const d = await gql<{ inviteMember: { url: string; delivered: boolean } }>(
         `mutation($role: String!, $phone: String, $staffId: ID) {
-          inviteMember(role: $role, phone: $phone, staffId: $staffId) { url } }`,
+          inviteMember(role: $role, phone: $phone, staffId: $staffId) { url delivered } }`,
         { role, phone, staffId: staffId || null },
       );
       // Shown as well as sent: the link is unrecoverable afterwards, and an
       // owner standing next to the invitee should not have to wait for an SMS.
       setLink(d.inviteMember.url);
-      toast('Invitation sent');
+      setDelivered(d.inviteMember.delivered);
+      toast(d.inviteMember.delivered ? 'Invitation sent' : 'Invitation created');
     } catch (e) {
       toast((e as Error).message, true);
     } finally {
@@ -247,8 +249,12 @@ function InviteModal({
       {link ? (
         <div className="invite-done">
           <p className="mutetext">
-            Sent to {phone}. You can also share this link directly — it works once and expires in
-            7 days.
+            {/* Never claim "sent" when the message did not go out — that leaves
+                an owner waiting for something that is not coming. */}
+            {delivered
+              ? `Sent to ${phone}. You can also share this link directly`
+              : `We could not text ${phone}, so share this link instead`}{' '}
+            — it works once and expires in 7 days.
           </p>
           <input readOnly value={link} onFocus={(e) => e.currentTarget.select()} />
           <button className="btn btn-primary" onClick={onDone}>Done</button>

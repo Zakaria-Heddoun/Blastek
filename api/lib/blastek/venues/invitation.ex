@@ -101,6 +101,7 @@ defmodule Blastek.Venues.Invitations do
   def invite(venue, attrs, invited_by) do
     with {:ok, role} <- validate_role(attrs[:role]),
          {:ok, contact} <- normalize_contact(attrs),
+         :ok <- ensure_staff_column(venue.id, attrs[:staff_id]),
          :ok <- ensure_not_already_member(venue.id, contact) do
       token = random_token()
 
@@ -118,7 +119,7 @@ defmodule Blastek.Venues.Invitations do
       |> Repo.insert()
       |> case do
         {:ok, invitation} ->
-          deliver(invitation, venue, token, attrs)
+          delivered? = deliver(invitation, venue, token, attrs[:locale]) == :ok
 
           Audit.record("invitation.created", %{
             venue_id: venue.id,
@@ -128,13 +129,31 @@ defmodule Blastek.Venues.Invitations do
             metadata: %{role: role, phone: contact.phone, email: contact.email}
           })
 
-          {:ok, %{invitation: invitation, token: token}}
+          # `delivered?` is reported rather than swallowed: the invitation is
+          # perfectly usable either way — the owner has the link — but telling
+          # them "sent" when nothing was sent leaves them waiting for a message
+          # that is not coming.
+          {:ok,
+           %{
+             invitation: invitation,
+             token: token,
+             url: accept_url(token),
+             delivered: delivered?
+           }}
 
         {:error, changeset} ->
           {:error, changeset}
       end
     end
   end
+
+  @doc """
+  The link an invitee follows.
+
+  One function so the URL the API returns and the URL in the message can never
+  disagree — a mismatch there is a link that silently does nothing.
+  """
+  def accept_url(token), do: "#{accept_base_url()}?token=#{token}"
 
   @doc "Outstanding invitations for a venue — neither accepted nor revoked nor expired."
   def list_pending(venue_id) do
@@ -178,24 +197,43 @@ defmodule Blastek.Venues.Invitations do
 
       invitation ->
         Repo.transaction(fn ->
-          membership = apply_membership(invitation, user)
+          # Claim the invitation *before* creating anything. The conditional
+          # UPDATE takes a row lock, so a second accept of the same link blocks
+          # here and then matches zero rows — which is what makes "single use"
+          # true when two people click at once, and not merely in sequence.
+          # Reading `live_invitation` first and consuming afterwards would let
+          # both callers past the read and hand out two memberships.
+          case claim(invitation, user) do
+            0 ->
+              Repo.rollback("That invitation link is no longer valid.")
 
-          Repo.update_all(
-            from(i in Invitation, where: i.id == ^invitation.id and is_nil(i.accepted_at)),
-            set: [accepted_at: now(), accepted_by_id: user.id]
-          )
+            1 ->
+              membership = apply_membership(invitation, user)
 
-          Audit.record("invitation.accepted", %{
-            venue_id: invitation.venue_id,
-            actor: user,
-            subject_type: "membership",
-            subject_id: membership.id,
-            metadata: %{role: membership.role, invitation_id: invitation.id}
-          })
+              Audit.record("invitation.accepted", %{
+                venue_id: invitation.venue_id,
+                actor: user,
+                subject_type: "membership",
+                subject_id: membership.id,
+                metadata: %{role: membership.role, invitation_id: invitation.id}
+              })
 
-          membership
+              membership
+          end
         end)
     end
+  end
+
+  defp claim(invitation, user) do
+    {count, _} =
+      Repo.update_all(
+        from(i in Invitation,
+          where: i.id == ^invitation.id and is_nil(i.accepted_at) and is_nil(i.revoked_at)
+        ),
+        set: [accepted_at: now(), accepted_by_id: user.id]
+      )
+
+    count
   end
 
   @doc "Withdraws an invitation that has not been accepted."
@@ -311,24 +349,26 @@ defmodule Blastek.Venues.Invitations do
 
     case existing && Venues.get_membership(existing.id, venue_id) do
       nil -> :ok
-      false -> :ok
       _member -> {:error, "That person is already on your team."}
     end
   end
 
-  defp deliver(invitation, venue, token, attrs) do
-    url = "#{Keyword.get(attrs_to_opts(attrs), :accept_url, default_accept_url())}?token=#{token}"
+  defp deliver(invitation, venue, token, locale) do
+    to = if invitation.phone != "", do: invitation.phone, else: invitation.email
 
-    to =
-      if invitation.phone != "", do: invitation.phone, else: invitation.email
-
-    Notifications.deliver_invitation(to, venue.name, invitation.role, url, locale: attrs[:locale])
+    Notifications.deliver_invitation(to, venue.name, invitation.role, accept_url(token),
+      locale: locale
+    )
   end
 
-  defp attrs_to_opts(attrs), do: Enum.to_list(Map.take(attrs, [:accept_url]))
-
-  defp default_accept_url,
+  defp accept_base_url,
     do: Application.get_env(:blastek, :invitation_accept_url, "http://localhost:5173/join")
+
+  defp ensure_staff_column(venue_id, staff_id) do
+    if Venues.staff_in_venue?(venue_id, staff_id),
+      do: :ok,
+      else: {:error, "That calendar column belongs to another venue."}
+  end
 
   defp random_token,
     do: :crypto.strong_rand_bytes(@token_bytes) |> Base.url_encode64(padding: false)

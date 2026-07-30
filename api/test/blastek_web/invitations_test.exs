@@ -60,7 +60,7 @@ defmodule BlastekWeb.InvitationsTest do
     {:ok, %{data: %{"inviteMember" => created}}} =
       run(
         ~s|mutation { inviteMember(#{args}) {
-          url invitation { id role phone email expiresAt } } }|,
+          url delivered invitation { id role phone email expiresAt } } }|,
         ctx.owner,
         ctx.venue
       )
@@ -160,6 +160,57 @@ defmodule BlastekWeb.InvitationsTest do
       created = invite!(ctx, ~s|role: "staff", phone: "0611223355", staffId: "#{ctx.staff.id}"|)
       assert Repo.get!(Invitation, created["invitation"]["id"]).staff_id == ctx.staff.id
     end
+
+    test "refuses a calendar column belonging to another venue", ctx do
+      # An id from the client is never taken at face value — an unchecked one
+      # writes a membership in this venue pointing at another venue's staff row.
+      other = venue_fixture("Foreign Salon #{unique()}")
+
+      assert error_message(
+               run(
+                 ~s|mutation { inviteMember(role: "staff", phone: "0611223377",
+                   staffId: "#{other.staff.id}") { url } }|,
+                 ctx.owner,
+                 ctx.venue
+               )
+             ) =~ "another venue"
+
+      assert Repo.aggregate(Invitation, :count) == 0
+    end
+
+    test "add_member refuses a foreign calendar column directly", ctx do
+      # Guarded at the funnel, not only at the one call site that happens to
+      # pass a client-supplied id today.
+      other = venue_fixture("Foreign Salon B #{unique()}")
+      stranger = user_fixture("stranger-add-#{unique()}@example.com")
+
+      assert {:error, message} =
+               Venues.add_member(ctx.venue.id, stranger.id, "staff", other.staff.id)
+
+      assert message =~ "another venue"
+    end
+
+    test "reports whether the message actually went out", ctx do
+      created = invite!(ctx)
+      assert created["delivered"] == true
+
+      original = Application.get_env(:blastek, :notifications_provider)
+
+      Application.put_env(
+        :blastek,
+        :notifications_provider,
+        Blastek.Notifications.FailingProvider
+      )
+
+      on_exit(fn -> Application.put_env(:blastek, :notifications_provider, original) end)
+
+      failed = invite!(ctx, ~s|role: "staff", phone: "0611229988"|)
+
+      # The invitation still works — the owner has the link — but the UI must
+      # not claim it was sent.
+      assert failed["delivered"] == false
+      assert failed["url"] =~ "token="
+    end
   end
 
   describe "invitation preview" do
@@ -224,6 +275,10 @@ defmodule BlastekWeb.InvitationsTest do
 
       assert Venues.get_membership(other.id, ctx.venue.id) == nil
     end
+
+    # True concurrency lives in `Blastek.InvitationRaceTest`: two tasks sharing
+    # this test's sandbox connection would serialize, and the assertion would
+    # hold against the buggy version too.
 
     test "a revoked invitation cannot be accepted", ctx do
       created = invite!(ctx)
