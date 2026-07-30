@@ -225,15 +225,45 @@ defmodule Blastek.Venues do
 
   ## ---------- memberships ----------
 
+  @doc """
+  Grants someone access to a venue, optionally linked to a calendar column.
+
+  `staff_id` is checked against the venue rather than trusted. It reaches here
+  from a GraphQL argument, and the whole tenancy model rests on ids from the
+  client never being taken at face value — an unchecked one would write a
+  membership in venue A pointing at a `staff` row in venue B.
+  """
   def add_member(venue_id, user_id, role, staff_id \\ nil) do
-    %VenueMember{}
-    |> VenueMember.changeset(%{
-      venue_id: venue_id,
-      user_id: user_id,
-      role: role,
-      staff_id: staff_id
-    })
-    |> Repo.insert()
+    with :ok <- ensure_staff_in_venue(venue_id, staff_id) do
+      %VenueMember{}
+      |> VenueMember.changeset(%{
+        venue_id: venue_id,
+        user_id: user_id,
+        role: role,
+        staff_id: staff_id
+      })
+      |> Repo.insert()
+    end
+  end
+
+  @doc """
+  Whether a `staff` row belongs to a venue.
+
+  `nil` is fine — a membership without a calendar column is a dashboard login
+  that takes no appointments.
+  """
+  def staff_in_venue?(_venue_id, nil), do: true
+
+  def staff_in_venue?(venue_id, staff_id) do
+    Repo.exists?(
+      from s in Blastek.Salon.Staff, where: s.id == ^staff_id and s.venue_id == ^venue_id
+    )
+  end
+
+  defp ensure_staff_in_venue(venue_id, staff_id) do
+    if staff_in_venue?(venue_id, staff_id),
+      do: :ok,
+      else: {:error, "That calendar column belongs to another venue."}
   end
 
   def list_members(venue_id) do
