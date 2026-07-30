@@ -96,11 +96,15 @@ defmodule Blastek.Salon.StaffHour do
     field :weekday, :integer
     field :working, :boolean, default: false
     field :start_min, :integer, default: 540
+    # May exceed 1440 for a shift running past midnight — 00:30 is 1470.
     field :end_min, :integer, default: 1080
+    # Which seasonal template these hours belong to. NULL is the default week,
+    # which is what every row predating F0.4 means.
+    field :template_id, :id
   end
 
   def changeset(hour, attrs),
-    do: cast(hour, attrs, [:weekday, :working, :start_min, :end_min, :staff_id])
+    do: cast(hour, attrs, [:weekday, :working, :start_min, :end_min, :staff_id, :template_id])
 end
 
 defmodule Blastek.Salon.Client do

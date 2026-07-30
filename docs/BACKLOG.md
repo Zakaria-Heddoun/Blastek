@@ -352,6 +352,62 @@ something about the test itself rather than only about the code:
   in everyone else's search results.
 
 ### E5 · Venue settings & onboarding — F0.4, F0.5
+
+**Status: 🚧 IN PROGRESS — domain layer complete and tested (368 tests).**
+The contexts, schema and availability changes are done and green; the GraphQL
+surface and the three web tasks are not yet built, so none of it is reachable
+from the app. See "Remaining" below.
+
+| ID | Task | Est | Labels | Status |
+|---|---|---|---|---|
+| E5-T1 | `updateVenue` + typed settings JSONB validation | S | api | ✅ domain |
+| E5-T2 | Closures: table, CRUD, availability subtraction, past-midnight ranges | M | api | ✅ domain |
+| E5-T3 | Hour templates (default/ramadan) + switch + staff-hours variants | M | api | ✅ domain |
+| E5-T4 | Conflict detection: closures/template changes vs existing bookings | S | api | ✅ domain |
+| E5-T7 | Onboarding: `service_templates` seed catalogs (5 categories, i18n names) | S | api | ✅ |
+| E5-T8 | Onboarding wizard API (step state, submit, approve/reject) | M | api | ✅ domain |
+| E5-T10 | Duplicate-venue detection heuristic for admin queue | XS | api | ✅ domain |
+| — | GraphQL surface for all of the above | — | api | ⬜ next |
+| E5-T5 | Web: SettingsPage (identity, hours grid, closures, templates) | L | web | ⬜ |
+| E5-T6 | Calendar: closure/holiday shading | S | web | ⬜ |
+| E5-T9 | Web: OnboardVenue wizard `/for-business` (mobile-first, resumable) | L | web | ⬜ |
+
+**Notes from the domain layer**
+
+* **Two different kinds of "closed."** A *template* is the weekly grid a venue
+  keeps and switches between, because Ramadan moves the working day rather than
+  cancelling it. A *closure* is an exception to whatever the grid says. Both are
+  subtracted by the slot engine; one query per date serves every candidate.
+* **Template resolution order is the whole feature.** Staff rows for the active
+  template win; rows with no template count only under the *default* template;
+  otherwise the venue grid applies. An earlier draft let the default staff row
+  win under any template — which made a one-tap seasonal switch silently do
+  nothing, since the venue's winter slots kept being offered.
+* Minutes may exceed 1440 (00:30 is 1470), so a Ramadan evening shift is just
+  arithmetic. A whole-day closure covers the past-midnight tail too, or a
+  21:00–00:30 template would leak slots on a day the venue is shut.
+* `venues.settings` stays schemaless but its **writes are typed** through
+  `Venues.Settings`: unknown keys are dropped rather than stored, and each known
+  key is coerced and range-checked. Unknown keys are dropped rather than
+  rejected so an older client cannot fail a whole save.
+* Service templates are seeded **by migration**, not `seeds.exs`: an owner
+  onboarding in production needs the same catalog a developer sees, and
+  `seeds.exs` only builds demo venues. Names are FR/AR/EN from the start, since
+  the wizard's premise is a salon owner listing their menu in Arabic on a phone.
+* Duplicate detection flags rather than blocks — two salons in one city really
+  can share a name, and a franchise really does reuse a phone number.
+
+**Schema conflict found while building**: `staff_hours` carried
+`unique (staff_id, weekday)` from E1, which made per-template variants
+impossible — the second row for a weekday was rejected outright. Replaced by a
+pair of partial indexes ("one row per weekday *per template*"), since Postgres
+treats NULLs as distinct and a single index cannot express both halves.
+
+**Remaining**: the GraphQL surface (closures, templates, settings, onboarding,
+approve/reject), then E5-T5, E5-T6 and E5-T9. Nothing shipped so far is
+reachable from the UI, so the app behaves exactly as it did before.
+
+<!-- Original task table retained for reference:
 | ID | Task | Est | Labels |
 |---|---|---|---|
 | E5-T1 | `updateVenue` + typed settings JSONB validation | S | api |
@@ -364,6 +420,7 @@ something about the test itself rather than only about the code:
 | E5-T8 | Onboarding wizard API (step state, submit, approve/reject) | M | api |
 | E5-T9 | Web: OnboardVenue wizard `/for-business` (mobile-first, resumable) | L | web |
 | E5-T10 | Duplicate-venue detection heuristic for admin queue | XS | api |
+-->
 
 ### E6 · Notifications & WhatsApp — F0.10
 | ID | Task | Est | Labels |
