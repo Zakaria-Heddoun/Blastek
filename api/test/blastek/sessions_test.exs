@@ -129,22 +129,38 @@ defmodule Blastek.SessionsTest do
       assert {:error, :invalid} = Sessions.verify(first.token)
     end
 
-    test "reusing a rotated refresh token kills the session", %{user: user} do
+    test "replaying a rotated refresh token is detected and kills the session", %{user: user} do
       {:ok, first} = Sessions.issue(user)
       {:ok, second} = Sessions.refresh(first.refresh_token)
 
-      # The old refresh token no longer matches any row, so it is simply invalid.
-      assert {:error, :invalid} = Sessions.refresh(first.refresh_token)
+      # Two parties now hold tokens from one session. Which one is calling is
+      # unknowable, so the session ends for both.
+      assert {:error, :reused} = Sessions.refresh(first.refresh_token)
 
-      # And the live one still works, because nothing suspicious has happened.
-      assert {:ok, _, _} = Sessions.verify(second.token)
+      # The legitimate device is signed out too — that is the point. It can sign
+      # in again; the thief cannot.
+      assert {:error, :invalid} = Sessions.verify(second.token)
+      assert {:error, :invalid} = Sessions.refresh(second.refresh_token)
     end
 
-    test "a refresh token captured from a revoked session is treated as theft", %{user: user} do
+    test "only the immediately previous token is a theft signal, not older ones", %{user: user} do
+      {:ok, first} = Sessions.issue(user)
+      {:ok, second} = Sessions.refresh(first.refresh_token)
+      {:ok, third} = Sessions.refresh(second.refresh_token)
+
+      # Two generations back is indistinguishable from noise, and saying
+      # "reused" for it would revoke sessions over stale retries.
+      assert {:error, :invalid} = Sessions.refresh(first.refresh_token)
+      assert {:ok, _, _} = Sessions.verify(third.token)
+    end
+
+    test "a revoked session's refresh token is invalid, not theft", %{user: user} do
       {:ok, tokens} = Sessions.issue(user)
       Sessions.revoke_token(tokens.token)
 
-      assert {:error, :reused} = Sessions.refresh(tokens.refresh_token)
+      # Logging out and then presenting your own refresh token is not an attack;
+      # alarming the user about it would be both wrong and frightening.
+      assert {:error, :invalid} = Sessions.refresh(tokens.refresh_token)
       assert {:error, :invalid} = Sessions.verify(tokens.token)
     end
 

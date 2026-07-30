@@ -127,31 +127,27 @@ defmodule Blastek.Accounts.Otp do
     purpose = to_string(purpose)
     code = code |> to_string() |> String.replace(~r/\s/, "")
 
-    case live_code(phone, purpose) do
+    case newest_unconsumed(phone, purpose) do
       nil ->
         # Same work as a real check, so timing does not reveal which numbers
         # have a code outstanding.
         Pbkdf2.no_user_verify()
         {:error, :invalid}
 
-      %OtpCode{attempts: attempts} when attempts >= @max_attempts ->
-        {:error, :too_many_attempts}
-
       otp ->
-        if Pbkdf2.verify_pass(code, otp.code_hash),
-          do: consume(otp),
-          else: record_failure(otp)
+        cond do
+          # Told apart from a wrong code deliberately. Only someone who really
+          # received a code can see this, so it leaks nothing, and "invalid"
+          # would send them hunting for a typo that is not there.
+          expired?(otp.expires_at) -> {:error, :expired}
+          otp.attempts >= @max_attempts -> {:error, :too_many_attempts}
+          Pbkdf2.verify_pass(code, otp.code_hash) -> consume(otp)
+          true -> record_failure(otp)
+        end
     end
   end
 
-  @doc """
-  Whether a code is currently outstanding for this phone and purpose.
-
-  Used by the reset flow to tell "verify this code" apart from "start again".
-  """
-  def pending?(phone, purpose), do: live_code(phone, to_string(purpose)) != nil
-
-  @doc "Human-readable, deliberately non-committal failure text."
+  @doc "Human-readable failure text, safe to show a user."
   def message(:invalid), do: "That code is not valid. Check it and try again."
   def message(:expired), do: "That code has expired. Request a new one."
 
@@ -207,19 +203,19 @@ defmodule Blastek.Accounts.Otp do
     end
   end
 
-  # The newest code that is neither consumed nor expired.
-  defp live_code(phone, purpose) do
-    now = now()
-
+  # The newest code that has not been used. Expiry is judged by the caller
+  # rather than filtered here, so an expired code can be reported as expired
+  # instead of vanishing into "no such code".
+  defp newest_unconsumed(phone, purpose) do
     Repo.one(
       from o in OtpCode,
-        where:
-          o.phone == ^phone and o.purpose == ^purpose and
-            is_nil(o.consumed_at) and o.expires_at > ^now,
+        where: o.phone == ^phone and o.purpose == ^purpose and is_nil(o.consumed_at),
         order_by: [desc: o.inserted_at, desc: o.id],
         limit: 1
     )
   end
+
+  defp expired?(expires_at), do: NaiveDateTime.compare(expires_at, now()) != :gt
 
   defp supersede_live(phone, purpose) do
     Repo.update_all(

@@ -216,13 +216,21 @@ defmodule BlastekWeb.Schema.RateLimitOtp do
   @moduledoc """
   Budget for the one-time-code endpoints.
 
-  Tighter than `RateLimitAuth` because each request may **send a text message**.
-  Two things are being defended at once: an attacker grinding codes, and an
-  attacker using the endpoint as a free SMS cannon aimed at someone else's phone
-  — which costs us money and gets the number reported as spam.
+  Tighter than `RateLimitAuth` because each *request* may send a text message.
+  Two things are defended at once: an attacker grinding codes, and an attacker
+  using the endpoint as a free SMS cannon aimed at someone else's phone — which
+  costs money and gets the sending number reported as spam.
 
-  Per-phone is therefore the primary bucket, and it is keyed on the *normalized*
-  number so `0612…` and `+21261 2…` cannot be alternated to buy twice the quota.
+      middleware(RateLimitOtp, :request)   # sends a message
+      middleware(RateLimitOtp, :verify)    # checks one
+
+  **The two get separate budgets, because they are separate actions.** Sharing
+  one is not merely imprecise, it locks out legitimate users: a sign-in is one
+  request plus up to three attempts, so two honest sign-ins inside the window
+  would exhaust a combined allowance and refuse the second.
+
+  Keyed on the *normalized* number, so `0612…` and `+212 612…` cannot be
+  alternated to buy twice the quota.
   """
   @behaviour Absinthe.Middleware
 
@@ -230,39 +238,54 @@ defmodule BlastekWeb.Schema.RateLimitOtp do
   alias Blastek.RateLimit
   alias BlastekWeb.Schema.Deny
 
-  # The OTP module's own 60s cooldown handles the common case; this is the
-  # backstop against sustained abuse across a longer window.
-  @per_phone 5
-  @per_phone_window :timer.minutes(15)
-  @per_ip 20
-  @per_ip_window :timer.hours(1)
+  # Sending: the OTP module's own 60s cooldown handles the common case, so this
+  # is the backstop against sustained abuse over a longer window.
+  @request_per_phone 5
+  @request_per_ip 20
 
-  def call(resolution, _opts) do
-    phone =
-      case resolution.arguments |> Map.get(:phone) |> Phone.normalize() do
-        {:ok, normalized} -> normalized
-        # An unparseable number still gets counted, or the limiter is bypassed
-        # by sending junk.
-        _ -> resolution.arguments |> Map.get(:phone, "") |> to_string()
-      end
+  # Checking: costs nothing to serve, and the code itself only allows three
+  # attempts before it dies, so this only has to stop a machine working through
+  # numbers.
+  @verify_per_phone 15
+  @verify_per_ip 60
 
+  @phone_window :timer.minutes(15)
+  @ip_window :timer.hours(1)
+
+  def call(resolution, action) do
+    phone = normalized_phone(resolution)
     ip = resolution.context[:client_ip] || "unknown"
+    {per_phone, per_ip} = budget(action)
 
-    with :ok <- RateLimit.hit({:otp_phone, phone}, @per_phone, @per_phone_window),
-         :ok <- RateLimit.hit({:otp_ip, ip}, @per_ip, @per_ip_window) do
+    with :ok <- RateLimit.hit({:otp, action, phone}, per_phone, @phone_window),
+         :ok <- RateLimit.hit({:otp_ip, action, ip}, per_ip, @ip_window) do
       resolution
     else
       {:error, retry_after} ->
-        Deny.deny(
-          resolution,
-          "Too many code requests. Try again in #{minutes(retry_after)}.",
-          "rate_limited"
-        )
+        Deny.deny(resolution, message(action, retry_after), "rate_limited")
     end
   end
 
-  defp minutes(seconds) when seconds >= 60, do: "#{div(seconds, 60)} minute(s)"
-  defp minutes(seconds), do: "#{seconds} second(s)"
+  defp budget(:verify), do: {@verify_per_phone, @verify_per_ip}
+  defp budget(_request), do: {@request_per_phone, @request_per_ip}
+
+  defp message(:verify, retry_after),
+    do: "Too many attempts. Try again in #{humanize(retry_after)}."
+
+  defp message(_request, retry_after),
+    do: "Too many code requests. Try again in #{humanize(retry_after)}."
+
+  # An unparseable number is still counted, or the limiter is bypassed by
+  # sending junk.
+  defp normalized_phone(resolution) do
+    case resolution.arguments |> Map.get(:phone) |> Phone.normalize() do
+      {:ok, normalized} -> normalized
+      _ -> resolution.arguments |> Map.get(:phone, "") |> to_string()
+    end
+  end
+
+  defp humanize(seconds) when seconds >= 60, do: "#{div(seconds, 60)} minute(s)"
+  defp humanize(seconds), do: "#{seconds} second(s)"
 end
 
 defmodule BlastekWeb.Schema.Deny do

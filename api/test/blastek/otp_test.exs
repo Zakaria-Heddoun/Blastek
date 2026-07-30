@@ -143,7 +143,7 @@ defmodule Blastek.OtpTest do
       assert Otp.verify(@phone, :login, code) == {:error, :invalid}
     end
 
-    test "rejects an expired code" do
+    test "reports an expired code as expired, not as wrong" do
       {code, _} = request!()
 
       Repo.update_all(
@@ -151,7 +151,10 @@ defmodule Blastek.OtpTest do
         set: [expires_at: NaiveDateTime.add(NaiveDateTime.utc_now(), -1, :second)]
       )
 
-      assert Otp.verify(@phone, :login, code) == {:error, :invalid}
+      # Only someone who genuinely received a code can see this, so it leaks
+      # nothing — and "invalid" would send them hunting for a typo.
+      assert Otp.verify(@phone, :login, code) == {:error, :expired}
+      assert Otp.message(:expired) =~ "expired"
     end
 
     test "rejects a code for a number that never requested one" do
@@ -176,18 +179,6 @@ defmodule Blastek.OtpTest do
       other = "+212700000001"
 
       assert Otp.verify(other, :login, code) == {:error, :invalid}
-    end
-  end
-
-  describe "pending?/2" do
-    test "true only while a code is live" do
-      refute Otp.pending?(@phone, :login)
-
-      {code, _} = request!()
-      assert Otp.pending?(@phone, :login)
-
-      Otp.verify(@phone, :login, code)
-      refute Otp.pending?(@phone, :login)
     end
   end
 

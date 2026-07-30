@@ -44,7 +44,7 @@ defmodule BlastekWeb.PhoneAuthTest do
       gql(
         ctx,
         ~s|mutation { requestOtp(phone: "#{ctx.phone}", purpose: "#{purpose}") {
-          phone expiresAt resendAfter } }|,
+          maskedPhone expiresAt resendAfter } }|,
         extra
       )
 
@@ -90,7 +90,9 @@ defmodule BlastekWeb.PhoneAuthTest do
 
       assert code =~ ~r/^\d{6}$/
       # Confirms which number without reprinting it in full.
-      assert details["phone"] =~ "•• ••"
+      assert details["maskedPhone"] =~ "•• ••"
+      # The real number is never echoed back.
+      refute details["maskedPhone"] =~ String.slice(ctx.canonical, 5, 5)
       assert details["resendAfter"] == 60
       assert Collector.last().to == ctx.canonical
     end
@@ -99,7 +101,7 @@ defmodule BlastekWeb.PhoneAuthTest do
       spaced = String.replace_prefix(ctx.canonical, "+212", "+212 ")
 
       {:ok, %{data: %{"requestOtp" => _}}} =
-        gql(ctx, ~s|mutation { requestOtp(phone: "#{spaced}") { phone } }|)
+        gql(ctx, ~s|mutation { requestOtp(phone: "#{spaced}") { maskedPhone } }|)
 
       assert Collector.last().to == ctx.canonical
     end
@@ -117,19 +119,23 @@ defmodule BlastekWeb.PhoneAuthTest do
     end
 
     test "rejects a landline with an actionable message", ctx do
-      assert error_message(gql(ctx, ~s|mutation { requestOtp(phone: "0522123456") { phone } }|)) =~
+      assert error_message(
+               gql(ctx, ~s|mutation { requestOtp(phone: "0522123456") { maskedPhone } }|)
+             ) =~
                "mobile number"
     end
 
     test "rejects nonsense", ctx do
-      assert error_message(gql(ctx, ~s|mutation { requestOtp(phone: "banana") { phone } }|)) =~
+      assert error_message(gql(ctx, ~s|mutation { requestOtp(phone: "banana") { maskedPhone } }|)) =~
                "does not look like a phone number"
     end
 
     test "refuses a resend inside the cooldown", ctx do
       request_code(ctx)
 
-      assert error_message(gql(ctx, ~s|mutation { requestOtp(phone: "#{ctx.phone}") { phone } }|)) =~
+      assert error_message(
+               gql(ctx, ~s|mutation { requestOtp(phone: "#{ctx.phone}") { maskedPhone } }|)
+             ) =~
                "wait"
     end
   end
@@ -342,10 +348,17 @@ defmodule BlastekWeb.PhoneAuthTest do
       assert {:error, :invalid} = Sessions.verify(payload["token"])
     end
 
-    test "a refresh token from a revoked session reports a security stop", ctx do
+    test "replaying a rotated refresh token reports a security stop", ctx do
       payload = sign_in(ctx)
-      Sessions.revoke_token(payload["token"])
 
+      {:ok, %{data: %{"refreshSession" => _}}} =
+        gql(
+          ctx,
+          ~s|mutation { refreshSession(refreshToken: "#{payload["refreshToken"]}") { token } }|
+        )
+
+      # The original is now one generation stale — replaying it means somebody
+      # else has it.
       assert error_message(
                gql(
                  ctx,
@@ -353,6 +366,24 @@ defmodule BlastekWeb.PhoneAuthTest do
                    token } }|
                )
              ) =~ "security"
+    end
+
+    test "a refresh token from a session the user logged out of just asks for sign-in", ctx do
+      payload = sign_in(ctx)
+      Sessions.revoke_token(payload["token"])
+
+      # Logging out is not an attack; the copy must not imply it was.
+      message =
+        error_message(
+          gql(
+            ctx,
+            ~s|mutation { refreshSession(refreshToken: "#{payload["refreshToken"]}") {
+              token } }|
+          )
+        )
+
+      assert message =~ "sign in again"
+      refute message =~ "security"
     end
   end
 
@@ -402,7 +433,39 @@ defmodule BlastekWeb.PhoneAuthTest do
     test "rejects a forged token", ctx do
       assert error_message(
                gql(ctx, ~s|mutation { resetPassword(token: "forged", password: "newpassword1") }|)
-             ) =~ "expired"
+             ) =~ "no longer valid"
+    end
+
+    test "a reset link is single use", ctx do
+      gql(ctx, ~s|mutation { requestPasswordReset(email: "#{ctx.email}") }|)
+      token = reset_token()
+
+      assert {:ok, %{data: %{"resetPassword" => true}}} =
+               gql(ctx, ~s|mutation { resetPassword(token: "#{token}",
+                 password: "firstchange1") }|)
+
+      # Intercepting the email is worth nothing once the real owner has used the
+      # link: the token is bound to the password it was issued against.
+      assert error_message(gql(ctx, ~s|mutation { resetPassword(token: "#{token}",
+                 password: "attackerpass") }|)) =~ "no longer valid"
+
+      assert {:ok, _} = Accounts.authenticate(ctx.email, "firstchange1")
+      assert {:error, _} = Accounts.authenticate(ctx.email, "attackerpass")
+    end
+
+    test "an older link dies when a newer one is used", ctx do
+      gql(ctx, ~s|mutation { requestPasswordReset(email: "#{ctx.email}") }|)
+      older = reset_token()
+
+      gql(ctx, ~s|mutation { requestPasswordReset(email: "#{ctx.email}") }|)
+      newer = reset_token()
+
+      assert {:ok, %{data: %{"resetPassword" => true}}} =
+               gql(ctx, ~s|mutation { resetPassword(token: "#{newer}",
+                 password: "newestpass1") }|)
+
+      assert error_message(gql(ctx, ~s|mutation { resetPassword(token: "#{older}",
+                 password: "stalepass1") }|)) =~ "no longer valid"
     end
 
     test "enforces a minimum password length", ctx do
@@ -510,12 +573,38 @@ defmodule BlastekWeb.PhoneAuthTest do
       assert confirmed["phoneVerified"] == true
     end
 
-    test "refuses a number already verified on another account", ctx do
+    test "refuses a number already verified on another account, before texting it", ctx do
       sign_in(ctx)
       other = user_fixture(unique_email("claimer"))
-
       age_codes(ctx.canonical, 120)
+
+      sent_before = length(Collector.delivered())
+
+      assert error_message(
+               gql(
+                 ctx,
+                 ~s|mutation { requestOtp(phone: "#{ctx.phone}", purpose: "verify") {
+                   maskedPhone } }|,
+                 %{current_user: other}
+               )
+             ) =~ "already linked"
+
+      # A stranger's phone must not be texted a code for an account they have
+      # nothing to do with.
+      assert length(Collector.delivered()) == sent_before
+    end
+
+    test "confirmPhone re-checks the conflict, in case it appeared mid-flight", ctx do
+      other = user_fixture(unique_email("racer"))
       {code, _} = request_code(ctx, "verify", %{current_user: other})
+
+      # The number gets claimed between requesting the code and confirming it.
+      Repo.insert!(%Blastek.Accounts.User{
+        email: unique_email("winner"),
+        first_name: "Winner",
+        phone: ctx.canonical,
+        phone_verified_at: NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
+      })
 
       assert error_message(
                gql(
@@ -529,7 +618,7 @@ defmodule BlastekWeb.PhoneAuthTest do
     test "requesting a verify code needs a session", ctx do
       assert error_message(
                gql(ctx, ~s|mutation { requestOtp(phone: "#{ctx.phone}", purpose: "verify") {
-                 phone } }|)
+                 maskedPhone } }|)
              ) =~ "signed in"
     end
   end

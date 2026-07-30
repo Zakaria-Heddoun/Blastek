@@ -265,11 +265,17 @@ defmodule Blastek.Accounts do
   Attaches a phone number to an existing signed-in account, by code.
 
   Kept apart from the login flow because the failure it guards against is
-  different: here the risk is claiming a number that belongs to someone else, so
-  it refuses when the number is already verified elsewhere.
+  different: here the risk is claiming a number that belongs to someone else.
+
+  That conflict is checked **before** sending anything. `confirm_phone/3` checks
+  it again — it has to, since the number could be claimed in between — but
+  finding out at request time saves texting a stranger a code, and saves the
+  user typing one in only to be refused. It leaks nothing that confirming would
+  not: the caller is already signed in and already learns the answer.
   """
-  def request_phone_verification(%User{}, phone_input, opts \\ []) do
+  def request_phone_verification(%User{} = user, phone_input, opts \\ []) do
     with {:ok, phone} <- normalize_mobile(phone_input),
+         :ok <- ensure_phone_free(phone, user.id),
          {:ok, details} <- Otp.request(phone, :verify, opts) do
       {:ok, Map.put(details, :phone, phone)}
     else
@@ -307,7 +313,9 @@ defmodule Blastek.Accounts do
         :ok
 
       user ->
-        token = Phoenix.Token.sign(BlastekWeb.Endpoint, @reset_salt, user.id)
+        token =
+          Phoenix.Token.sign(BlastekWeb.Endpoint, @reset_salt, {user.id, reset_fingerprint(user)})
+
         base = Keyword.get(opts, :reset_url, "http://localhost:5173/reset-password")
         Notifications.deliver_password_reset(user.email, "#{base}?token=#{token}", opts)
         :ok
@@ -317,20 +325,31 @@ defmodule Blastek.Accounts do
   @doc """
   Completes an email password reset.
 
-  Every other session is revoked: if the reset was prompted by a compromise, the
+  Single use. `Phoenix.Token` is stateless, so nothing about the token itself
+  can be marked spent — instead it carries a fingerprint of the password it was
+  issued against, and using it changes that password. The link therefore dies
+  the moment it works, which is what stops someone who intercepted the email
+  from replaying it for the rest of the hour, and what invalidates an older link
+  when a newer one is used.
+
+  Every session is revoked too: if the reset was prompted by a compromise, the
   attacker's session must not survive the fix.
   """
   def reset_password(token, new_password) do
-    case Phoenix.Token.verify(BlastekWeb.Endpoint, @reset_salt, token, max_age: @reset_max_age) do
-      {:ok, user_id} ->
-        case get_user(user_id) do
-          nil -> {:error, "That reset link is no longer valid."}
-          user -> set_password(user, new_password)
-        end
-
-      _ ->
-        {:error, "That reset link has expired. Request a new one."}
+    with {:ok, {user_id, fingerprint}} <-
+           Phoenix.Token.verify(BlastekWeb.Endpoint, @reset_salt, token, max_age: @reset_max_age),
+         %User{} = user <- get_user(user_id),
+         true <- Plug.Crypto.secure_compare(fingerprint, reset_fingerprint(user)) do
+      set_password(user, new_password)
+    else
+      _ -> {:error, "That reset link is no longer valid. Request a new one."}
     end
+  end
+
+  # Derived from the stored hash, never from the password. Changing the password
+  # changes this, which is the whole mechanism.
+  defp reset_fingerprint(%User{password_hash: password_hash}) do
+    :crypto.hash(:sha256, to_string(password_hash)) |> Base.url_encode64(padding: false)
   end
 
   @doc "Starts a phone password reset — the variant for accounts with no email."
