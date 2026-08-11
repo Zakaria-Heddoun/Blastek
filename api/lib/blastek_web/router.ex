@@ -7,26 +7,21 @@ defmodule BlastekWeb.Router do
     plug BlastekWeb.AuthContext
   end
 
-  # Raw image bytes, authorized by a signed token rather than a session, so it
-  # deliberately skips `AuthContext` and the JSON `accepts` negotiation.
-  pipeline :upload do
+  # Requests carrying their own signed token instead of a session: raw image
+  # bytes on the way to storage, and one-tap links tapped out of a WhatsApp
+  # message. Both deliberately skip `AuthContext` and the JSON `accepts`
+  # negotiation. Both are rate-limited, because a signed token is unguessable
+  # only for as long as nobody is allowed to try a million of them.
+  pipeline :signed_token do
     plug BlastekWeb.RateLimitPlug
   end
 
   scope "/api" do
-    pipe_through :upload
+    pipe_through :signed_token
 
     put "/uploads", BlastekWeb.UploadController, :create
-  end
 
-  # One-tap links from a WhatsApp message. Authorized by a signed token rather
-  # than a session — the reader is on a phone and is not signed in — so this
-  # skips `AuthContext` too. Rate-limited, because the token is guessable in
-  # exactly the way any signed value is: not at all, but only if nobody is
-  # allowed to try a million of them.
-  scope "/api" do
-    pipe_through :upload
-
+    # The reader is on a phone and is not signed in — the link is the credential.
     get "/a/:action/:token", BlastekWeb.ActionController, :act
   end
 

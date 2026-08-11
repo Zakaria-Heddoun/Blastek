@@ -139,6 +139,12 @@ defmodule Blastek.Salon.Client do
       :user_id
     ])
     |> validate_required([:first_name, :venue_id])
+    # A receptionist types "06 12 34 56 78"; a gateway needs "+212612345678".
+    # Canonicalized on the way in rather than on the way out, so the number a
+    # STOP is keyed against is the number stored here — see
+    # `Blastek.Notifications.canonical/1`. Unparseable numbers (a foreign one,
+    # say) are kept as typed rather than mangled.
+    |> update_change(:phone, &Blastek.Notifications.canonical/1)
     |> unique_constraint([:venue_id, :user_id],
       name: :clients_venue_user_index,
       message: "already has a client record at this venue"

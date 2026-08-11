@@ -5,17 +5,14 @@ defmodule Blastek.Notifications.Format do
   Kept out of `Templates` so the copy never does calendar arithmetic: a template
   receives "samedi 2 août à 14:30" and interpolates it.
 
-  Morocco is `Africa/Casablanca` throughout — F0.10 fixes the timezone for
-  Phase 0 and the venue column exists for when that stops being true. Because it
-  is fixed, appointment times need no conversion at all: `appointments.date` and
-  `start_min` are already local wall-clock, which is what a customer is being
-  told to turn up at.
+  Appointment times need no conversion to be *displayed*: `appointments.date`
+  and `start_min` are already local wall-clock, which is what a customer is
+  being told to turn up at. Comparing or scheduling against them does need a
+  timezone, and that lives in `Blastek.Clock`.
 
   Minutes may exceed 1440 for a shift running past midnight (00:30 is 1470), so
   formatting wraps and says so rather than printing "24:30".
   """
-
-  @timezone "Africa/Casablanca"
 
   @days %{
     "fr" => ~w(dimanche lundi mardi mercredi jeudi vendredi samedi),
@@ -31,7 +28,8 @@ defmodule Blastek.Notifications.Format do
       ~w(January February March April May June July August September October November December)
   }
 
-  def timezone, do: @timezone
+  @doc "The timezone appointment times are expressed in. See `Blastek.Clock`."
+  defdelegate timezone, to: Blastek.Clock
 
   @doc ~S"""
   A date and a start minute as one phrase: "samedi 2 août à 14:30".

@@ -1998,9 +1998,9 @@ defmodule BlastekWeb.Schema do
       middleware(RequireAuth)
 
       resolve(fn args, %{context: %{current_user: user}} ->
-        user
-        |> Notifications.update_prefs(Map.drop(args, [:__struct__]))
-        |> format_errors()
+        # Absinthe omits arguments the caller did not supply, so this merges
+        # what was sent rather than defaulting the rest to false.
+        user |> Notifications.update_prefs(args) |> format_errors()
       end)
     end
 

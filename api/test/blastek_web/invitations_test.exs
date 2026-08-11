@@ -228,9 +228,8 @@ defmodule BlastekWeb.InvitationsTest do
   end
 
   describe "acceptInvitation" do
-    setup ctx do
-      invitee = user_fixture("invitee-#{unique()}@example.com")
-      %{invitee: invitee}
+    setup do
+      %{invitee: user_fixture("invitee-#{unique()}@example.com")}
     end
 
     test "creates the membership and consumes the invitation", ctx do

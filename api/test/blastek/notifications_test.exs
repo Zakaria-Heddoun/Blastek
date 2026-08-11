@@ -142,6 +142,60 @@ defmodule Blastek.NotificationsTest do
     end
   end
 
+  describe "one spelling of an address" do
+    test "the same number written four ways canonicalizes to one" do
+      for spelling <- ["+212612345678", "212612345678", "0612345678", "06 12 34 56 78"] do
+        assert Notifications.canonical(spelling) == "+212612345678",
+               "#{inspect(spelling)} is the same number"
+      end
+    end
+
+    test "an email loses its case and its whitespace" do
+      assert Notifications.canonical("  Nadia@Example.COM ") == "nadia@example.com"
+    end
+
+    test "something unparseable is kept as typed rather than mangled" do
+      # A French number. `Phone` is deliberately Morocco-only and total, so
+      # rather than invent a country code — delivering to the wrong person is
+      # worse than not delivering — this is passed through untouched.
+      assert Notifications.canonical(" +33 6 12 34 56 78 ") == "+33 6 12 34 56 78"
+      assert Notifications.canonical("") == ""
+      assert Notifications.canonical(nil) == nil
+    end
+
+    test "a STOP suppresses every spelling of the number that sent it" do
+      # Meta reports the sender as bare digits; the account holds E.164; a
+      # receptionist typed it with spaces. One person, one withdrawal of
+      # consent.
+      {:ok, _} = Notifications.opt_out("212612345699", "replied STOP")
+
+      for spelling <- ["+212612345699", "212612345699", "0612345699", "06 12 34 56 99"] do
+        assert Notifications.opted_out?(spelling),
+               "STOP did not reach #{inspect(spelling)}"
+
+        assert Notifications.suppression(:reminder_24h, spelling) == :opted_out
+      end
+    end
+
+    test "and opting back in reaches every spelling too" do
+      {:ok, _} = Notifications.opt_out("0612345688")
+      assert Notifications.opted_out?("+212612345688")
+
+      Notifications.opt_in("+212 612 345 688")
+      refute Notifications.opted_out?("0612345688")
+    end
+
+    test "a message addressed loosely is logged and sent against the canonical form" do
+      assert {:ok, log} =
+               Notifications.send_now(:booking_confirmed_customer, "06 12 34 56 77",
+                 assigns: @assigns
+               )
+
+      assert log.to == "+212612345677"
+      assert Collector.last().to == "+212612345677"
+    end
+  end
+
   describe "opt-out" do
     test "outranks even a transactional message" do
       phone = "+2126#{System.unique_integer([:positive]) |> rem(89_999_999)}"
@@ -198,6 +252,58 @@ defmodule Blastek.NotificationsTest do
       assert log.payload["venue"] == "Le Salon Anfa"
     end
 
+    test "but never keeps a one-time code, which is the whole credential" do
+      phone = "+2126#{System.unique_integer([:positive]) |> rem(89_999_999)}"
+
+      assert {:ok, log} = Notifications.send_now(:login, phone, assigns: %{code: "482913"})
+
+      # The log is readable by every platform admin and survives in every
+      # backup. A stored login code is a standing account takeover for anyone
+      # who can read the table, and it answers no question the log exists for.
+      refute log.body =~ "482913"
+      refute log.payload["code"] == "482913"
+      assert log.template == "login"
+      assert log.status == "sent"
+
+      # The person still gets their code — it is only the durable copy that is
+      # redacted.
+      assert Collector.last().body =~ "482913"
+    end
+
+    test "nor a password reset link, which is a live credential for an hour" do
+      assert {:ok, log} =
+               Notifications.send_now(:password_reset, "reset@example.com",
+                 assigns: %{url: "https://blastek.ma/reset/SECRET"}
+               )
+
+      refute log.body =~ "SECRET"
+      refute log.payload["url"] =~ "SECRET"
+      assert Collector.last().body =~ "SECRET"
+    end
+
+    test "nor an invitation link, which grants a role at a venue" do
+      assert {:ok, log} =
+               Notifications.send_now(:invitation, "invitee@example.com",
+                 assigns: %{venue: "Le Salon Anfa", role: "manager", url: "https://x.ma/i/SECRET"}
+               )
+
+      refute log.body =~ "SECRET"
+      refute log.payload["url"] =~ "SECRET"
+      # What is not a credential stays, so the log still says what was offered.
+      assert log.payload["venue"] == "Le Salon Anfa"
+      assert log.payload["role"] == "manager"
+    end
+
+    test "a skipped credential message does not keep the code either" do
+      phone = "+212612345666"
+      {:ok, _} = Notifications.opt_out(phone)
+
+      Notifications.deliver(:login, phone, assigns: %{code: "999111"})
+
+      assert [log] = Notifications.list_log(limit: 10) |> Enum.filter(&(&1.to == phone))
+      refute log.payload["code"] == "999111"
+    end
+
     test "records a failure with its reason" do
       phone = "+2126#{System.unique_integer([:positive]) |> rem(89_999_999)}"
 
@@ -217,7 +323,7 @@ defmodule Blastek.NotificationsTest do
 
       # The collector returns no id, so give the row one the way a real provider
       # would have.
-      log = Ecto.Changeset.change(log, provider_message_id: "wamid.TEST1") |> Repo.update!()
+      Ecto.Changeset.change(log, provider_message_id: "wamid.TEST1") |> Repo.update!()
 
       assert {:ok, delivered} = Notifications.record_receipt("wamid.TEST1", "delivered")
       assert delivered.status == "delivered"

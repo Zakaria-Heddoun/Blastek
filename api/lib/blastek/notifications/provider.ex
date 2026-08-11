@@ -74,8 +74,9 @@ defmodule Blastek.Notifications.Provider do
   @doc """
   Tries each provider that can carry this address until one succeeds.
 
-  Returns `{:ok, provider, id}`, or `{:error, reason}` carrying the *last*
-  failure — the one from the provider that had the best claim to the message.
+  Returns `{:ok, provider, channel, id}`, or `{:error, reason}` carrying the
+  *last* failure — the one from the provider that had the best claim to the
+  message.
   """
   def deliver(message) do
     case Enum.filter(chain(), &handles?(&1, message)) do

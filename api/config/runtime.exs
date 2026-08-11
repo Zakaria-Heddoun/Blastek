@@ -87,12 +87,14 @@ if config_env() != :test do
       sender: System.get_env("SMS_SENDER") || "Blastek"
   end
 
+  # `&&` yields nil for an absent credential, so the list is the chain with its
+  # gaps written in. (`Enum.filter(&is_atom/1)` would keep every one of them —
+  # nil is an atom.)
   chain =
     [
       whatsapp && whatsapp_phone_id && Blastek.Notifications.Providers.WhatsApp,
       sms_url && Blastek.Notifications.Providers.Sms
     ]
-    |> Enum.filter(&is_atom/1)
     |> Enum.reject(&is_nil/1)
 
   case {config_env(), chain} do

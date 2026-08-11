@@ -73,6 +73,22 @@ defmodule Blastek.Notifications.Templates do
 
   def known?(template), do: List.keymember?(@inventory, template, 0)
 
+  # Templates whose body *is* a credential: a one-time code, or a URL that acts
+  # as one. The rendered text of these must not survive the send.
+  @sensitive ~w(login verify reset password_reset invitation)a
+
+  @doc """
+  Whether a template's body would be usable by whoever reads it back.
+
+  A login code is the entire credential for a phone-first account, and a
+  password-reset link is a live one for an hour. The send log answers "did it
+  go, did it arrive" and is readable by every platform admin, so for these the
+  body is recorded as a marker rather than as text — see
+  `Blastek.Notifications.send_now/3`. The provider still receives the real
+  message; it is only the durable copy that is redacted.
+  """
+  def sensitive?(template), do: template in @sensitive
+
   def locale(requested) when requested in @locales, do: requested
   def locale(_), do: @default_locale
 

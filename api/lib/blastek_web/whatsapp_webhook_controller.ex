@@ -118,11 +118,12 @@ defmodule BlastekWeb.WhatsAppWebhookController do
 
   # An inbound message is only interesting if it is somebody asking to be left
   # alone. Everything else is a conversation this system does not have.
+  # Meta reports the sender as bare digits — `212612345678` — while an account
+  # holds `+212612345678`. `Notifications.opt_out/3` canonicalizes, so one call
+  # withdraws consent for every spelling of the number rather than only the one
+  # the person happened to reply from.
   defp handle_message(%{"from" => from, "text" => %{"body" => body}}) do
-    if stop?(body) do
-      Notifications.opt_out("+" <> String.replace(from, ~r/\D/, ""), "replied STOP", "any")
-      Notifications.opt_out(from, "replied STOP", "any")
-    end
+    if stop?(body), do: Notifications.opt_out(from, "replied STOP", "any")
   end
 
   defp handle_message(_), do: :ok

@@ -66,6 +66,27 @@ defmodule Blastek.RemindersTest do
              ]
     end
 
+    test "a client whose number was typed by hand is still reachable", ctx do
+      # A receptionist adds a walk-in and types the number the way it is
+      # written on a card. What reaches the gateway has to be E.164 either way:
+      # WhatsApp rejects a number with no country code, and an SMS gateway
+      # handed "+0612345678" rejects it too. Neither says so in a way anybody
+      # reads — the message simply never arrives.
+      {:ok, client} =
+        Salon.create_client(ctx.v.venue.id, %{
+          first_name: "Walk-in",
+          phone: "06 12 34 56 55",
+          email: ""
+        })
+
+      assert client.phone == "+212612345655"
+
+      appointment = book(%{ctx.v | client: client})
+
+      assert %{args: %{"to" => "+212612345655"}} =
+               appointment |> jobs_for() |> Enum.find(&(&1.args["template"] == "reminder_24h"))
+    end
+
     test "a venue that vets its bookings sends a request, not a confirmation", ctx do
       {:ok, _} =
         Venues.update_settings(Venues.get_venue(ctx.v.venue.id), %{
@@ -309,6 +330,31 @@ defmodule Blastek.RemindersTest do
       }
 
       assert {:cancel, "unknown template"} = Worker.perform(job)
+    end
+
+    test "but retries a delivery that failed, rather than calling it unknown" do
+      job = %Oban.Job{
+        args: %{
+          "template" => "login",
+          "to" => "+212600000003",
+          "locale" => "fr",
+          "assigns" => %{"code" => "123456"},
+          "appointment_id" => nil
+        }
+      }
+
+      # A `rescue ArgumentError` around the whole of `perform/1` catches
+      # anything the send raises and reports it as an unknown template — which
+      # discards a message that deserved a retry, and puts a false reason in
+      # the job for whoever comes looking.
+      result =
+        Blastek.Notifications.TestProvider.with_provider(
+          [Blastek.Notifications.FailingProvider],
+          fn -> Worker.perform(job) end
+        )
+
+      assert {:error, reason} = result
+      refute reason == "unknown template"
     end
   end
 end
