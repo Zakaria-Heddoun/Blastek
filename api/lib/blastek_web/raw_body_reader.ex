@@ -28,9 +28,13 @@ defmodule BlastekWeb.RawBodyReader do
     end
   end
 
+  # Appends rather than replaces. `Plug.Parsers` calls back for each chunk of a
+  # body larger than its read length, and keeping only the last chunk would
+  # produce a signature mismatch on exactly the large payloads — a batch of
+  # delivery receipts — that a busy deployment sees most of.
   defp stash(conn, body) do
     if conn.request_path in @signed_paths do
-      Plug.Conn.assign(conn, @assign, body)
+      Plug.Conn.assign(conn, @assign, (conn.assigns[@assign] || "") <> body)
     else
       conn
     end

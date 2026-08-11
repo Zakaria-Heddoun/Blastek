@@ -555,6 +555,40 @@ WhatsApp send is attempted as free-form text, fails outside a session window
 and falls through to SMS. `docs/whatsapp-templates.md` is the pack to submit;
 until then this is the intended interim behaviour, not an outage.
 
+#### Epic 6 review — principal-engineer pass
+
+Everything below was found reading E6 as a pull request, then proved against
+the running stack before and after the fix. 492 tests green.
+
+| Where | Defect | Why it mattered |
+|---|---|---|
+| `Notifications` (whole module) | **No canonical form for an address.** `opted_out?/1` matched the `to` column exactly, so `+212612345678`, `212612345678` and `06 12 34 56 78` were three different people. Meta reports an inbound STOP in the second spelling, an account holds the first, a receptionist types the third — the webhook was papering over it by inserting two rows and still missed the third. | A withdrawal of consent that does not withdraw consent. Everything now goes through `Notifications.canonical/1`, and `opted_out?` matched all four spellings in the live system afterwards. |
+| `notifications.body` / `payload` | **One-time codes and reset links were persisted in plaintext** and exposed over the admin-only `notificationLog` query. Verified: the row for a login read `Votre code Blastek : 482913`, and `payload` held `%{"code" => "482913"}`. | For a phone-first account the code *is* the credential. Anyone who could read the table — a platform admin, a backup, a read replica — could sign in as any user. Credential-bearing templates now log a marker; the provider still gets the real text. |
+| `Blastek.Clock` (new) | **Every wall-clock comparison used the server's clock**, which is UTC in a container, against appointment times that are Casablanca local. Measured: a 60-minute skew. | Silent in all three directions it leaked into — a T-3h reminder scheduled for a moment already past, a two-hour cancellation window that let a customer cancel with one hour's notice, and a booking horizon counted from the wrong day for the hour after local midnight. None of them raise; all of them read as "the software is a bit off". |
+| `Salon.Client` | Client phones were **stored exactly as typed**. A receptionist entering `06 12 34 56 78` produced `0612345678` for WhatsApp (no country code, rejected) and `+0612345678` for SMS (not E.164, rejected). | Silently undeliverable messages to every walk-in added through the dashboard. Canonicalized in the changeset now, so the number a STOP is keyed against is the number stored. |
+| `Worker.perform/1` | A `rescue ArgumentError` wrapped the **whole** function body while only one expression could raise it. | Anything the rendering or the send raised would be discarded as `{:cancel, "unknown template"}` — a message that deserved a retry, thrown away with a false reason in the job for whoever came looking. Scoped to the one expression. |
+| `Bookings.booked/2` | **20 queries inside `Salon.book/2`'s transaction**, which holds a `pg_advisory_xact_lock` on the staff member's day. `Reminders.assigns/2` was built twice and `get_venue` refetched six times. | The lock exists to serialize slot contention, not notification bookkeeping. Now 13 queries; the salon's copy is derived from the customer's rather than rebuilt. |
+| `RawBodyReader.stash/2` | Kept only the **last** chunk of a chunked body instead of appending. | A webhook larger than the read length would fail signature verification — i.e. exactly the batched delivery receipts a busy deployment gets most of. |
+| `runtime.exs` | `Enum.filter(&is_atom/1)` on the provider chain — `nil` and `false` are both atoms, so the filter kept everything and only the following `reject(&is_nil/1)` did any work. | Harmless today (`System.get_env` never returns `false`) but it reads as a guard and is not one. |
+| `notifications.attempts` | Always `1`. Each retry writes its own row, and each row counted from zero. | The column promised a retry count and never delivered one; it now carries Oban's own attempt number, so three rows read as one message that took three goes. |
+| `Reminders.customer_locale/1` | Comment claimed "the customer's own locale if their account states one"; the body only ever returned the venue's. | Dead function whose docstring described a feature that does not exist. Removed. |
+| `router.ex` | Pipeline named `:upload` also served the one-tap action links. | Renamed `:signed_token` — both users authenticate with a signed token instead of a session, which is the actual shared property. |
+| `Bookings` moduledoc | Claimed absolutely that nothing here can fail a booking, while running inside the booking's own transaction. | A rescue cannot un-abort a transaction Postgres has already marked failed. The claim is now stated with its caveat rather than overstated. |
+
+Also simplified: `list_log`/`count_log` shared their filter chain (a filter added
+to one and forgotten in the other would page through a total the rows do not add
+up to); `sync/4` called `suppression/3` twice; `Venues.owner_contact/1` and
+`owner_user_id/1` became one query; `Provider.deliver/1`'s docstring named the
+wrong arity of return tuple; a no-op `Map.drop(args, [:__struct__])` in the
+preferences resolver.
+
+**Deployment note**: `Notifications.canonical/1` runs on the way in *and* on the
+way out, so rows written before this change are matched correctly at send time
+and no backfill is needed for delivery or suppression to be right. If the
+`notification_optouts` table ever holds rows written by the old code in a real
+deployment, normalizing that column is worth doing for tidiness — there are none
+outside development today.
+
 ### E7 · i18n — F0.11
 | ID | Task | Est | Labels |
 |---|---|---|---|

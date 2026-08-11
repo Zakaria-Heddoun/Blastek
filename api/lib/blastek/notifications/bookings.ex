@@ -13,6 +13,13 @@ defmodule Blastek.Notifications.Bookings do
   not lose it because Meta returned a 502. A message that could not be *queued*
   is worth a log line, never an exception into the caller.
 
+  One honest caveat: `booked/2` runs inside `Salon.book/2`'s transaction, so
+  this catches the exception but cannot un-abort a transaction that Postgres has
+  already marked failed. A *database* error in here would still surface at
+  commit. Nothing here talks to a provider — the actual sending is a queued job,
+  and this only writes rows — so the errors worth catching are the ones this
+  does catch. It is not a promise the rescue alone can keep.
+
   ## Which message
 
   `instant_confirmation` decides. A venue that vets its bookings gets a
@@ -41,24 +48,29 @@ defmodule Blastek.Notifications.Bookings do
 
   def booked([first | _], opts) do
     safely(fn ->
+      ctx = context(first)
       confirmed? = first.status == "confirmed"
-      assigns = Reminders.assigns(first, cancel_url: opts[:cancel_url])
+      assigns = Reminders.assigns(first, venue: ctx.venue, cancel_url: opts[:cancel_url])
 
       customer(
-        first,
+        ctx,
         if(confirmed?, do: :booking_confirmed_customer, else: :booking_requested_customer),
         assigns
       )
 
+      # The salon's own copy, minus the link — a receptionist reading it must
+      # not be one tap away from cancelling a customer's appointment. Derived
+      # rather than rebuilt: the two messages describe the same booking and
+      # rebuilding is four more queries inside the booking's advisory lock.
       salon(
-        first,
+        ctx,
         if(confirmed?, do: :booking_confirmed_salon, else: :booking_requested_salon),
-        Reminders.assigns(first, cancel_url: false)
+        Map.delete(assigns, :cancel_url)
       )
 
       # Reminders for the first appointment only: a cut-and-colour is two rows
       # but one arrival, and two reminders for it read as a mistake.
-      Reminders.schedule(first)
+      Reminders.schedule(first, venue: ctx.venue)
       :ok
     end)
   end
@@ -84,22 +96,31 @@ defmodule Blastek.Notifications.Bookings do
 
   defp cancelled(appointment, :customer) do
     # The customer knows; the salon has a hole in its afternoon.
-    salon(appointment, :cancelled_by_customer, Reminders.assigns(appointment, cancel_url: false))
+    ctx = context(appointment)
+
+    salon(
+      ctx,
+      :cancelled_by_customer,
+      Reminders.assigns(appointment, venue: ctx.venue, cancel_url: false)
+    )
+
     Reminders.cancel(appointment)
   end
 
   defp cancelled(appointment, _staff) do
-    customer(appointment, :cancelled_by_salon, Reminders.assigns(appointment))
+    ctx = context(appointment)
+    customer(ctx, :cancelled_by_salon, Reminders.assigns(appointment, venue: ctx.venue))
     Reminders.cancel(appointment)
   end
 
   defp rescheduled(appointment) do
-    customer(appointment, :rescheduled, Reminders.assigns(appointment))
+    ctx = context(appointment)
+    customer(ctx, :rescheduled, Reminders.assigns(appointment, venue: ctx.venue))
     # The old reminders name the old time, so they are replaced rather than
     # kept — `still_due/2` would re-render them correctly, but a reminder timed
     # against a slot that moved by two days would fire on the wrong evening.
     Reminders.cancel(appointment)
-    Reminders.schedule(appointment)
+    Reminders.schedule(appointment, venue: ctx.venue)
   end
 
   defp cancelled?(before, now),
@@ -112,31 +133,41 @@ defmodule Blastek.Notifications.Bookings do
 
   ## ---------- addressing ----------
 
-  defp customer(appointment, template, assigns) do
-    Notifications.deliver(template, Reminders.customer_contact(appointment),
-      locale: Reminders.venue_locale(Venues.get_venue(appointment.venue_id)),
-      user_id: customer_user_id(appointment),
-      venue_id: appointment.venue_id,
-      appointment_id: appointment.id,
+  # Everything both messages need, looked up once. `booked/2` runs inside
+  # `Salon.book/2`'s transaction, which holds an advisory lock on the staff
+  # member's day: each repeated `get_venue` there is contention on the one thing
+  # concurrent bookings actually queue for.
+  defp context(%Appointment{} = appointment) do
+    appointment = Blastek.Repo.preload(appointment, :client)
+    venue = Venues.get_venue(appointment.venue_id)
+    owner = Venues.owner(appointment.venue_id)
+
+    %{
+      appointment: appointment,
+      venue: venue,
+      locale: Reminders.venue_locale(venue),
+      owner: owner
+    }
+  end
+
+  defp customer(ctx, template, assigns) do
+    Notifications.deliver(template, Reminders.customer_contact(ctx.appointment),
+      locale: ctx.locale,
+      user_id: ctx.appointment.client && ctx.appointment.client.user_id,
+      venue_id: ctx.appointment.venue_id,
+      appointment_id: ctx.appointment.id,
       assigns: assigns
     )
   end
 
-  defp salon(appointment, template, assigns) do
-    Notifications.deliver(template, Venues.owner_contact(appointment.venue_id),
-      locale: Reminders.venue_locale(Venues.get_venue(appointment.venue_id)),
-      user_id: Venues.owner_user_id(appointment.venue_id),
-      venue_id: appointment.venue_id,
-      appointment_id: appointment.id,
+  defp salon(ctx, template, assigns) do
+    Notifications.deliver(template, ctx.owner.contact,
+      locale: ctx.locale,
+      user_id: ctx.owner.user_id,
+      venue_id: ctx.appointment.venue_id,
+      appointment_id: ctx.appointment.id,
       assigns: assigns
     )
-  end
-
-  defp customer_user_id(%Appointment{} = appointment) do
-    case Blastek.Repo.preload(appointment, :client).client do
-      nil -> nil
-      client -> client.user_id
-    end
   end
 
   defp safely(work) do

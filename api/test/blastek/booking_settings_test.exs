@@ -7,11 +7,17 @@ defmodule Blastek.BookingSettingsTest do
   something. Every test here changes one setting and asserts the *booking
   engine* behaves differently — none of them touch `Venues.Settings` directly,
   because that module was already green while all five settings were dead.
+
+  Dates come from `Blastek.Clock`, not from `Date.utc_today/0`: horizons and
+  lead times are counted in the salon's days, and for the hour between midnight
+  in Casablanca and midnight in UTC the two disagree — which is a real off-by-a-
+  day in the rule, not a quirk of the test.
   """
   use Blastek.DataCase, async: true
 
   import Blastek.Fixtures
 
+  alias Blastek.Clock
   alias Blastek.Salon
   alias Blastek.Venues
 
@@ -31,7 +37,7 @@ defmodule Blastek.BookingSettingsTest do
   end
 
   # Far enough out that "today" logic and lead times never interfere.
-  defp far_date, do: Date.add(Date.utc_today(), 7)
+  defp far_date, do: Date.add(Clock.today(), 7)
 
   describe "slot_step_min" do
     test "sets the spacing of the offered grid", %{v: v} do
@@ -55,20 +61,20 @@ defmodule Blastek.BookingSettingsTest do
     test "nothing is offered beyond the horizon", %{v: v} do
       :ok = set(v, %{"booking_horizon_days" => 30})
 
-      refute slots(v, Date.add(Date.utc_today(), 29)) == []
-      assert slots(v, Date.add(Date.utc_today(), 31)) == []
+      refute slots(v, Date.add(Clock.today(), 29)) == []
+      assert slots(v, Date.add(Clock.today(), 31)) == []
     end
 
     test "the boundary day itself is still bookable", %{v: v} do
       :ok = set(v, %{"booking_horizon_days" => 10})
-      refute slots(v, Date.add(Date.utc_today(), 10)) == []
-      assert slots(v, Date.add(Date.utc_today(), 11)) == []
+      refute slots(v, Date.add(Clock.today(), 10)) == []
+      assert slots(v, Date.add(Clock.today(), 11)) == []
     end
   end
 
   describe "booking_lead_min" do
     test "a venue wanting notice does not offer the next few hours", %{v: v} do
-      today = Date.utc_today()
+      today = Clock.today()
       # Two full days of notice: every hour of tomorrow is inside it, whatever
       # time this test runs.
       :ok = set(v, %{"booking_lead_min" => 2 * 24 * 60})
@@ -79,7 +85,7 @@ defmodule Blastek.BookingSettingsTest do
 
     test "with no lead time the far future is unaffected", %{v: v} do
       :ok = set(v, %{"booking_lead_min" => 0})
-      refute slots(v, Date.add(Date.utc_today(), 1)) == []
+      refute slots(v, Date.add(Clock.today(), 1)) == []
     end
   end
 
@@ -102,7 +108,7 @@ defmodule Blastek.BookingSettingsTest do
   describe "cancellation_window_hours" do
     test "a client may cancel outside the window", %{v: v} do
       :ok = set(v, %{"cancellation_window_hours" => 24})
-      appt = appointment_fixture(v, %{date: Date.add(Date.utc_today(), 5)})
+      appt = appointment_fixture(v, %{date: Date.add(Clock.today(), 5)})
 
       assert Salon.cancellable_by_client?(appt)
     end
@@ -110,21 +116,21 @@ defmodule Blastek.BookingSettingsTest do
     test "and may not inside it", %{v: v} do
       :ok = set(v, %{"cancellation_window_hours" => 48})
       # Tomorrow morning is inside a 48-hour window from any moment today.
-      appt = appointment_fixture(v, %{date: Date.add(Date.utc_today(), 1), start_min: 600})
+      appt = appointment_fixture(v, %{date: Date.add(Clock.today(), 1), start_min: 600})
 
       refute Salon.cancellable_by_client?(appt)
     end
 
     test "a window of zero lets a client cancel right up to the appointment", %{v: v} do
       :ok = set(v, %{"cancellation_window_hours" => 0})
-      appt = appointment_fixture(v, %{date: Date.add(Date.utc_today(), 1), start_min: 600})
+      appt = appointment_fixture(v, %{date: Date.add(Clock.today(), 1), start_min: 600})
 
       assert Salon.cancellable_by_client?(appt)
     end
 
     test "an appointment already cancelled cannot be cancelled again", %{v: v} do
       :ok = set(v, %{"cancellation_window_hours" => 0})
-      appt = appointment_fixture(v, %{date: Date.add(Date.utc_today(), 5)})
+      appt = appointment_fixture(v, %{date: Date.add(Clock.today(), 5)})
       {:ok, cancelled} = Salon.update_appointment(v.venue.id, appt.id, %{status: "cancelled"})
 
       refute Salon.cancellable_by_client?(cancelled)

@@ -11,6 +11,7 @@ defmodule Blastek.Salon do
   import Ecto.Query
   import Blastek.Scope
 
+  alias Blastek.Clock
   alias Blastek.Notifications
   alias Blastek.Repo
   alias Blastek.Venues
@@ -566,7 +567,7 @@ defmodule Blastek.Salon do
   has no intention of honouring twelve months out.
   """
   def beyond_horizon?(settings, date) do
-    Date.diff(date, Date.utc_today()) > Settings.get(settings, :booking_horizon_days)
+    Date.diff(date, Clock.today()) > Settings.get(settings, :booking_horizon_days)
   end
 
   # The first minute of `date` a customer may book, as minutes from its
@@ -574,7 +575,7 @@ defmodule Blastek.Salon do
   # bookable at 17:00, and the notice has to reach across midnight — otherwise a
   # 22:00 request could take tomorrow's 00:30 slot.
   defp earliest_bookable(settings, date) do
-    now = NaiveDateTime.local_now()
+    now = Clock.now()
     lead = Settings.get(settings, :booking_lead_min)
     days_ahead = Date.diff(date, NaiveDateTime.to_date(now))
 
@@ -855,7 +856,7 @@ defmodule Blastek.Salon do
   end
 
   defp minutes_until(%Appointment{date: date, start_min: start_min}) do
-    now = NaiveDateTime.local_now()
+    now = Clock.now()
     Date.diff(date, NaiveDateTime.to_date(now)) * 1440 + start_min - (now.hour * 60 + now.minute)
   end
 

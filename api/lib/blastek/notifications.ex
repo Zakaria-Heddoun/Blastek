@@ -25,6 +25,15 @@ defmodule Blastek.Notifications do
   replied STOP has withdrawn consent for the address, and that survives them
   signing up again with a second account.
 
+  ## One spelling of an address
+
+  Every address entering this module goes through `canonical/1` first, and the
+  opt-out table is keyed on the result. Without that, consent is only withdrawn
+  for the exact string somebody happened to reply from: Meta reports the sender
+  as `212612345678`, a receptionist types `06 12 34 56 78`, and the account
+  holds `+212612345678` — three rows, three different people as far as
+  `opted_out?/1` is concerned, and a STOP that suppresses one of them.
+
   ## Compatibility
 
   `deliver_otp/4` and friends stay synchronous. Auth cannot enqueue a code and
@@ -33,6 +42,7 @@ defmodule Blastek.Notifications do
   """
   import Ecto.Query
 
+  alias Blastek.Accounts.Phone
   alias Blastek.Notifications.Notification
   alias Blastek.Notifications.OptOut
   alias Blastek.Notifications.Provider
@@ -43,6 +53,37 @@ defmodule Blastek.Notifications do
   @default_prefs %{"reminders" => true, "marketing" => false}
 
   def default_prefs, do: @default_prefs
+
+  @doc """
+  The one spelling of an address that everything here is keyed against.
+
+  Moroccan numbers become E.164, emails lose their case and surrounding space.
+  Anything `Blastek.Accounts.Phone` cannot parse — a foreign number, a nickname
+  a gateway happens to accept — is kept as typed rather than mangled into a
+  plausible-looking wrong number, since delivering to the wrong person is worse
+  than not delivering.
+  """
+  def canonical(nil), do: nil
+
+  def canonical(to) when is_binary(to) do
+    trimmed = String.trim(to)
+
+    cond do
+      trimmed == "" ->
+        ""
+
+      String.contains?(trimmed, "@") ->
+        String.downcase(trimmed)
+
+      true ->
+        case Phone.normalize(trimmed) do
+          {:ok, e164} -> e164
+          {:error, _reason} -> trimmed
+        end
+    end
+  end
+
+  def canonical(other), do: other
 
   ## ---------- sending ----------
 
@@ -56,6 +97,8 @@ defmodule Blastek.Notifications do
   in the log either way.
   """
   def deliver(template, to, opts \\ []) do
+    to = canonical(to)
+
     cond do
       to in [nil, ""] ->
         {:ok, :skipped}
@@ -92,6 +135,10 @@ defmodule Blastek.Notifications do
   can drive the same path the queue does.
   """
   def send_now(template, to, opts \\ []) do
+    # Also here, not only in `deliver/3`: this is the last gate before a
+    # provider, and it is public so an admin retrying a failure reaches it
+    # directly with whatever address they typed.
+    to = canonical(to)
     locale = Templates.locale(opts[:locale])
     assigns = opts[:assigns] || %{}
     body = Templates.render(template, locale, assigns)
@@ -106,8 +153,13 @@ defmodule Blastek.Notifications do
         template: to_string(template),
         channel: to_string(opts[:channel] || :sms),
         locale: locale,
-        body: body,
-        payload: stringify(assigns),
+        body: loggable_body(template, body),
+        payload: loggable_payload(template, assigns),
+        # Which try this is, from Oban. Each attempt writes its own row — a
+        # retry appends rather than overwrites — so without the queue's own
+        # counter every row would say "1" and three rows would look like three
+        # separate messages rather than one message that took three goes.
+        attempts: opts[:attempt] || 1,
         status: "queued"
       })
       |> Repo.insert()
@@ -120,17 +172,11 @@ defmodule Blastek.Notifications do
            channel: to_string(channel),
            provider: inspect(provider),
            provider_message_id: id,
-           attempts: log.attempts + 1,
            sent_at: now()
          })}
 
       {:error, reason} ->
-        {:error,
-         update_log(log, %{
-           status: "failed",
-           error: inspect(reason),
-           attempts: log.attempts + 1
-         })}
+        {:error, update_log(log, %{status: "failed", error: inspect(reason)})}
     end
   end
 
@@ -149,13 +195,41 @@ defmodule Blastek.Notifications do
       channel: "inapp",
       locale: Templates.locale(opts[:locale]),
       body: "",
-      payload: stringify(opts[:assigns] || %{}),
+      payload: loggable_payload(template, opts[:assigns] || %{}),
       status: "skipped",
       error: to_string(reason)
     })
     |> Repo.insert!()
 
     {:ok, :skipped}
+  end
+
+  ## ---------- what the log is allowed to keep ----------
+  #
+  # The send log is read by every platform admin and survives in every backup,
+  # which makes it the wrong place to keep a working credential. For a one-time
+  # code or a reset link the body adds nothing an admin needs — the question a
+  # log answers is "did it go, did it arrive", and template plus status plus
+  # timestamps answer it — while a stored code is a standing account takeover
+  # for anyone who can read the table.
+
+  @redacted "[redacted]"
+  @credential_keys ~w(code url token)
+
+  defp loggable_body(template, body) do
+    if Templates.sensitive?(template), do: "#{@redacted} #{template}", else: body
+  end
+
+  defp loggable_payload(template, assigns) do
+    assigns = stringify(assigns)
+
+    if Templates.sensitive?(template) do
+      Map.new(assigns, fn
+        {key, value} -> {key, if(key in @credential_keys, do: @redacted, else: value)}
+      end)
+    else
+      assigns
+    end
   end
 
   ## ---------- suppression ----------
@@ -188,18 +262,22 @@ defmodule Blastek.Notifications do
   def allows?(_user, category), do: Map.get(@default_prefs, to_string(category), true)
 
   def opted_out?(to) do
-    Repo.exists?(from o in OptOut, where: o.to == ^to)
+    case canonical(to) do
+      blank when blank in [nil, ""] -> false
+      address -> Repo.exists?(from o in OptOut, where: o.to == ^address)
+    end
   end
 
   @doc "Records a STOP. Idempotent — a second STOP is not an error."
   def opt_out(to, reason \\ "user request", channel \\ "any") do
     %OptOut{}
-    |> OptOut.changeset(%{to: to, channel: channel, reason: reason})
+    |> OptOut.changeset(%{to: canonical(to), channel: channel, reason: reason})
     |> Repo.insert(on_conflict: :nothing, conflict_target: [:to, :channel])
   end
 
   def opt_in(to) do
-    Repo.delete_all(from o in OptOut, where: o.to == ^to)
+    address = canonical(to)
+    Repo.delete_all(from o in OptOut, where: o.to == ^address)
     :ok
   end
 
@@ -240,26 +318,31 @@ defmodule Blastek.Notifications do
   def list_log(opts \\ []) do
     limit = min(Keyword.get(opts, :limit, 50), 200)
 
-    Notification
-    |> filter(:venue_id, opts[:venue_id])
-    |> filter(:user_id, opts[:user_id])
-    |> filter(:status, opts[:status])
-    |> filter(:appointment_id, opts[:appointment_id])
-    |> filter(:template, opts[:template] && to_string(opts[:template]))
+    opts
+    |> log_query()
     |> order_by(desc: :inserted_at, desc: :id)
     |> limit(^limit)
     |> offset(^Keyword.get(opts, :offset, 0))
     |> Repo.all()
   end
 
-  def count_log(opts \\ []) do
-    Notification
-    |> filter(:venue_id, opts[:venue_id])
-    |> filter(:user_id, opts[:user_id])
-    |> filter(:status, opts[:status])
-    |> filter(:appointment_id, opts[:appointment_id])
-    |> filter(:template, opts[:template] && to_string(opts[:template]))
-    |> Repo.aggregate(:count)
+  @doc "How many rows `list_log/1` would have to page through."
+  def count_log(opts \\ []), do: opts |> log_query() |> Repo.aggregate(:count)
+
+  # One place, so a filter added to the list cannot be forgotten in the count —
+  # which would page through a total the rows do not add up to.
+  defp log_query(opts) do
+    Enum.reduce(
+      [
+        venue_id: opts[:venue_id],
+        user_id: opts[:user_id],
+        status: opts[:status],
+        appointment_id: opts[:appointment_id],
+        template: opts[:template] && to_string(opts[:template])
+      ],
+      Notification,
+      fn {field, value}, query -> filter(query, field, value) end
+    )
   end
 
   defp filter(query, _field, nil), do: query
@@ -324,20 +407,22 @@ defmodule Blastek.Notifications do
   # only the queue is skipped.
   defp sync(template, to, assigns, opts) do
     opts = Keyword.merge(opts, assigns: assigns)
+    to = canonical(to)
 
-    cond do
-      to in [nil, ""] ->
-        {:error, :no_address}
+    if to in [nil, ""] do
+      {:error, :no_address}
+    else
+      case suppression(template, to, opts[:user]) do
+        nil ->
+          case send_now(template, to, opts) do
+            {:ok, _log} -> :ok
+            {:error, log} -> {:error, log.error}
+          end
 
-      suppression(template, to, opts[:user]) ->
-        {:ok, :skipped} = record_skip(template, to, opts, suppression(template, to, opts[:user]))
-        :ok
-
-      true ->
-        case send_now(template, to, opts) do
-          {:ok, _log} -> :ok
-          {:error, log} -> {:error, log.error}
-        end
+        reason ->
+          {:ok, :skipped} = record_skip(template, to, opts, reason)
+          :ok
+      end
     end
   end
 

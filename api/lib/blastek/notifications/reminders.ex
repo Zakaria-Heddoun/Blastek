@@ -29,8 +29,8 @@ defmodule Blastek.Notifications.Reminders do
   arrives after the fact is noise that teaches people to ignore the next.
   """
   import Ecto.Query
-  require Logger
 
+  alias Blastek.Clock
   alias Blastek.Notifications
   alias Blastek.Notifications.ActionToken
   alias Blastek.Notifications.Format
@@ -50,17 +50,17 @@ defmodule Blastek.Notifications.Reminders do
   Returns the jobs actually inserted; an appointment too close to now gets
   fewer, and one already in the past gets none.
   """
-  def schedule(%Appointment{} = appointment) do
-    venue = Venues.get_venue(appointment.venue_id)
+  def schedule(%Appointment{} = appointment, opts \\ []) do
+    venue = opts[:venue] || Venues.get_venue(appointment.venue_id)
     settings = (venue && venue.settings) || %{}
     starts_at = Format.starts_at(appointment.date, appointment.start_min)
-    now = NaiveDateTime.local_now()
+    now = Clock.now()
 
     for {template, setting, default} <- @offsets,
         minutes = reminder_offset(settings, setting, default),
         at = NaiveDateTime.add(starts_at, -minutes * 60, :second),
         NaiveDateTime.compare(at, now) == :gt,
-        {:ok, job} <- [enqueue(appointment, template, at)] do
+        {:ok, job} <- [enqueue(appointment, template, at, venue_locale(venue))] do
       job
     end
   end
@@ -127,10 +127,14 @@ defmodule Blastek.Notifications.Reminders do
 
   Built in one place because a confirmation, a reminder and a cancellation
   notice all describe the same appointment and must describe it identically.
+
+  `:venue` passes one already in hand. This runs inside the booking
+  transaction, which holds an advisory lock on the staff member's day, so every
+  query it does not repeat is contention it does not add.
   """
   def assigns(%Appointment{} = appointment, opts \\ []) do
     appointment = Repo.preload(appointment, [:client, :service, :staff])
-    venue = Venues.get_venue(appointment.venue_id)
+    venue = opts[:venue] || Venues.get_venue(appointment.venue_id)
     locale = opts[:locale] || venue_locale(venue)
 
     base = %{
@@ -163,53 +167,20 @@ defmodule Blastek.Notifications.Reminders do
 
   ## ---------- internals ----------
 
-  defp enqueue(appointment, template, at) do
+  defp enqueue(appointment, template, at, locale) do
     Notifications.deliver(template, customer_contact(appointment),
-      locale: customer_locale(appointment),
+      locale: locale,
       user_id: customer_user_id(appointment),
       venue_id: appointment.venue_id,
       appointment_id: appointment.id,
       assigns: %{},
-      scheduled_at: to_utc(at),
+      # Oban schedules in UTC; `at` is the salon's wall clock.
+      scheduled_at: Clock.to_utc(at),
       queue: :scheduled
     )
     |> case do
       {:ok, %Oban.Job{} = job} -> {:ok, job}
       _ -> :skip
-    end
-  end
-
-  # Reminders are local wall-clock ("the evening before"); Oban schedules in
-  # UTC. The conversion needs a real timezone database — see `:tz` in mix.exs —
-  # because Morocco is UTC+1 for most of the year and UTC+0 through Ramadan,
-  # which is exactly when a salon's hours have moved and its customers most need
-  # telling at the right moment.
-  #
-  # A misconfigured deployment used to fall through to "treat local as UTC",
-  # which silently shifted every reminder by an hour. Logged loudly instead: a
-  # reminder an hour out is a bug worth seeing, and sending it late is still
-  # better than not sending it.
-  defp to_utc(%NaiveDateTime{} = at) do
-    case DateTime.from_naive(at, Format.timezone()) do
-      {:ok, local} ->
-        DateTime.shift_zone!(local, "Etc/UTC")
-
-      # Ambiguous or skipped local times: the hour a clock change repeats or
-      # omits. Either candidate is within an hour of right, and refusing to
-      # schedule would be worse.
-      {:ambiguous, first, _second} ->
-        DateTime.shift_zone!(first, "Etc/UTC")
-
-      {:gap, _before, after_gap} ->
-        DateTime.shift_zone!(after_gap, "Etc/UTC")
-
-      {:error, reason} ->
-        Logger.error(
-          "no timezone database for #{Format.timezone()} (#{inspect(reason)}); " <>
-            "reminders will be scheduled against UTC and land at the wrong local time"
-        )
-
-        DateTime.from_naive!(at, "Etc/UTC")
     end
   end
 
@@ -225,7 +196,7 @@ defmodule Blastek.Notifications.Reminders do
   defp reminder?(template), do: template in [:reminder_24h, :reminder_3h]
 
   defp past?(%Appointment{date: date, start_min: start_min}) do
-    NaiveDateTime.compare(Format.starts_at(date, start_min), NaiveDateTime.local_now()) != :gt
+    NaiveDateTime.compare(Format.starts_at(date, start_min), Clock.now()) != :gt
   end
 
   defp client_name(nil), do: ""
@@ -233,8 +204,7 @@ defmodule Blastek.Notifications.Reminders do
 
   @doc "Where to reach the customer: their phone, or their email."
   def customer_contact(%Appointment{} = appointment) do
-    client = appointment.client || Repo.preload(appointment, :client).client
-    contact_of(client)
+    contact_of(client_of(appointment))
   end
 
   defp contact_of(nil), do: nil
@@ -247,14 +217,17 @@ defmodule Blastek.Notifications.Reminders do
   end
 
   defp customer_user_id(%Appointment{} = appointment) do
-    client = appointment.client || Repo.preload(appointment, :client).client
+    client = client_of(appointment)
     client && client.user_id
   end
 
-  # A customer's own locale if their account states one, otherwise the venue's.
-  defp customer_locale(%Appointment{} = appointment) do
-    venue_locale(Venues.get_venue(appointment.venue_id))
-  end
+  # `Repo.preload` is a no-op on a loaded association, but only when the
+  # appointment came from a query that asked for it; `%Ecto.Association.NotLoaded{}`
+  # is the case worth one query rather than a crash.
+  defp client_of(%Appointment{client: %Ecto.Association.NotLoaded{}} = appointment),
+    do: Repo.preload(appointment, :client).client
+
+  defp client_of(%Appointment{client: client}), do: client
 
   defp atomize(nil), do: %{}
 

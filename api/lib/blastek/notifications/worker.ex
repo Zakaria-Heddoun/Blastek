@@ -22,9 +22,28 @@ defmodule Blastek.Notifications.Worker do
   alias Blastek.Notifications.Reminders
 
   @impl Oban.Worker
-  def perform(%Oban.Job{args: args}) do
-    template = String.to_existing_atom(args["template"])
+  def perform(%Oban.Job{args: args, attempt: attempt}) do
+    case known_template(args["template"]) do
+      # A job enqueued by a build that has since been rolled back. Discard it
+      # rather than retry it five times.
+      :error -> {:cancel, "unknown template"}
+      {:ok, template} -> render_and_send(template, args, attempt)
+    end
+  end
 
+  # Scoped to the one expression that can raise it. A `rescue ArgumentError`
+  # around the whole of `perform/1` also catches anything the rendering or the
+  # send raises, and reports it as an unknown template — which both discards a
+  # message that deserved a retry and puts a false reason in the job.
+  defp known_template(name) when is_binary(name) do
+    {:ok, String.to_existing_atom(name)}
+  rescue
+    ArgumentError -> :error
+  end
+
+  defp known_template(_name), do: :error
+
+  defp render_and_send(template, args, attempt) do
     case Reminders.still_due(template, args) do
       {:skip, reason} ->
         # `:ok` rather than an error: a reminder for a cancelled appointment is
@@ -37,7 +56,8 @@ defmodule Blastek.Notifications.Worker do
           assigns: assigns,
           user_id: args["user_id"],
           venue_id: args["venue_id"],
-          appointment_id: args["appointment_id"]
+          appointment_id: args["appointment_id"],
+          attempt: attempt
         ]
 
         case Notifications.send_now(template, args["to"], opts) do
@@ -47,10 +67,5 @@ defmodule Blastek.Notifications.Worker do
           {:error, log} -> {:error, log.error || "delivery failed"}
         end
     end
-  rescue
-    ArgumentError ->
-      # An unknown template name — a job enqueued by a build that has since been
-      # rolled back. Discard it rather than retry it five times.
-      {:cancel, "unknown template"}
   end
 end
