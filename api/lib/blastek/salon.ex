@@ -13,6 +13,7 @@ defmodule Blastek.Salon do
 
   alias Blastek.Clock
   alias Blastek.Notifications
+  alias Blastek.Salon.Blocks
   alias Blastek.Repo
   alias Blastek.Venues
   alias Blastek.Venues.Settings
@@ -511,7 +512,7 @@ defmodule Blastek.Salon do
 
   ## ---------- availability ----------
 
-  def availability(venue_id, service_ids, staff_id, date) do
+  def availability(venue_id, service_ids, staff_id, date, opts \\ []) do
     services = Repo.all(from s in scope(Service, venue_id), where: s.id in ^service_ids)
     by_id = Map.new(services, &{&1.id, &1})
 
@@ -529,7 +530,7 @@ defmodule Blastek.Salon do
           id -> scoped_staff_candidate(venue_id, id)
         end
 
-      {:ok, %{total_duration: total, slots: slots_for(venue_id, candidates, date, total)}}
+      {:ok, %{total_duration: total, slots: slots_for(venue_id, candidates, date, total, opts)}}
     end
   end
 
@@ -537,9 +538,9 @@ defmodule Blastek.Salon do
   # template, its hour rows, the closures, and the venue's booking rules —
   # fetched once. Doing it inside `slots_for_staff` meant a salon with five
   # stylists ran twenty queries to answer one availability request.
-  defp slots_for(_venue_id, [], _date, _duration_min), do: []
+  defp slots_for(_venue_id, [], _date, _duration_min, _opts), do: []
 
-  defp slots_for(venue_id, candidates, date, duration_min) do
+  defp slots_for(venue_id, candidates, date, duration_min, opts) do
     venue = Venues.get_venue(venue_id)
     settings = (venue && venue.settings) || %{}
 
@@ -553,9 +554,16 @@ defmodule Blastek.Salon do
         template: template,
         index: staff_hour_index(venue_id, template, staff_ids),
         closed: Venues.Schedule.closed_windows(venue_id, date),
+        # One query for every candidate, like the hour index above: this runs
+        # per slot search, which is the busiest path in the marketplace.
+        blocks: Blocks.windows(venue_id, staff_ids, date),
         step: Settings.get(settings, :slot_step_min),
         earliest: earliest_bookable(settings, date),
-        weekday: Date.day_of_week(date, :sunday) - 1
+        weekday: Date.day_of_week(date, :sunday) - 1,
+        # Appointments that must not count as busy, because they are the ones
+        # being moved. Without this a booking cannot shift by less than its own
+        # length — it would collide with itself.
+        exclude: opts[:exclude] || []
       }
 
       candidates
@@ -601,6 +609,20 @@ defmodule Blastek.Salon do
   defp to_int(v) when is_integer(v), do: v
   defp to_int(v), do: String.to_integer(to_string(v))
 
+  @doc """
+  Whether a staff id belongs to this venue.
+
+  Used wherever a staff id arrives from a client and the answer changes what is
+  *said* rather than what is done — a permissions message about somebody else's
+  staff id both leaks that the id exists and reads as nonsense to whoever typed
+  it by mistake.
+  """
+  def staff_member?(_venue_id, nil), do: false
+
+  def staff_member?(venue_id, staff_id) do
+    Repo.exists?(from s in scope(Staff, venue_id), where: s.id == ^staff_id)
+  end
+
   def eligible_staff(venue_id, service_ids) do
     n = length(Enum.uniq(service_ids))
 
@@ -626,13 +648,17 @@ defmodule Blastek.Salon do
             from a in scope(Appointment, venue_id),
               where:
                 a.staff_id == ^staff_id and a.date == ^date and
-                  a.status not in ["cancelled", "no_show"],
+                  a.status not in ["cancelled", "no_show"] and
+                  a.id not in ^day.exclude,
               select: {a.start_min, a.end_min}
           )
 
-        # A closure is an exception to the weekly grid — Eid, or a Tuesday
-        # afternoon off — so it is subtracted here rather than folded into hours.
-        blocked = busy ++ day.closed
+        # Three sources of unavailability, one overlap test. A closure is an
+        # exception to the weekly grid for the whole salon — Eid, or a Tuesday
+        # afternoon off; a block is one for one person — a holiday, a lunch
+        # break, a dentist. Neither belongs in the hours themselves, and both
+        # have to be subtracted here or a slot gets offered that nobody can work.
+        blocked = busy ++ day.closed ++ Map.get(day.blocks, staff_id, [])
 
         open_min
         |> Stream.iterate(&(&1 + day.step))
@@ -772,7 +798,14 @@ defmodule Blastek.Salon do
   acting on them is the whole point: a salon closing for a funeral still has to
   telephone the four people booked that afternoon.
   """
-  def appointments_in_window(venue_id, %Date{} = from_date, to_date, start_min, end_min) do
+  def appointments_in_window(
+        venue_id,
+        %Date{} = from_date,
+        to_date,
+        start_min,
+        end_min,
+        opts \\ []
+      ) do
     to_date = to_date || from_date
 
     query =
@@ -787,6 +820,13 @@ defmodule Blastek.Salon do
       if start_min && end_min,
         do: from(a in query, where: a.start_min < ^end_min and a.end_min > ^start_min),
         else: query
+
+    # A closure strands everybody; a staff block strands one person.
+    query =
+      case opts[:staff_id] do
+        nil -> query
+        staff_id -> from(a in query, where: a.staff_id == ^staff_id)
+      end
 
     Repo.all(query)
   end
@@ -906,7 +946,12 @@ defmodule Blastek.Salon do
             {:ok, appt} -> appt
             # The exclusion constraint fired: someone booked between our check
             # and this insert. Roll the whole booking back.
-            {:error, _changeset} -> Repo.rollback(slot_taken())
+            #
+            # Only that constraint should be able to fail here, so anything else
+            # is reported as itself rather than as slot contention — a schema
+            # violation wearing "that time was just taken" hid a broken
+            # multi-service booking path for four epics.
+            {:error, changeset} -> Repo.rollback(insert_failure(changeset))
           end
 
         {Repo.preload(appt, @appt_preloads), cursor + service.duration_min}
@@ -926,6 +971,185 @@ defmodule Blastek.Salon do
       end_min: end_min,
       staff_name: staff.name,
       appointments: appointments
+    }
+  end
+
+  # The overlap constraint is the one an insert here is *expected* to trip, and
+  # "that time was just taken" is the right thing to tell a customer about it.
+  # Anything else is a bug in this code, and saying so is what makes it findable
+  # — the alternative reads as ordinary contention and gets retried forever.
+  defp insert_failure(%Ecto.Changeset{errors: errors} = changeset) do
+    if Enum.any?(errors, fn {field, _} -> field == :start_min end) do
+      slot_taken()
+    else
+      changeset
+    end
+  end
+
+  @doc """
+  Which venue a booking belongs to, if it is one of these clients'.
+
+  The reschedule mutation is addressed by `booking_ref` and has no venue in
+  hand, and every other function here takes `venue_id` first for the reason
+  `Blastek.Scope` explains. This resolves it *from the caller's own client
+  records* rather than from an argument, so a guessed reference reaches
+  nothing.
+  """
+  def venue_id_for_booking(booking_ref, client_ids) do
+    Repo.one(
+      from a in Appointment,
+        where: a.booking_ref == ^booking_ref and a.client_id in ^client_ids,
+        limit: 1,
+        select: a.venue_id
+    )
+  end
+
+  @doc """
+  Moves a whole booking to another slot, at the customer's request (E9-T4 / F0.9).
+
+  ## Why the whole booking
+
+  A cut-and-colour is two rows and one arrival. Moving one of them would leave
+  the customer with two appointments on different days and no way to say which
+  one they meant, so the unit of movement is the `booking_ref`.
+
+  ## The same locking as `book/2`, for the same reason
+
+  Two customers can pick the same slot in the same second, and the check that
+  says "it is free" is worthless unless the write happens under the lock that
+  made it true. This re-runs availability inside the advisory lock, exactly as
+  booking does — the alternative is a double booking that nobody notices until
+  two people are standing at the desk.
+
+  Availability is asked to **exclude the rows being moved**. Without that a
+  booking cannot shift by less than its own length: the 10:00 appointment would
+  make 10:30 look busy, because it is — with itself.
+
+  ## What refuses
+
+  Ownership, the venue's cancellation window, the chain limit, and whether the
+  chosen staff member still performs every service. All four before anything is
+  written, and all four returning a reason a customer can act on.
+  """
+
+  # F0.9: "reschedule chain limit (≤ 3 per booking to prevent abuse)".
+  @max_reschedules 3
+
+  def reschedule_booking(venue_id, booking_ref, client_ids, args) do
+    appointments =
+      Repo.all(
+        from a in scope(Appointment, venue_id),
+          where: a.booking_ref == ^booking_ref and a.client_id in ^client_ids,
+          order_by: [asc: a.start_min, asc: a.id],
+          preload: ^@appt_preloads
+      )
+
+    with :ok <- reschedulable(appointments),
+         :ok <- within_policy(venue_id, appointments) do
+      move(venue_id, appointments, args)
+    end
+  end
+
+  defp reschedulable([]), do: {:error, :not_found}
+
+  defp reschedulable(appointments) do
+    cond do
+      Enum.any?(appointments, &(&1.status not in ["booked", "confirmed"])) ->
+        {:error, "That booking can no longer be changed online."}
+
+      hd(appointments).reschedule_count >= @max_reschedules ->
+        {:error, "This booking has been moved too many times — please call the salon."}
+
+      true ->
+        :ok
+    end
+  end
+
+  # The same window that governs cancelling, because they are the same decision
+  # from the salon's side: a slot given up at short notice is a slot that stays
+  # empty. Measured from the *current* appointment, not the proposed one.
+  defp within_policy(_venue_id, appointments) do
+    if cancellable_by_client?(hd(appointments)) do
+      :ok
+    else
+      {:error, "This appointment can no longer be changed online — please call the salon."}
+    end
+  end
+
+  defp move(venue_id, appointments, args) do
+    first = hd(appointments)
+    service_ids = Enum.map(appointments, & &1.service_id)
+    moving_ids = Enum.map(appointments, & &1.id)
+    staff_arg = args[:staff_id] || "any"
+    opts = [exclude: moving_ids]
+
+    Repo.transaction(fn ->
+      case availability(venue_id, service_ids, staff_arg, args.date, opts) do
+        {:ok, %{slots: slots}} ->
+          case Enum.find(slots, &(&1.start_min == args.start_min)) do
+            nil ->
+              Repo.rollback(slot_taken())
+
+            %{staff_id: staff_id} ->
+              lock_staff_day(staff_id, args.date)
+
+              case availability(venue_id, service_ids, to_string(staff_id), args.date, opts) do
+                {:ok, %{slots: fresh}} ->
+                  if Enum.any?(fresh, &(&1.start_min == args.start_min)) do
+                    write_move(venue_id, appointments, first, args, staff_id)
+                  else
+                    Repo.rollback(slot_taken())
+                  end
+
+                {:error, reason} ->
+                  Repo.rollback(reason)
+              end
+          end
+
+        {:error, reason} ->
+          Repo.rollback(reason)
+      end
+    end)
+  end
+
+  defp write_move(venue_id, appointments, first, args, staff_id) do
+    # Durations are preserved and re-laid end to end from the new start, so a
+    # two-service booking stays contiguous wherever it lands.
+    {moved, _cursor} =
+      Enum.map_reduce(appointments, args.start_min, fn appt, cursor ->
+        duration = appt.end_min - appt.start_min
+
+        updated =
+          appt
+          |> Appointment.changeset(%{
+            date: args.date,
+            start_min: cursor,
+            end_min: cursor + duration,
+            staff_id: staff_id,
+            reschedule_count: appt.reschedule_count + 1
+          })
+          |> Repo.update()
+          |> case do
+            {:ok, row} -> row
+            # The exclusion constraint fired: somebody took the slot between
+            # the re-check and this write.
+            {:error, _changeset} -> Repo.rollback(slot_taken())
+          end
+
+        {Repo.preload(updated, @appt_preloads, force: true), cursor + duration}
+      end)
+
+    # One message and one set of reminders for the booking, not one per row —
+    # the customer moved one appointment as far as they are concerned.
+    Notifications.Bookings.changed(first, hd(moved), :customer)
+
+    %{
+      booking_ref: first.booking_ref,
+      date: args.date,
+      start_min: args.start_min,
+      end_min: List.last(moved).end_min,
+      staff_name: get_staff!(venue_id, staff_id).name,
+      appointments: moved
     }
   end
 

@@ -12,6 +12,7 @@ defmodule BlastekWeb.RoleMatrixTest do
   opened to everyone; each row below asserts the refusals too.
   """
   use Blastek.DataCase, async: true
+  import Ecto.Query
 
   import Blastek.Fixtures
 
@@ -33,6 +34,14 @@ defmodule BlastekWeb.RoleMatrixTest do
     {:services, "{ services { id } }", "staff"},
     {:staff, "{ staff { id } }", "staff"},
     {:appointments, ~s|{ appointments(from: "2026-07-01", to: "2026-07-07") { id } }|, "staff"},
+    {:staff_blocks, ~s|{ staffBlocks(from: "2026-07-01", to: "2026-07-07") { id } }|, "staff"},
+    {:staff_block_conflicts,
+     ~s|mutation { staffBlockConflicts(staffId: "1", kind: "time_off", date: "2026-07-01") { id } }|,
+     "staff"},
+    {:create_staff_block,
+     ~s|mutation { createStaffBlock(staffId: "1", kind: "time_off", date: "2026-07-01") { id } }|,
+     "staff"},
+    {:delete_staff_block, ~s|mutation { deleteStaffBlock(id: "1") }|, "staff"},
     # Narrowed to their own clients rather than refused — see F0.3's "limited CRM".
     {:clients, "{ clients(limit: 5) { totalCount } }", "staff"},
     {:client, ~s|{ client(id: "1") { id } }|, "staff"},
@@ -125,6 +134,20 @@ defmodule BlastekWeb.RoleMatrixTest do
     members =
       Map.new(@roles, fn role ->
         %{user: user} = member_fixture(venue.venue, role, "#{role}-#{unique()}@example.com")
+
+        # The  member owns the venue's calendar column. A stylist who
+        # takes appointments is what that role *is*, and without the link the
+        # rows that turn on "your own" — the limited CRM, your own time off —
+        # cannot be exercised at all.
+        if role == "staff" do
+          Blastek.Repo.update_all(
+            from(m in Blastek.Venues.VenueMember,
+              where: m.user_id == ^user.id and m.venue_id == ^venue.venue.id
+            ),
+            set: [staff_id: venue.staff.id]
+          )
+        end
+
         {role, user}
       end)
 
