@@ -353,7 +353,13 @@
     "changeSignsOut": "تغييرها يسجّل خروجك من كل الأجهزة الأخرى.",
     "codeUserHint": "أنت تدخل برمز. تعيين كلمة مرور اختياري — يمكنك الاستمرار بالرموز.",
     "changePassword": "تغيير كلمة المرور",
-    "setPassword": "تعيين كلمة مرور"
+    "setPassword": "تعيين كلمة مرور",
+    "reschedule": "تغيير الموعد",
+    "rescheduleTitle": "تغيير الموعد",
+    "rescheduleLead": "اختر وقتًا جديدًا. سيتم إخبار الصالون.",
+    "rescheduled": "تم تغيير الموعد",
+    "cannotReschedule": "لم يعد بالإمكان تغيير هذا الموعد عبر الإنترنت — اتصل بالصالون.",
+    "pickAnotherDay": "لا مواعيد في هذا اليوم — جرّب تاريخًا آخر."
   },
   "onboard": {
     "businessName": "اسم الصالون",
@@ -474,7 +480,23 @@
       "updated": "تم تحديث الموعد",
       "noTip": "دون إكرامية",
       "aCustomer": "زبون",
-      "newBookingToast": "حجز جديد عبر الإنترنت — {{client}} على {{time}}"
+      "newBookingToast": "حجز جديد عبر الإنترنت — {{client}} على {{time}}",
+      "closed": "مغلق",
+      "blockTime": "حجز وقت",
+      "blockKindLabel": "النوع",
+      "blockSaved": "تم حجز الوقت",
+      "repeatWeekly": "كل أسبوع، في هذا اليوم",
+      "blockKind": {
+        "time_off": "عطلة",
+        "break": "استراحة",
+        "blocked": "غير متاح"
+      },
+      "blockConflicts_zero": "لا مواعيد في هذه الفترة",
+      "blockConflicts_one": "موعد واحد محجوز في هذه الفترة",
+      "blockConflicts_two": "موعدان محجوزان في هذه الفترة",
+      "blockConflicts_few": "{{count}} مواعيد محجوزة في هذه الفترة",
+      "blockConflicts_many": "{{count}} موعدًا محجوزًا في هذه الفترة",
+      "blockConflicts_other": "{{count}} موعد محجوز في هذه الفترة"
     },
     "clients": {
       "title": "الزبناء",
@@ -561,7 +583,12 @@
       "addMemberTitle": "إضافة مهني",
       "sendInvite": "إرسال الدعوة",
       "roleForAria": "صفة {{name}}",
-      "aMember": "هذا العضو"
+      "aMember": "هذا العضو",
+      "timeOff": "الغيابات",
+      "noTimeOff": "لا غيابات مسجّلة.",
+      "addTimeOff": "إضافة غياب",
+      "removeBlock": "حذف",
+      "everyWeek": "كل {{day}}"
     },
     "sales": {
       "title": "المبيعات",

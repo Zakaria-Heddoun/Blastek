@@ -140,7 +140,10 @@ export default function AdminLayout() {
             ))}
           </nav>
           <div className="spacer" />
-          <div className="adm-lang"><LanguageSwitcher variant="inline" /></div>
+          {/* The dropdown, not the three-button strip: three language names
+              side by side overflow a 240px sidebar, and the overflow is silent
+              — two of the three simply leave the screen. */}
+          <div className="adm-lang"><LanguageSwitcher /></div>
           <div className="adm-user">
             {user.firstName} {user.lastName}
             <br />

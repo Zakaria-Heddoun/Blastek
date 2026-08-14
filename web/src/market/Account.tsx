@@ -11,6 +11,7 @@ import { StatusBadge, useToast } from '../components/ui';
 import MarketTopbar from './MarketTopbar';
 import AccountSecurity from './AccountSecurity';
 import AccountNotifications from './AccountNotifications';
+import RescheduleModal from './RescheduleModal';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 import { useAccountLocale } from '../lib/locale';
 import { fmtDateLong, fmtMAD, fmtTime, todayStr } from '../lib/format';
@@ -18,7 +19,7 @@ import './market.css';
 
 const MY = `{ myAppointments {
   id date startMin endMin status priceCents bookingRef
-  service { name } staff { name }
+  service { id name } staff { name }
   venue { id slug name city }
 } }`;
 
@@ -30,6 +31,7 @@ export default function Account() {
   // Adopt the language saved on the account, if this browser has no choice yet.
   useAccountLocale();
   const [appts, setAppts] = useState<Appointment[] | null>(null);
+  const [moving, setMoving] = useState<Appointment | null>(null);
 
   const load = useCallback(async () => {
     const d = await gql<{ myAppointments: Appointment[] }>(MY);
@@ -75,9 +77,14 @@ export default function Account() {
       <StatusBadge status={a.status} />
       <span className="price">{fmtMAD(a.priceCents)}</span>
       {cancellable && (
-        <button className="btn btn-sm" onClick={() => cancel(a.id)}>
-          {t(`account.cancelAppointment`)}
-        </button>
+        <>
+          <button className="btn btn-sm" onClick={() => setMoving(a)}>
+            {t(`account.reschedule`)}
+          </button>
+          <button className="btn btn-sm" onClick={() => cancel(a.id)}>
+            {t(`account.cancelAppointment`)}
+          </button>
+        </>
       )}
     </div>
   );
@@ -124,6 +131,27 @@ export default function Account() {
         <AccountNotifications />
         <AccountSecurity />
       </div>
+
+      {moving && (
+        <RescheduleModal
+          appointment={moving}
+          group={groupOf(appts ?? [], moving)}
+          onClose={() => setMoving(null)}
+          onDone={() => { setMoving(null); load(); }}
+        />
+      )}
     </div>
   );
+}
+
+/**
+ * Every appointment under one booking reference.
+ *
+ * A cut-and-colour is two rows and one arrival, and F0.9 moves the booking
+ * rather than the row. An appointment with no reference — a walk-in the salon
+ * typed in — is its own group.
+ */
+function groupOf(all: Appointment[], one: Appointment) {
+  if (!one.bookingRef) return [one];
+  return all.filter((a) => a.bookingRef === one.bookingRef);
 }

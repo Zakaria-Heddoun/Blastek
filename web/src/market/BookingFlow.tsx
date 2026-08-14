@@ -6,9 +6,10 @@ import { useTranslation } from 'react-i18next';
 import { gql } from '../lib/gql';
 import type { BookingResult, Slot } from '../lib/types';
 import { STEP_KEYS, useVenue } from './MarketLayout';
+import SlotPicker from './SlotPicker';
 import { useAuth } from '../lib/auth';
 import { Icon, Sparkle } from '../lib/icons';
-import { addDays, fmtDateLong, fmtDateShort, fmtDur, fmtMAD, fmtTime, initials, todayStr, weekdaysShort } from '../lib/format';
+import { fmtDateLong, fmtDateShort, fmtDur, fmtMAD, fmtTime, initials, todayStr } from '../lib/format';
 
 export default function BookingFlow() {
   const { venue: v, slug, booking } = useVenue();
@@ -18,7 +19,6 @@ export default function BookingFlow() {
   const [step, setStep] = useState(1);
   const [date, setDate] = useState(booking.date || todayStr());
   const [slot, setSlot] = useState<Slot | null>(null);
-  const [slots, setSlots] = useState<Slot[] | null>(null);
   const [notes, setNotes] = useState('');
   const [err, setErr] = useState('');
   const [result, setResult] = useState<BookingResult | null>(null);
@@ -32,21 +32,8 @@ export default function BookingFlow() {
   const eligible = useMemo(() => v.staff.filter((st) =>
     booking.services.every((id) => st.serviceIds.includes(id))), [v.staff, booking.services]);
 
-  const days = [...Array(14)].map((_, i) => addDays(todayStr(), i));
-  const weekdayNames = weekdaysShort();
 
   useEffect(() => { window.scrollTo(0, 0); }, [step, result]);
-
-  useEffect(() => {
-    if (step !== 3 || booking.services.length === 0) return;
-    setSlots(null);
-    gql<{ availability: { slots: Slot[] } }>(
-      `query($venue: String!, $ids: [ID!]!, $staff: String, $date: Date!) {
-        availability(venueSlug: $venue, serviceIds: $ids, staffId: $staff, date: $date) {
-          slots { startMin staffId } } }`,
-      { venue: slug, ids: booking.services, staff: booking.staffId, date },
-    ).then((d) => setSlots(d.availability.slots)).catch((e) => setErr(e.message));
-  }, [step, date, slug, booking.services, booking.staffId]);
 
   const toggleService = (id: string) => {
     booking.setServices(booking.services.includes(id)
@@ -227,38 +214,23 @@ export default function BookingFlow() {
                 <Icon name="left" size={16} /> {t('flow.steps.professional')}
               </button>
               <h1 style={{ fontSize: 24, margin: '12px 0 18px' }}>{t('flow.pickTime')}</h1>
-              <div className="date-strip">
-                {days.map((d) => {
-                  const dt = new Date(d + 'T12:00:00');
-                  return (
-                    <div key={d} className={`date-pill ${d === date ? 'sel' : ''}`}
-                      onClick={() => { setDate(d); setSlot(null); }}>
-                      <small>{weekdayNames[dt.getDay()]}</small>{dt.getDate()}
-                    </div>
-                  );
-                })}
-              </div>
-              {slots === null ? (
-                <div className="empty">{t('flow.loadingAvailability')}</div>
-              ) : slots.length === 0 ? (
-                <div className="empty">
-                  {/* The suggestion only makes sense when a specific professional
-                      was chosen, so it is a separate sentence rather than a
-                      fragment glued on — which is unglueable in Arabic. */}
-                  {booking.staffId !== 'any'
+              <SlotPicker
+                venueSlug={slug}
+                serviceIds={booking.services}
+                staffId={booking.staffId}
+                date={date}
+                onDate={setDate}
+                selected={slot}
+                onSelect={setSlot}
+                // The suggestion only makes sense when a specific professional
+                // was chosen, so it is a separate sentence rather than a
+                // fragment glued on — which is unglueable in Arabic.
+                emptyHint={
+                  booking.staffId !== 'any'
                     ? t('flow.noAvailabilityAny')
-                    : t('flow.noAvailability')}
-                </div>
-              ) : (
-                <div className="slot-grid">
-                  {slots.map((s) => (
-                    <div key={s.startMin} className={`slot ${slot?.startMin === s.startMin ? 'sel' : ''}`}
-                      onClick={() => setSlot(s)}>
-                      {fmtTime(s.startMin, true)}
-                    </div>
-                  ))}
-                </div>
-              )}
+                    : t('flow.noAvailability')
+                }
+              />
             </>
           )}
 

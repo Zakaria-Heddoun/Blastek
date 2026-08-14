@@ -36,7 +36,20 @@ defmodule Blastek.DataCase do
   Sets up the sandbox based on the test tags.
   """
   def setup_sandbox(tags) do
-    pid = Ecto.Adapters.SQL.Sandbox.start_owner!(Blastek.Repo, shared: not tags[:async])
+    opts = [shared: not tags[:async]]
+
+    # A test may raise the sandbox's own 120-second ownership timeout with
+    # `@moduletag ownership_timeout: …`. Only one test needs it — the search
+    # performance gate builds a 7 000-row fixture before it measures anything —
+    # and without it a *loaded machine* fails that gate rather than a slow
+    # query, which is precisely the confusion the gate exists to avoid.
+    opts =
+      case tags[:ownership_timeout] do
+        nil -> opts
+        timeout -> Keyword.put(opts, :ownership_timeout, timeout)
+      end
+
+    pid = Ecto.Adapters.SQL.Sandbox.start_owner!(Blastek.Repo, opts)
     on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(pid) end)
   end
 
