@@ -345,7 +345,13 @@
     "changeSignsOut": "Changing it signs you out of every other device.",
     "codeUserHint": "You sign in with a code. Setting a password is optional — you can keep using codes.",
     "changePassword": "Change password",
-    "setPassword": "Set a password"
+    "setPassword": "Set a password",
+    "reschedule": "Reschedule",
+    "rescheduleTitle": "Move your appointment",
+    "rescheduleLead": "Pick a new time. The salon is told.",
+    "rescheduled": "Appointment moved",
+    "cannotReschedule": "This appointment can no longer be moved online — please call the salon.",
+    "pickAnotherDay": "No times that day — try another date."
   },
   "onboard": {
     "businessName": "Salon name",
@@ -466,7 +472,19 @@
       "updated": "Appointment updated",
       "noTip": "No tip",
       "aCustomer": "a customer",
-      "newBookingToast": "New online booking — {{client}} at {{time}}"
+      "newBookingToast": "New online booking — {{client}} at {{time}}",
+      "closed": "Closed",
+      "blockTime": "Block time",
+      "blockKindLabel": "Type",
+      "blockSaved": "Time blocked",
+      "repeatWeekly": "Every week on this day",
+      "blockKind": {
+        "time_off": "Time off",
+        "break": "Break",
+        "blocked": "Unavailable"
+      },
+      "blockConflicts_one": "{{count}} appointment is already booked in that period",
+      "blockConflicts_other": "{{count}} appointments are already booked in that period"
     },
     "clients": {
       "title": "Clients",
@@ -549,7 +567,12 @@
       "addMemberTitle": "Add team member",
       "sendInvite": "Send invitation",
       "roleForAria": "Role for {{name}}",
-      "aMember": "this member"
+      "aMember": "this member",
+      "timeOff": "Time off",
+      "noTimeOff": "No time off recorded.",
+      "addTimeOff": "Add time off",
+      "removeBlock": "Remove",
+      "everyWeek": "every {{day}}"
     },
     "sales": {
       "title": "Sales",

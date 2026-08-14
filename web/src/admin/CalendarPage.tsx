@@ -7,6 +7,9 @@ import { subscribe } from '../lib/live';
 import type { Appointment, Client, Staff } from '../lib/types';
 import { useAppData } from './AdminLayout';
 import { Modal, StatusBadge, useToast } from '../components/ui';
+import {
+  BLOCK_FIELDS, BlockModal, SlotMenu, blockBands, type StaffBlock,
+} from './StaffBlocks';
 import { Icon } from '../lib/icons';
 import {
   addDays, fmtDateLong, fmtDateShort, fmtDur, fmtMAD, fmtTime,
@@ -44,6 +47,11 @@ export default function CalendarPage() {
   const [weekStaff, setWeekStaff] = useState(active[0]?.id ?? '');
   const [appts, setAppts] = useState<Appointment[]>([]);
   const [closures, setClosures] = useState<Closure[]>([]);
+  const [blocks, setBlocks] = useState<StaffBlock[]>([]);
+  const [blockAt, setBlockAt] = useState<{ staffId: string; date: string; startMin: number } | null>(null);
+  const [slotMenu, setSlotMenu] = useState<
+    { staffId: string; date: string; startMin: number; x: number; y: number } | null
+  >(null);
   const [createAt, setCreateAt] = useState<{ staffId: string; date: string; startMin: number } | null>(null);
   const [detail, setDetail] = useState<Appointment | null>(null);
   const [checkout, setCheckout] = useState<Appointment[] | null>(null);
@@ -53,15 +61,21 @@ export default function CalendarPage() {
   const to = view === 'day' ? date : addDays(monday, 6);
 
   const load = useCallback(async () => {
-    const d = await gql<{ appointments: Appointment[]; venueClosures: Closure[] }>(
+    const d = await gql<{
+      appointments: Appointment[];
+      venueClosures: Closure[];
+      staffBlocks: StaffBlock[];
+    }>(
       `${APPT_FIELDS} query($from: Date!, $to: Date!) {
         appointments(from: $from, to: $to) { ...ApptFields }
         venueClosures(from: $from, to: $to) { id date endDate startMin endMin reason }
+        staffBlocks(from: $from, to: $to) { ${BLOCK_FIELDS} }
       }`,
       { from, to },
     );
     setAppts(d.appointments);
     setClosures(d.venueClosures ?? []);
+    setBlocks(d.staffBlocks ?? []);
   }, [from, to]);
 
   useEffect(() => { load(); }, [load]);
@@ -178,7 +192,16 @@ export default function CalendarPage() {
                   onClick={(e) => {
                     const rect = e.currentTarget.getBoundingClientRect();
                     const min = DAY_START + Math.floor((e.clientY - rect.top) / PX_MIN / 15) * 15;
-                    setCreateAt({ staffId: c.staff.id, date: c.date, startMin: min });
+                    // F0.7: an empty slot is either a booking or time off, and
+                    // guessing "booking" made blocking time a trip to another
+                    // screen. Two buttons is the whole feature.
+                    setSlotMenu({
+                      staffId: c.staff.id,
+                      date: c.date,
+                      startMin: min,
+                      x: e.clientX,
+                      y: e.clientY,
+                    });
                   }}>
                   {timeOptions(DAY_START + 60, DAY_END - 15).filter((m) => m % 60 === 0).map((m) => (
                     <div key={m} className="hourline" style={{ top: (m - DAY_START) * PX_MIN }} />
@@ -196,7 +219,24 @@ export default function CalendarPage() {
                         height: (band.to - band.from) * PX_MIN,
                       }}
                     >
-                      <span>{band.reason || 'Closed'}</span>
+                      <span>{band.reason || t('admin.calendar.closed')}</span>
+                    </div>
+                  ))}
+
+                  {/* Time off sits above the closure bands and below the
+                      appointments: it explains a gap the salon *can* explain,
+                      which is the whole reason F0.7 draws it rather than just
+                      subtracting it from availability. */}
+                  {blockBands(blocks, c.staff?.id, c.date, DAY_START, DAY_END).map((band, i) => (
+                    <div
+                      key={`block-${i}`}
+                      className={`blockband ${band.kind}`}
+                      style={{
+                        top: (band.from - DAY_START) * PX_MIN,
+                        height: (band.to - band.from) * PX_MIN,
+                      }}
+                    >
+                      <span>{band.note || t(`admin.calendar.blockKind.${band.kind}`)}</span>
                     </div>
                   ))}
 
@@ -230,6 +270,27 @@ export default function CalendarPage() {
           </div>
         </div>
       </div>
+      {slotMenu && (
+        <SlotMenu
+          at={slotMenu}
+          onClose={() => setSlotMenu(null)}
+          onAppointment={() => {
+            setCreateAt({ staffId: slotMenu.staffId, date: slotMenu.date, startMin: slotMenu.startMin });
+            setSlotMenu(null);
+          }}
+          onBlock={() => {
+            setBlockAt({ staffId: slotMenu.staffId, date: slotMenu.date, startMin: slotMenu.startMin });
+            setSlotMenu(null);
+          }}
+        />
+      )}
+      {blockAt && (
+        <BlockModal
+          preset={blockAt}
+          onClose={() => setBlockAt(null)}
+          onDone={() => { setBlockAt(null); load(); }}
+        />
+      )}
       {createAt && <NewApptModal preset={createAt} onClose={() => setCreateAt(null)} onDone={() => { setCreateAt(null); load(); }} />}
       {detail && <ApptDetailModal appt={detail} onClose={() => setDetail(null)} onDone={() => { setDetail(null); load(); }}
         onCheckout={() => openCheckout(detail)} />}
@@ -541,3 +602,5 @@ function closedBands(closures: Closure[], date: string) {
     }))
     .filter((band) => band.to > band.from);
 }
+
+

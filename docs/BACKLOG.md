@@ -776,13 +776,60 @@ cover on the public search card.
   verification, not a line in a feature commit.
 
 ### E9 · Scheduling depth — F0.7 blocks, F0.9 reschedule
-| ID | Task | Est | Labels |
-|---|---|---|---|
-| E9-T1 | `staff_blocks` migration + CRUD + availability subtraction (incl. weekly repeats) | M | api |
-| E9-T2 | Calendar block rendering + create menu; Team time-off list | M | web |
-| E9-T3 | Block-vs-appointment conflict prompt flow | S | api,web |
-| E9-T4 | `rescheduleMyAppointment` (group move, window policy, race-safe, reminder resync) | M | api |
-| E9-T5 | Extract shared `SlotPicker`; Account reschedule UI; reminder deep-link landing | M | web |
+
+**Status: ✅ COMPLETE and verified** (557 tests; blocking, availability,
+the time-off list and a customer reschedule all driven in the browser).
+
+| ID | Task | Est | Labels | Status |
+|---|---|---|---|---|
+| E9-T1 | `staff_blocks` migration + CRUD + availability subtraction (incl. weekly repeats) | M | api | ✅ |
+| E9-T2 | Calendar block rendering + create menu; Team time-off list | M | web | ✅ |
+| E9-T3 | Block-vs-appointment conflict prompt flow | S | api,web | ✅ |
+| E9-T4 | `rescheduleMyAppointment` (group move, window policy, race-safe, reminder resync) | M | api | ✅ |
+| E9-T5 | Extract shared `SlotPicker`; Account reschedule UI; reminder deep-link landing | M | web | ✅ |
+
+**Notes**
+
+* **Three kinds of block, one table.** Availability asks all three the same
+  question — "is this person free between these two minutes?" — and a table per
+  kind would mean three queries and three chances to forget one. The shape
+  differences are expressed by which columns are null, which is why none of
+  `end_date`, `start_min`, `end_min` or `weekday` is required.
+* **Weekly repeats are materialized on read.** A break every Friday is one row,
+  not fifty-two. Storing the expansion would mean deciding how far into the
+  future to write rows and then being wrong about it. The calendar expands the
+  rule a second time on the client, because it draws days the availability
+  engine was never asked about.
+* **Blocks follow the clock, not the shift.** F0.7 is explicit that a
+  12:00–14:00 break stays at 12:00–14:00 when a Ramadan template moves the
+  working day. `outside_hours?/3` exists so the owner is *warned* the break now
+  sits outside the working day rather than having it silently relocated.
+* **A block over an appointment prompts, never acts.** `staffBlockConflicts`
+  returns the list and the form shows it as the owner types. A stylist taking
+  Thursday off still has to telephone the three people booked that afternoon,
+  and the software's job is to say who.
+* **Reschedule moves the booking, not the row**, under the same advisory lock
+  as `book/2`, and asks availability to **exclude the rows being moved** —
+  without that a booking cannot shift by less than its own length, because it
+  collides with itself.
+* **A holiday is not a closure.** One shuts a person, the other the salon.
+  Subtracted at the same point in `availability/5` and deliberately kept apart:
+  merging them would make one stylist's holiday read as the salon being shut,
+  and cost every booking the rest of the team could have taken.
+
+**Defects found while verifying**
+
+| Where | Defect | Found by |
+|---|---|---|
+| `appointments_booking_ref_index` | **Multi-service bookings had never worked.** The index was created UNIQUE in E1, but a booking reference identifies a booking — one *or more* appointments — so the second insert of every multi-service booking violated it. Two things hid it: `insert_booking/3` mapped any `{:error, changeset}` to `Repo.rollback(slot_taken())`, so a schema violation surfaced as "That time was just taken — please pick another slot.", a plausible message that blames another customer for a constraint; and no test had ever booked more than one service. | Writing the first two-service booking, which F0.9's group move required |
+| `Blocks.create/2` | Trusted `staff_id` against the foreign key alone, which proves a staff member exists but not that they work at this venue — a manager could write a row pointing across a tenant boundary. | Writing the test for it |
+| `AdminLayout` | The E7 language switcher used the three-button strip in a 240px sidebar; the row overflowed and two of the three languages simply left the screen. Silent, because overflow is. | Looking at a calendar screenshot taken for something else |
+| `DataCase.setup_sandbox/1` | The search performance gate died three times on the sandbox's own 120-second ownership timeout rather than on a slow query — the `@moduletag timeout:` raised in E8 governs ExUnit, not the sandbox. A loaded machine failed a performance assertion, which is exactly the confusion that gate's docstring says it exists to avoid. | The third flake |
+
+**Not done, deliberately**: F0.7's drag-to-create on the calendar. The
+click-to-create menu covers the same intent and drag needs pointer capture,
+scroll-during-drag and a touch story of its own — a feature, not a detail of
+this one.
 
 ### E10 · Reviews — F0.8
 | ID | Task | Est | Labels |

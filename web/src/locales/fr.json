@@ -345,7 +345,13 @@
     "changeSignsOut": "Le changer vous déconnecte de tous les autres appareils.",
     "codeUserHint": "Vous vous connectez avec un code. Définir un mot de passe est facultatif — vous pouvez continuer avec les codes.",
     "changePassword": "Changer de mot de passe",
-    "setPassword": "Définir un mot de passe"
+    "setPassword": "Définir un mot de passe",
+    "reschedule": "Déplacer",
+    "rescheduleTitle": "Déplacer le rendez-vous",
+    "rescheduleLead": "Choisissez un nouveau créneau. Le salon est prévenu.",
+    "rescheduled": "Rendez-vous déplacé",
+    "cannotReschedule": "Ce rendez-vous ne peut plus être déplacé en ligne — appelez le salon.",
+    "pickAnotherDay": "Aucun créneau ce jour-là — essayez une autre date."
   },
   "onboard": {
     "businessName": "Nom du salon",
@@ -466,7 +472,19 @@
       "updated": "Rendez-vous mis à jour",
       "noTip": "Sans pourboire",
       "aCustomer": "un client",
-      "newBookingToast": "Nouvelle réservation en ligne — {{client}} à {{time}}"
+      "newBookingToast": "Nouvelle réservation en ligne — {{client}} à {{time}}",
+      "closed": "Fermé",
+      "blockTime": "Bloquer du temps",
+      "blockKindLabel": "Type",
+      "blockSaved": "Temps bloqué",
+      "repeatWeekly": "Chaque semaine, ce jour-là",
+      "blockKind": {
+        "time_off": "Congé",
+        "break": "Pause",
+        "blocked": "Indisponible"
+      },
+      "blockConflicts_one": "{{count}} rendez-vous est déjà pris sur cette période",
+      "blockConflicts_other": "{{count}} rendez-vous sont déjà pris sur cette période"
     },
     "clients": {
       "title": "Clients",
@@ -549,7 +567,12 @@
       "addMemberTitle": "Ajouter un praticien",
       "sendInvite": "Envoyer l’invitation",
       "roleForAria": "Rôle de {{name}}",
-      "aMember": "ce membre"
+      "aMember": "ce membre",
+      "timeOff": "Absences",
+      "noTimeOff": "Aucune absence enregistrée.",
+      "addTimeOff": "Ajouter une absence",
+      "removeBlock": "Supprimer",
+      "everyWeek": "chaque {{day}}"
     },
     "sales": {
       "title": "Ventes",

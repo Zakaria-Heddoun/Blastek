@@ -21,6 +21,10 @@ defmodule Blastek.SearchPerfTest do
   # misleading way a gate like this can fail. The budget below is asserted
   # explicitly and precisely; this timeout only has to be out of its way.
   @moduletag timeout: 300_000
+  # The sandbox holds its connection for the fixture *and* the measurement, and
+  # its own limit is 120 s regardless of the one above. Three CI runs died on
+  # that rather than on a slow query.
+  @moduletag ownership_timeout: 300_000
 
   alias Blastek.Discovery
   alias Blastek.Repo

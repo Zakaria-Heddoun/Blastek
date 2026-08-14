@@ -499,15 +499,16 @@
 .adm .adm-lang {
   padding: 10px 16px 4px;
 }
-.adm .adm-lang .lang-inline {
-  border-color: rgba(255, 255, 255, 0.18);
+.adm .adm-lang .lang-trigger {
+  width: 100%;
+  justify-content: center;
+  border-color: var(--line);
 }
-.adm .adm-lang .lang-inline button {
-  color: rgba(255, 255, 255, 0.66);
-}
-.adm .adm-lang .lang-inline button.active {
-  background: #fff;
-  color: #1e1e1e;
+/* The menu opens upward: the switcher sits at the foot of the sidebar, and a
+   downward list would open off the bottom of the screen. */
+.adm .adm-lang .lang-list {
+  top: auto;
+  bottom: calc(100% + 6px);
 }
 
 /* Per-locale inputs in the catalog editor (E7-T7). */

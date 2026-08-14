@@ -5,6 +5,7 @@ import { gql } from '../lib/gql';
 import type { Staff, StaffHour } from '../lib/types';
 import { useAppData } from './AdminLayout';
 import MembersTab from './MembersTab';
+import TimeOffTab from './TimeOffTab';
 import { Modal, useToast } from '../components/ui';
 import { Icon } from '../lib/icons';
 import { fmtTime, initials, weekdaysShort } from '../lib/format';
@@ -22,7 +23,7 @@ export default function TeamPage() {
   const { t } = useTranslation();
   const { staff, refresh } = useAppData();
   const [editing, setEditing] = useState<Staff | 'new' | null>(null);
-  const [tab, setTab] = useState<'roster' | 'access'>('roster');
+  const [tab, setTab] = useState<'roster' | 'access' | 'timeoff'>('roster');
 
   return (
     <>
@@ -48,6 +49,17 @@ export default function TeamPage() {
           >
             {t(`admin.team.access`)}
           </button>
+          {/* The calendar shows a block on the day it falls. This answers the
+              question the calendar cannot: whether anyone is away next month,
+              which is what an owner checks before promising a date. */}
+          <button
+            role="tab"
+            aria-selected={tab === 'timeoff'}
+            className={tab === 'timeoff' ? 'active' : ''}
+            onClick={() => setTab('timeoff')}
+          >
+            {t(`admin.team.timeOff`)}
+          </button>
         </div>
         <div className="grow" />
         {tab === 'roster' && (
@@ -58,6 +70,7 @@ export default function TeamPage() {
       </div>
 
       {tab === 'access' && <MembersTab staff={staff} />}
+      {tab === 'timeoff' && <TimeOffTab />}
 
       {tab === 'roster' && (
         <div className="cards">
