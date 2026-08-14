@@ -4,6 +4,7 @@
 // One route serves both because they are two moments in the same task, and a
 // separate page for the second would be a URL nobody can reach deliberately.
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { gql } from '../lib/gql';
 import '../bungee/bungee.css';
@@ -11,6 +12,7 @@ import './home.css';
 import './auth.css';
 
 export default function ForgotPassword() {
+  const { t } = useTranslation();
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const token = params.get('token');
@@ -22,7 +24,7 @@ export default function ForgotPassword() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    document.title = 'Blastek — Reset your password';
+    document.title = `Blastek — ${t('auth.resetTitle')}`;
   }, []);
 
   const run = async (work: () => Promise<void>) => {
@@ -58,25 +60,26 @@ export default function ForgotPassword() {
 
   return (
     <div className="bungee blastek-home auth-shell">
-      <Link to="/" className="auth-back" aria-label="Blastek home">
+      {/* i18n-exempt: the brand name is the same word in every language. */}
+      <Link to="/" className="auth-back" aria-label="Blastek">
         <span className="brand-word">blastek</span>
       </Link>
 
       <div className="auth-grid">
         <div className="auth-form-col">
           <div className="auth-form">
-            <span className="mono">( Reset )</span>
+            <span className="mono">{t(`auth.resetEyebrow`)}</span>
 
             {token ? (
               <>
-                <h1 className="auth-title">Choose a new password.</h1>
+                <h1 className="auth-title">{t(`auth.newPasswordTitle`)}</h1>
                 <p className="auth-sub">
-                  Setting a new password signs you out everywhere else.
+                  {t(`auth.resetSignsOut`)}
                 </p>
 
                 <div className="auth-fields">
                   <div className="auth-field">
-                    <label htmlFor="new-password">New password — min 8 characters</label>
+                    <label htmlFor="new-password">{t(`auth.newPasswordMin`)}</label>
                     <input
                       id="new-password"
                       type="password"
@@ -95,31 +98,30 @@ export default function ForgotPassword() {
                   disabled={busy || password.length < 8}
                   onClick={reset}
                 >
-                  {busy ? 'Saving…' : 'Set new password'}
+                  {busy ? 'Saving…' : t('auth.setNewPassword')}
                 </button>
               </>
             ) : sent ? (
               <>
-                <h1 className="auth-title">Check your inbox.</h1>
+                <h1 className="auth-title">{t(`auth.checkInbox`)}</h1>
                 <p className="auth-sub">
                   If an account exists for {email}, a reset link is on its way. It is valid for
                   one hour.
                 </p>
                 <Link className="auth-submit auth-submit-link" to="/login">
-                  Back to sign in
+                  {t(`auth.backToSignIn`)}
                 </Link>
               </>
             ) : (
               <>
-                <h1 className="auth-title">Forgot your password?</h1>
+                <h1 className="auth-title">{t(`auth.resetTitle`)}</h1>
                 <p className="auth-sub">
-                  Enter your email and we will send you a link. Signed up with a phone number
-                  instead? Just sign in with a code — no password needed.
+                  {t(`auth.resetHelp`)}
                 </p>
 
                 <div className="auth-fields">
                   <div className="auth-field">
-                    <label htmlFor="reset-email">Email</label>
+                    <label htmlFor="reset-email">{t(`common.email`)}</label>
                     <input
                       id="reset-email"
                       type="email"
@@ -134,11 +136,11 @@ export default function ForgotPassword() {
                 <div className="auth-err">{error}</div>
 
                 <button className="auth-submit" disabled={busy || !email.trim()} onClick={request}>
-                  {busy ? 'Sending…' : 'Send reset link'}
+                  {busy ? 'Sending…' : t('auth.sendResetLink')}
                 </button>
 
                 <button className="auth-toggle" onClick={() => navigate('/login')}>
-                  Back to <b>sign in</b>
+                  {t(`auth.backTo`)} <b>sign in</b>
                 </button>
               </>
             )}

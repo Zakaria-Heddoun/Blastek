@@ -21,6 +21,6 @@ const CATEGORY_IMG: Record<string, string> = {
   Hair: IMG.hair2,
   Barbering: IMG.barber1,
   Nails: IMG.nails1,
-  'Massage & Spa': IMG.spa1,
+  'Massage & Spa' /* i18n-exempt: stock-photo credit metadata */: IMG.spa1,
 };
 export const categoryImg = (name: string) => CATEGORY_IMG[name] ?? IMG.salon1;

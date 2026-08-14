@@ -6,7 +6,9 @@
 // somebody who is not signed in and did not choose to visit a website.
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { Trans, useTranslation } from 'react-i18next';
 import { Icon } from '../lib/icons';
+import LanguageSwitcher from '../components/LanguageSwitcher';
 import './auth.css';
 
 type Result =
@@ -16,6 +18,7 @@ type Result =
 
 export default function AppointmentAction() {
   const { action = '', token = '' } = useParams();
+  const { t } = useTranslation();
   const [result, setResult] = useState<Result>({ state: 'working' });
 
   const run = useCallback(async () => {
@@ -28,43 +31,45 @@ export default function AppointmentAction() {
       const body = await response.json();
 
       if (body.ok) setResult({ state: 'done', action, already: body.already === true });
-      else setResult({ state: 'failed', error: body.error ?? 'This link is no longer valid.' });
+      else setResult({ state: 'failed', error: body.error ?? t('action.invalidLink') });
     } catch {
       // Distinguished from "the link is invalid", because the two need
       // completely different things from the reader: one is retry, the other is
       // telephone the salon.
-      setResult({
-        state: 'failed',
-        error: 'We could not reach Blastek. Check your connection and try again.',
-      });
+      setResult({ state: 'failed', error: t('action.unreachable') });
     }
-  }, [action, token]);
+  }, [action, token, t]);
 
   useEffect(() => {
-    document.title = 'Blastek';
+    document.title = 'Blastek'; // i18n-exempt: brand name
     run();
   }, [run]);
 
   return (
     <div className="bungee blastek-home auth-shell wiz-shell">
-      <Link to="/" className="auth-back" aria-label="Blastek home">
+      <Link to="/" className="auth-back" aria-label={t('auth.backHome')}>
         <span className="brand-word">blastek</span>
       </Link>
+
+      {/* The one page in the app reached by somebody who never chose a language
+          here — it arrives from a WhatsApp message. The switcher matters more,
+          not less, for that reason. */}
+      <div className="auth-lang"><LanguageSwitcher /></div>
 
       <div className="auth-grid">
         <div className="auth-form-col">
           <div className="auth-form wiz-form">
-            {result.state === 'working' && <p className="auth-sub">One moment…</p>}
+            {result.state === 'working' && <p className="auth-sub">{t('action.working')}</p>}
 
             {result.state === 'done' && <Done action={result.action} already={result.already} />}
 
             {result.state === 'failed' && (
               <>
-                <h1 className="auth-title">That link did not work.</h1>
+                <h1 className="auth-title">{t('action.failedTitle')}</h1>
                 <p className="auth-sub">{result.error}</p>
-                <button className="auth-submit" onClick={run}>Try again</button>
+                <button className="auth-submit" onClick={run}>{t('common.retry')}</button>
                 <Link className="auth-toggle" to="/account">
-                  Or <b>open my appointments</b>
+                  <Trans i18nKey="action.openAppointments" components={{ 1: <b /> }} />
                 </Link>
               </>
             )}
@@ -76,6 +81,7 @@ export default function AppointmentAction() {
 }
 
 function Done({ action, already }: { action: string; already: boolean }) {
+  const { t } = useTranslation();
   const cancelled = action === 'cancel';
 
   return (
@@ -85,25 +91,21 @@ function Done({ action, already }: { action: string; already: boolean }) {
       </div>
 
       <h1 className="auth-title">
-        {cancelled ? 'Appointment cancelled.' : 'Appointment confirmed.'}
+        {cancelled ? t('action.cancelledTitle') : t('action.confirmedTitle')}
       </h1>
 
       <p className="auth-sub">
         {already
-          ? 'It was already done — nothing has changed.'
+          ? t('action.alreadyDone')
           : cancelled
-            ? 'The salon has been told, and the slot is free for somebody else.'
-            : 'The salon knows to expect you.'}
+            ? t('action.cancelledBody')
+            : t('action.confirmedBody')}
       </p>
 
-      {cancelled && (
-        <p className="auth-sub">
-          Changed your mind? Book again in a moment — the same slot may still be there.
-        </p>
-      )}
+      {cancelled && <p className="auth-sub">{t('action.rebookHint')}</p>}
 
       <Link className="auth-submit" to={cancelled ? '/venues' : '/account'}>
-        {cancelled ? 'Find another time' : 'My appointments'}
+        {cancelled ? t('action.findAnother') : t('action.myAppointments')}
       </Link>
     </>
   );

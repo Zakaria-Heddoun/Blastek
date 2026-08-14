@@ -8,17 +8,25 @@ defmodule Blastek.Salon.Category do
   use Ecto.Schema
   import Ecto.Changeset
 
+  # Per-locale overrides for `name`; `name` itself stays the fallback. See
+  # `Blastek.I18n`.
+  @translatable [:name]
+
   schema "service_categories" do
     field :name, :string
+    field :translations, :map, default: %{}
     field :sort, :integer, default: 0
     field :venue_id, :id
     has_many :services, Blastek.Salon.Service, foreign_key: :category_id
   end
 
+  def translatable_fields, do: @translatable
+
   def changeset(cat, attrs) do
     cat
-    |> cast(attrs, [:name, :sort, :venue_id])
+    |> cast(attrs, [:name, :translations, :sort, :venue_id])
     |> validate_required([:name, :venue_id])
+    |> Blastek.I18n.cast_translations(@translatable)
   end
 end
 
@@ -26,9 +34,12 @@ defmodule Blastek.Salon.Service do
   use Ecto.Schema
   import Ecto.Changeset
 
+  @translatable [:name, :description]
+
   schema "services" do
     field :name, :string
     field :description, :string, default: ""
+    field :translations, :map, default: %{}
     field :duration_min, :integer
     field :price_cents, :integer
     field :active, :boolean, default: true
@@ -40,11 +51,14 @@ defmodule Blastek.Salon.Service do
       on_replace: :delete
   end
 
+  def translatable_fields, do: @translatable
+
   def changeset(service, attrs) do
     service
     |> cast(attrs, [
       :name,
       :description,
+      :translations,
       :duration_min,
       :price_cents,
       :active,
@@ -52,6 +66,7 @@ defmodule Blastek.Salon.Service do
       :venue_id
     ])
     |> validate_required([:name, :duration_min, :price_cents, :category_id, :venue_id])
+    |> Blastek.I18n.cast_translations(@translatable)
     |> validate_number(:duration_min, greater_than: 0)
     |> validate_number(:price_cents, greater_than_or_equal_to: 0)
     # Without this, a category id that does not exist raises out of the resolver

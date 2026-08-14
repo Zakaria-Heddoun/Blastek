@@ -1,12 +1,13 @@
 // Team: staff cards with working-hours editor and service assignment.
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { gql } from '../lib/gql';
 import type { Staff, StaffHour } from '../lib/types';
 import { useAppData } from './AdminLayout';
 import MembersTab from './MembersTab';
 import { Modal, useToast } from '../components/ui';
 import { Icon } from '../lib/icons';
-import { fmtTime, initials, WEEKDAYS } from '../lib/format';
+import { fmtTime, initials, weekdaysShort } from '../lib/format';
 
 const defaultHours = (): StaffHour[] =>
   [...Array(7)].map((_, wd) => ({ weekday: wd, working: wd !== 0, startMin: 540, endMin: 1080 }));
@@ -18,6 +19,7 @@ function timeRange(from: number, to: number) {
 }
 
 export default function TeamPage() {
+  const { t } = useTranslation();
   const { staff, refresh } = useAppData();
   const [editing, setEditing] = useState<Staff | 'new' | null>(null);
   const [tab, setTab] = useState<'roster' | 'access'>('roster');
@@ -25,7 +27,7 @@ export default function TeamPage() {
   return (
     <>
       <div className="page-head">
-        <h1>Team</h1>
+        <h1>{t(`admin.team.title`)}</h1>
         {/* Two different things share this page: who takes appointments, and
             who can sign in. Tabs rather than one list, because conflating them
             is how "remove their access" deletes a year of history. */}
@@ -36,7 +38,7 @@ export default function TeamPage() {
             className={tab === 'roster' ? 'active' : ''}
             onClick={() => setTab('roster')}
           >
-            Roster
+            {t(`admin.team.roster`)}
           </button>
           <button
             role="tab"
@@ -44,13 +46,13 @@ export default function TeamPage() {
             className={tab === 'access' ? 'active' : ''}
             onClick={() => setTab('access')}
           >
-            Access
+            {t(`admin.team.access`)}
           </button>
         </div>
         <div className="grow" />
         {tab === 'roster' && (
           <button className="btn btn-primary" onClick={() => setEditing('new')}>
-            <Icon name="plus" size={16} /> Add team member
+            <Icon name="plus" size={16} /> {t(`admin.team.addMember`)}
           </button>
         )}
       </div>
@@ -71,9 +73,9 @@ export default function TeamPage() {
               {st.hours.filter((h) => h.working).length} working days · {st.serviceIds.length} services
             </div>
             <div className="fainttext">
-              {st.hours.filter((h) => h.working).map((h) => WEEKDAYS[h.weekday]).join(', ') || 'No working days'}
+              {st.hours.filter((h) => h.working).map((h) => weekdaysShort()[h.weekday]).join(', ') || t('admin.team.noWorkingDays')}
             </div>
-            <button className="btn btn-sm" style={{ alignSelf: 'flex-start' }} onClick={() => setEditing(st)}>Edit</button>
+            <button className="btn btn-sm" style={{ alignSelf: 'flex-start' }} onClick={() => setEditing(st)}>{t(`common.edit`)}</button>
           </div>
         ))}
         </div>
@@ -87,6 +89,7 @@ export default function TeamPage() {
 
 function StaffModal({ staff: st, onClose, onDone }:
   { staff: Staff | null; onClose: () => void; onDone: () => void }) {
+  const { t } = useTranslation();
   const { services } = useAppData();
   const toast = useToast();
   const [f, setF] = useState({
@@ -103,7 +106,7 @@ function StaffModal({ staff: st, onClose, onDone }:
 
   const save = async () => {
     try {
-      if (!f.name.trim()) throw new Error('Name is required');
+      if (!f.name.trim()) throw new Error(t('admin.team.nameRequired'));
       const vars = { ...f, hours, serviceIds };
       if (st) {
         await gql(
@@ -120,33 +123,33 @@ function StaffModal({ staff: st, onClose, onDone }:
               hours: $hours, serviceIds: $serviceIds) { id } }`,
           vars);
       }
-      toast('Team member saved');
+      toast(t('admin.team.saved'));
       onDone();
     } catch (e) { setErr((e as Error).message); }
   };
 
   return (
     <Modal onClose={onClose} wide>
-      <h2>{st ? `Edit ${st.name}` : 'Add team member'}</h2>
+      <h2>{st ? `Edit ${st.name}` : t('admin.team.addMemberTitle')}</h2>
       <div className="grid2">
-        <div><label>Name</label><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
-        <div><label>Role</label><input value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })} /></div>
-        <div><label>Calendar color</label>
+        <div><label>{t(`common.name`)}</label><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
+        <div><label>{t(`admin.team.role`)}</label><input value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })} /></div>
+        <div><label>{t(`admin.team.calendarColor`)}</label>
           <input type="color" style={{ height: 38, width: '100%' }} value={f.color}
             onChange={(e) => setF({ ...f, color: e.target.value })} /></div>
-        <div><label>Status</label>
+        <div><label>{t(`common.status`)}</label>
           <select value={f.active ? '1' : '0'} onChange={(e) => setF({ ...f, active: e.target.value === '1' })}>
-            <option value="1">Active</option><option value="0">Inactive</option>
+            <option value="1">{t(`admin.team.active`)}</option><option value="0">{t(`admin.team.inactive`)}</option>
           </select>
         </div>
       </div>
-      <label>Working hours</label>
+      <label>{t(`admin.team.workingHours`)}</label>
       <div className="hours-editor">
         {hours.map((h) => (
           <FragmentRow key={h.weekday} h={h} setHour={setHour} />
         ))}
       </div>
-      <label>Services they perform</label>
+      <label>{t(`admin.team.servicesPerformed`)}</label>
       <div className="checkgrid">
         {services.filter((s) => s.active).map((sv) => (
           <label key={sv.id}>
@@ -159,8 +162,8 @@ function StaffModal({ staff: st, onClose, onDone }:
       </div>
       <div className="err">{err}</div>
       <div className="actions">
-        <button className="btn" onClick={onClose}>Cancel</button>
-        <button className="btn btn-primary" onClick={save}>Save</button>
+        <button className="btn" onClick={onClose}>{t(`common.cancel`)}</button>
+        <button className="btn btn-primary" onClick={save}>{t(`common.save`)}</button>
       </div>
     </Modal>
   );
@@ -168,9 +171,10 @@ function StaffModal({ staff: st, onClose, onDone }:
 
 function FragmentRow({ h, setHour }:
   { h: StaffHour; setHour: (wd: number, patch: Partial<StaffHour>) => void }) {
+  const { t } = useTranslation();
   return (
     <>
-      <span className="wd">{WEEKDAYS[h.weekday]}</span>
+      <span className="wd">{weekdaysShort()[h.weekday]}</span>
       <label>
         <input type="checkbox" checked={h.working}
           onChange={(e) => setHour(h.weekday, { working: e.target.checked })} /> works

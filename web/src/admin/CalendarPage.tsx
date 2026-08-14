@@ -1,6 +1,7 @@
 // Calendar: day view (column per staff member) + week view (per staff),
 // appointment create/detail/checkout flows.
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { gql } from '../lib/gql';
 import { subscribe } from '../lib/live';
 import type { Appointment, Client, Staff } from '../lib/types';
@@ -9,7 +10,7 @@ import { Modal, StatusBadge, useToast } from '../components/ui';
 import { Icon } from '../lib/icons';
 import {
   addDays, fmtDateLong, fmtDateShort, fmtDur, fmtMAD, fmtTime,
-  centsToMad, madToCents, mondayOf, todayStr, WEEKDAYS,
+  centsToMad, madToCents, mondayOf, todayStr, weekdaysShort,
 } from '../lib/format';
 
 const DAY_START = 480, DAY_END = 1200;
@@ -34,6 +35,7 @@ function timeOptions(from = 480, to = 1185) {
 }
 
 export default function CalendarPage() {
+  const { t } = useTranslation();
   const { staff } = useAppData();
   const toast = useToast();
   const active = staff.filter((s) => s.active);
@@ -77,7 +79,12 @@ export default function CalendarPage() {
       // Only announce what a person did from outside this dashboard. Echoing
       // back the receptionist's own edit as a toast trains them to ignore it.
       if (appointment.source === 'online' && appointment.status !== 'cancelled') {
-        toast(`New online booking — ${appointment.client?.firstName ?? 'a customer'} at ${fmtTime(appointment.startMin)}`);
+        toast(
+          t('admin.calendar.newBookingToast', {
+            client: appointment.client?.firstName ?? t('admin.calendar.aCustomer'),
+            time: fmtTime(appointment.startMin),
+          }),
+        );
       }
 
       // Reload rather than splice: the change may be a cancellation, a move, or
@@ -104,7 +111,7 @@ export default function CalendarPage() {
       const ds = addDays(monday, i);
       return {
         key: ds, staff: st, date: ds, clickable: true,
-        header: <>{WEEKDAYS[new Date(ds + 'T12:00:00').getDay()]}<small>{ds.slice(8)}</small></>,
+        header: <>{weekdaysShort()[new Date(ds + 'T12:00:00').getDay()]}<small>{ds.slice(8)}</small></>,
         appts: appts.filter((a) => a.staff.id === st.id && a.date === ds),
       };
     });
@@ -125,16 +132,16 @@ export default function CalendarPage() {
   return (
     <>
       <div className="page-head">
-        <h1>Calendar</h1><div className="grow" />
+        <h1>{t(`admin.calendar.title`)}</h1><div className="grow" />
         <button className="btn btn-primary" onClick={() => setCreateAt({ staffId: active[0].id, date, startMin: 600 })}>
-          <Icon name="plus" size={16} /> New appointment
+          <Icon name="plus" size={16} /> {t(`admin.calendar.newAppointment`)}
         </button>
       </div>
       <div className="card">
         <div className="cal-toolbar pad" style={{ paddingBottom: 12 }}>
-          <button className="btn btn-sm" onClick={() => setDate(todayStr())}>Today</button>
-          <button className="btn btn-sm" aria-label="Previous" onClick={() => step(-1)}><Icon name="left" size={16} /></button>
-          <button className="btn btn-sm" aria-label="Next" onClick={() => step(1)}><Icon name="right" size={16} /></button>
+          <button className="btn btn-sm" onClick={() => setDate(todayStr())}>{t(`common.today`)}</button>
+          <button className="btn btn-sm" aria-label={t(`venues.previous`)} onClick={() => step(-1)}><Icon name="left" size={16} /></button>
+          <button className="btn btn-sm" aria-label={t(`venues.next`)} onClick={() => step(1)}><Icon name="right" size={16} /></button>
           <div className="cal-date">
             {view === 'day' ? fmtDateLong(date) : `${fmtDateShort(monday)} – ${fmtDateShort(addDays(monday, 6))}`}
           </div>
@@ -145,8 +152,8 @@ export default function CalendarPage() {
             </select>
           )}
           <div className="chip-row">
-            <button className={`chip ${view === 'day' ? 'active' : ''}`} onClick={() => setView('day')}>Day</button>
-            <button className={`chip ${view === 'week' ? 'active' : ''}`} onClick={() => setView('week')}>Week</button>
+            <button className={`chip ${view === 'day' ? 'active' : ''}`} onClick={() => setView('day')}>{t(`common.day`)}</button>
+            <button className={`chip ${view === 'week' ? 'active' : ''}`} onClick={() => setView('week')}>{t(`admin.calendar.week`)}</button>
           </div>
         </div>
         <div className="cal-wrap">
@@ -212,7 +219,7 @@ export default function CalendarPage() {
                       }}
                       onClick={(e) => { e.stopPropagation(); setDetail(a); }}>
                       <div className="t">{fmtTime(a.startMin)} · {a.status === 'no_show' ? 'No-show' : a.status}
-                        {a.source === 'online' ? ' · online' : ''}</div>
+                        {a.source === 'online' ? ` ${t('common.online')}` : ''}</div>
                       <div className="c">{clientName(a)}</div>
                       <div>{a.service.name}</div>
                     </div>
@@ -234,6 +241,7 @@ export default function CalendarPage() {
 /* ---------- new appointment ---------- */
 function NewApptModal({ preset, onClose, onDone }:
   { preset: { staffId: string; date: string; startMin: number }; onClose: () => void; onDone: () => void }) {
+  const { t } = useTranslation();
   const { staff, services } = useAppData();
   const toast = useToast();
   const active = staff.filter((s) => s.active);
@@ -269,21 +277,21 @@ function NewApptModal({ preset, onClose, onDone }:
       const vars: Record<string, unknown> = { staffId, serviceId, date, startMin: Number(startMin), notes };
       if (picked) vars.clientId = picked.id;
       else if (newClient && nc.firstName.trim()) vars.client = nc;
-      else throw new Error('Pick a client or add a new one.');
+      else throw new Error(t('admin.calendar.pickClient'));
       await gql(
         `mutation($clientId: ID, $client: ClientInput, $staffId: ID!, $serviceId: ID!, $date: Date!, $startMin: Int!, $notes: String) {
           createAppointment(clientId: $clientId, client: $client, staffId: $staffId, serviceId: $serviceId,
             date: $date, startMin: $startMin, notes: $notes) { id } }`, vars);
-      toast('Appointment booked');
+      toast(t('admin.calendar.booked'));
       onDone();
     } catch (e) { setErr((e as Error).message); }
   };
 
   return (
     <Modal onClose={onClose} wide>
-      <h2>New appointment</h2>
-      <label>Client</label>
-      <input placeholder="Search clients by name, phone, email…" value={q} onChange={(e) => setQ(e.target.value)} />
+      <h2>{t(`admin.calendar.newAppointment`)}</h2>
+      <label>{t(`admin.calendar.client`)}</label>
+      <input placeholder={t(`admin.calendar.searchClients`)} value={q} onChange={(e) => setQ(e.target.value)} />
       <div>
         {found.map((c) => (
           <button key={c.id} className="btn btn-sm" style={{ margin: '4px 4px 0 0' }}
@@ -294,42 +302,42 @@ function NewApptModal({ preset, onClose, onDone }:
       </div>
       {picked && <div className="fainttext" style={{ marginTop: 4 }}>✓ {picked.firstName} {picked.lastName}</div>}
       <button className="btn btn-sm" style={{ marginTop: 6 }} onClick={() => { setNewClient(true); setPicked(null); }}>
-        <Icon name="plus" size={14} /> New client
+        <Icon name="plus" size={14} /> {t(`admin.clients.newClient`)}
       </button>
       {newClient && (
         <div className="grid2">
-          <div><label>First name</label><input value={nc.firstName} onChange={(e) => setNc({ ...nc, firstName: e.target.value })} /></div>
-          <div><label>Last name</label><input value={nc.lastName} onChange={(e) => setNc({ ...nc, lastName: e.target.value })} /></div>
-          <div><label>Phone</label><input value={nc.phone} onChange={(e) => setNc({ ...nc, phone: e.target.value })} /></div>
-          <div><label>Email</label><input value={nc.email} onChange={(e) => setNc({ ...nc, email: e.target.value })} /></div>
+          <div><label>{t(`auth.firstName`)}</label><input value={nc.firstName} onChange={(e) => setNc({ ...nc, firstName: e.target.value })} /></div>
+          <div><label>{t(`auth.lastName`)}</label><input value={nc.lastName} onChange={(e) => setNc({ ...nc, lastName: e.target.value })} /></div>
+          <div><label>{t(`common.phone`)}</label><input value={nc.phone} onChange={(e) => setNc({ ...nc, phone: e.target.value })} /></div>
+          <div><label>{t(`common.email`)}</label><input value={nc.email} onChange={(e) => setNc({ ...nc, email: e.target.value })} /></div>
         </div>
       )}
       <div className="grid2">
-        <div><label>Team member</label>
+        <div><label>{t(`admin.calendar.teamMember`)}</label>
           <select value={staffId} onChange={(e) => setStaffId(e.target.value)}>
             {active.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </div>
-        <div><label>Service</label>
+        <div><label>{t(`admin.calendar.service`)}</label>
           <select value={serviceId} onChange={(e) => setServiceId(e.target.value)}>
             {list.map((sv) => (
               <option key={sv.id} value={sv.id}>{sv.name} · {fmtDur(sv.durationMin)} · {fmtMAD(sv.priceCents)}</option>
             ))}
           </select>
         </div>
-        <div><label>Date</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
-        <div><label>Time</label>
+        <div><label>{t(`common.date`)}</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+        <div><label>{t(`common.time`)}</label>
           <select value={startMin} onChange={(e) => setStartMin(Number(e.target.value))}>
             {timeOptions().map((m) => <option key={m} value={m}>{fmtTime(m)}</option>)}
           </select>
         </div>
       </div>
-      <label>Notes</label>
+      <label>{t(`common.notes`)}</label>
       <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
       <div className="err">{err}</div>
       <div className="actions">
-        <button className="btn" onClick={onClose}>Cancel</button>
-        <button className="btn btn-primary" onClick={save}>Save appointment</button>
+        <button className="btn" onClick={onClose}>{t(`common.cancel`)}</button>
+        <button className="btn btn-primary" onClick={save}>{t(`admin.calendar.saveAppointment`)}</button>
       </div>
     </Modal>
   );
@@ -338,6 +346,7 @@ function NewApptModal({ preset, onClose, onDone }:
 /* ---------- appointment detail ---------- */
 function ApptDetailModal({ appt: a, onClose, onDone, onCheckout }:
   { appt: Appointment; onClose: () => void; onDone: () => void; onCheckout: () => void }) {
+  const { t } = useTranslation();
   const { staff } = useAppData();
   const toast = useToast();
   const active = staff.filter((s) => s.active);
@@ -377,40 +386,40 @@ function ApptDetailModal({ appt: a, onClose, onDone, onCheckout }:
       </div>
       <div className="mutetext">{fmtDateLong(a.date)} · {fmtTime(a.startMin)} – {fmtTime(a.endMin)}</div>
       <div className="grid2">
-        <div><label>Date</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
-        <div><label>Time</label>
+        <div><label>{t(`common.date`)}</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+        <div><label>{t(`common.time`)}</label>
           <select value={startMin} onChange={(e) => setStartMin(Number(e.target.value))}>
             {timeOptions().map((m) => <option key={m} value={m}>{fmtTime(m)}</option>)}
           </select>
         </div>
-        <div><label>Team member</label>
+        <div><label>{t(`admin.calendar.teamMember`)}</label>
           <select value={staffId} onChange={(e) => setStaffId(e.target.value)}>
             {active.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </div>
-        <div><label>Price</label>
+        <div><label>{t(`common.price`)}</label>
           <input type="number" step="0.01" min="0" value={priceMad}
             onChange={(e) => setPriceMad(Number(e.target.value))} />
         </div>
       </div>
-      <label>Notes</label>
+      <label>{t(`common.notes`)}</label>
       <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
       <div className="err">{err}</div>
       <div className="actions" style={{ justifyContent: 'space-between' }}>
         <span>
           {open && <>
-            <button className="btn btn-sm btn-danger" onClick={() => patch({ status: 'cancelled' }, 'Cancelled')}>Cancel visit</button>{' '}
-            <button className="btn btn-sm btn-danger" onClick={() => patch({ status: 'no_show' }, 'Marked as no-show')}>No-show</button>
+            <button className="btn btn-sm btn-danger" onClick={() => patch({ status: 'cancelled' }, 'Cancelled')}>{t(`admin.calendar.cancelVisit`)}</button>{' '}
+            <button className="btn btn-sm btn-danger" onClick={() => patch({ status: 'no_show' }, t('admin.calendar.markedNoShow'))}>{t(`admin.calendar.noShow`)}</button>
           </>}
         </span>
         <span style={{ display: 'flex', gap: 8 }}>
-          <button className="btn" onClick={onClose}>Close</button>
+          <button className="btn" onClick={onClose}>{t(`common.close`)}</button>
           <button className="btn" onClick={() => patch(
             { date, startMin, staffId, priceCents: madToCents(priceMad), notes },
-            'Appointment updated')}>Save changes</button>
+            t('admin.calendar.updated'))}>{t(`admin.calendar.saveChanges`)}</button>
           {a.status === 'booked' &&
-            <button className="btn" onClick={() => patch({ status: 'confirmed' }, 'Confirmed')}>Confirm</button>}
-          {open && <button className="btn btn-primary" onClick={onCheckout}>Check out</button>}
+            <button className="btn" onClick={() => patch({ status: 'confirmed' }, 'Confirmed')}>{t(`admin.calendar.confirm`)}</button>}
+          {open && <button className="btn btn-primary" onClick={onCheckout}>{t(`admin.calendar.checkout`)}</button>}
         </span>
       </div>
     </Modal>
@@ -420,6 +429,7 @@ function ApptDetailModal({ appt: a, onClose, onDone, onCheckout }:
 /* ---------- checkout (POS) ---------- */
 function CheckoutModal({ appts, onClose, onDone }:
   { appts: Appointment[]; onClose: () => void; onDone: () => void }) {
+  const { t } = useTranslation();
   const toast = useToast();
   // All amounts here are centimes; only the custom-tip input is in MAD.
   const subtotalCents = appts.reduce((s, x) => s + x.priceCents, 0);
@@ -443,7 +453,7 @@ function CheckoutModal({ appts, onClose, onDone }:
 
   return (
     <Modal onClose={onClose}>
-      <h2>Checkout</h2>
+      <h2>{t(`admin.calendar.checkout`)}</h2>
       <div className="mutetext">{clientName(appts[0])} · {fmtDateShort(appts[0].date)}</div>
       <div className="hist" style={{ marginTop: 12 }}>
         {appts.map((x) => (
@@ -455,7 +465,7 @@ function CheckoutModal({ appts, onClose, onDone }:
           </div>
         ))}
       </div>
-      <label>Tip</label>
+      <label>{t(`common.tip`)}</label>
       <div className="chip-row">
         {[0, 10, 15, 20].map((p) => (
           <button key={p} className={`chip ${tipChip === p && custom === '' ? 'active' : ''}`}
@@ -464,34 +474,34 @@ function CheckoutModal({ appts, onClose, onDone }:
               setCustom('');
               setTipCents(Math.round((subtotalCents * p) / 100));
             }}>
-            {p === 0 ? 'No tip' : `${p}%`}
+            {p === 0 ? t('admin.calendar.noTip') : `${p}%`}
           </button>
         ))}
-        <input type="number" placeholder="Custom MAD" min="0" step="0.01" style={{ width: 120 }}
+        <input type="number" placeholder={t(`admin.calendar.customAmount`)} min="0" step="0.01" style={{ width: 120 }}
           value={custom}
           onChange={(e) => {
             setCustom(e.target.value);
             setTipCents(Math.max(0, madToCents(e.target.value)));
           }} />
       </div>
-      <label>Payment method</label>
+      <label>{t(`admin.calendar.paymentMethod`)}</label>
       <div className="chip-row">
         <button className={`chip ${method === 'card' ? 'active' : ''}`} onClick={() => setMethod('card')}>
-          <Icon name="card" size={15} /> Card</button>
+          <Icon name="card" size={15} /> {t(`admin.calendar.card`)}</button>
         <button className={`chip ${method === 'cash' ? 'active' : ''}`} onClick={() => setMethod('cash')}>
-          <Icon name="banknote" size={15} /> Cash</button>
+          <Icon name="banknote" size={15} /> {t(`admin.calendar.cash`)}</button>
       </div>
       <div className="summary-card" style={{ position: 'static', padding: '14px 0 0' }}>
-        <div className="line"><span>Subtotal</span><b>{fmtMAD(subtotalCents)}</b></div>
-        <div className="line"><span>Tip</span><b>{fmtMAD(tipCents)}</b></div>
+        <div className="line"><span>{t(`admin.calendar.subtotal`)}</span><b>{fmtMAD(subtotalCents)}</b></div>
+        <div className="line"><span>{t(`common.tip`)}</span><b>{fmtMAD(tipCents)}</b></div>
         <div className="line total">
-          <span>Total</span><span>{fmtMAD(subtotalCents + tipCents)}</span>
+          <span>{t(`common.total`)}</span><span>{fmtMAD(subtotalCents + tipCents)}</span>
         </div>
       </div>
       <div className="err">{err}</div>
       <div className="actions">
-        <button className="btn" onClick={onClose}>Back</button>
-        <button className="btn btn-accent" onClick={pay}>Complete sale</button>
+        <button className="btn" onClick={onClose}>{t(`common.back`)}</button>
+        <button className="btn btn-accent" onClick={pay}>{t(`admin.calendar.completeSale`)}</button>
       </div>
     </Modal>
   );

@@ -4,6 +4,7 @@
 // Ordered the way an owner thinks about it: who we are, what we look like,
 // where we are, when we are open, and how booking behaves.
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { gql } from '../lib/gql';
 import type { Photo, UploadTicket, VenueSummary } from '../lib/types';
 import { Icon } from '../lib/icons';
@@ -60,6 +61,7 @@ const ACCEPTED = 'image/jpeg,image/png,image/webp';
 const MAX_BYTES = 10 * 1024 * 1024;
 
 export default function SettingsPage() {
+  const { t } = useTranslation();
   const { settings } = useAppData();
   const toast = useToast();
 
@@ -80,7 +82,7 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
-    document.title = 'Settings — Blastek';
+    document.title = t('admin.settings.pageTitle');
     load();
   }, [load]);
 
@@ -146,7 +148,7 @@ export default function SettingsPage() {
 
     const next = [...ordered];
     [next[from], next[to]] = [next[to], next[from]];
-    act(REORDER, { ids: next.map((p) => p.id) }, 'Order saved');
+    act(REORDER, { ids: next.map((p) => p.id) }, t('admin.settings.orderSaved'));
   };
 
   const pinned = venue?.lat != null && venue?.lng != null;
@@ -155,7 +157,7 @@ export default function SettingsPage() {
     <div>
       <div className="page-head">
         <div>
-          <h1>Settings</h1>
+          <h1>{t(`admin.settings.title`)}</h1>
           <p className="mutetext">
             How {settings.businessName} appears to shoppers on the marketplace.
           </p>
@@ -169,10 +171,9 @@ export default function SettingsPage() {
 
       <section className="card pad set-section">
         <div className="set-section-head">
-          <h2>Photos</h2>
+          <h2>{t(`admin.settings.photos`)}</h2>
           <p className="mutetext">
-            The first photo is your cover — it is what appears on search results. JPEG, PNG or
-            WebP, up to 10 MB each.
+            {t(`admin.settings.photosBody`)}
           </p>
         </div>
 
@@ -185,10 +186,10 @@ export default function SettingsPage() {
           onChange={(e) => e.target.files?.length && upload(e.target.files)}
         />
 
-        {photos === null && <div className="empty">Loading…</div>}
+        {photos === null && <div className="empty">{t(`common.loading`)}</div>}
         {photos?.length === 0 && (
           <div className="empty">
-            No photos yet. Until you add some, your listing shows generic stock imagery.
+            {t(`admin.settings.noPhotos`)}
           </div>
         )}
 
@@ -204,23 +205,23 @@ export default function SettingsPage() {
               )}
 
               <figcaption>
-                {photo.kind === 'cover' && <span className="photo-badge">Cover</span>}
+                {photo.kind === 'cover' && <span className="photo-badge">{t(`admin.settings.cover`)}</span>}
 
                 <div className="photo-actions">
                   {photo.status === 'ready' && photo.kind !== 'cover' && (
                     <button
                       className="btn btn-sm"
                       disabled={busy}
-                      onClick={() => act(SET_COVER, { id: photo.id }, 'Cover updated')}
+                      onClick={() => act(SET_COVER, { id: photo.id }, t('admin.settings.coverUpdated'))}
                     >
-                      Make cover
+                      {t(`admin.settings.makeCover`)}
                     </button>
                   )}
                   {photo.status === 'ready' && (
                     <>
                       <button
                         className="icon-btn"
-                        aria-label="Move earlier"
+                        aria-label={t(`admin.settings.moveEarlier`)}
                         disabled={busy || index === 0}
                         onClick={() => move(photo, -1)}
                       >
@@ -228,7 +229,7 @@ export default function SettingsPage() {
                       </button>
                       <button
                         className="icon-btn"
-                        aria-label="Move later"
+                        aria-label={t(`admin.settings.moveLater`)}
                         disabled={busy}
                         onClick={() => move(photo, 1)}
                       >
@@ -239,9 +240,9 @@ export default function SettingsPage() {
                   <button
                     className="btn btn-sm btn-danger"
                     disabled={busy}
-                    onClick={() => act(DELETE, { id: photo.id }, 'Photo deleted')}
+                    onClick={() => act(DELETE, { id: photo.id }, t('admin.settings.photoDeleted'))}
                   >
-                    Delete
+                    {t(`common.delete`)}
                   </button>
                 </div>
               </figcaption>
@@ -252,10 +253,9 @@ export default function SettingsPage() {
 
       <section className="card pad set-section">
         <div className="set-section-head">
-          <h2>Location</h2>
+          <h2>{t(`admin.settings.location`)}</h2>
           <p className="mutetext">
-            Where customers should walk in. Click the map to move the pin — a pin you place by
-            hand is never overwritten by the address lookup.
+            {t(`admin.settings.locationBody`)}
           </p>
         </div>
 
@@ -263,18 +263,18 @@ export default function SettingsPage() {
           <button
             className="btn btn-sm"
             disabled={busy || !venue}
-            onClick={() => act(GEOCODE, { force: pinned }, 'Location updated from your address')}
+            onClick={() => act(GEOCODE, { force: pinned }, t('admin.settings.locatedFromAddress'))}
           >
-            <Icon name="pin" size={14} /> {pinned ? 'Re-locate from address' : 'Find from address'}
+            <Icon name="pin" size={14} /> {pinned ? t('admin.settings.relocate') : t('admin.settings.findFromAddress')}
           </button>
           <span className="fainttext">
-            {/* "Not loaded yet" and "genuinely unpinned" are different states;
+            {/* An unloaded venue and a genuinely unpinned one are different states;
                 conflating them tells an owner with a pin that they have none. */}
             {!venue
-              ? 'Loading location…'
+              ? t('admin.settings.loadingLocation')
               : pinned
                 ? `Pinned at ${venue.lat?.toFixed(5)}, ${venue.lng?.toFixed(5)}`
-                : 'No pin yet — your venue page shows an address card instead of a map.'}
+                : t('admin.settings.noPin')}
           </span>
         </div>
 
@@ -295,8 +295,8 @@ export default function SettingsPage() {
           zoom={pinned ? 16 : 12}
           height={320}
           fitToMarkers={false}
-          ariaLabel="Venue location picker"
-          onPick={(lat, lng) => act(SET_LOCATION, { lat, lng }, 'Pin moved')}
+          ariaLabel={t(`admin.settings.locationPicker`)}
+          onPick={(lat, lng) => act(SET_LOCATION, { lat, lng }, t('admin.settings.pinMoved'))}
         />
       </section>
 
@@ -306,7 +306,7 @@ export default function SettingsPage() {
 
       <section className="card pad set-section">
         <div className="set-section-head">
-          <h2>Listing</h2>
+          <h2>{t(`admin.settings.listing`)}</h2>
         </div>
 
         <label className="set-toggle">
@@ -316,12 +316,12 @@ export default function SettingsPage() {
             // Controlled from the server's value: an optimistic local toggle
             // would keep showing the new state after a failed write.
             checked={Boolean(venue?.womenOnly)}
-            onChange={(e) => act(SET_WOMEN_ONLY, { value: e.target.checked }, 'Listing updated')}
+            onChange={(e) => act(SET_WOMEN_ONLY, { value: e.target.checked }, t('admin.settings.listingUpdated'))}
           />
           <span>
-            <b>Women only</b>
+            <b>{t(`admin.settings.womenOnly`)}</b>
             <span className="fainttext">
-              Shoppers can filter for venues that serve women only.
+              {t(`admin.settings.womenOnlyHint`)}
             </span>
           </span>
         </label>
@@ -332,6 +332,7 @@ export default function SettingsPage() {
 
 /** Name, tagline, address — the details customers read. */
 function IdentitySection({ venue, onSaved }: { venue: VenueSummary; onSaved: () => void }) {
+  const { t } = useTranslation();
   const toast = useToast();
   const [form, setForm] = useState({
     name: venue.name ?? '',
@@ -350,7 +351,7 @@ function IdentitySection({ venue, onSaved }: { venue: VenueSummary; onSaved: () 
     setBusy(true);
     try {
       await gql(UPDATE_VENUE, { input: form });
-      toast('Details saved');
+      toast(t('admin.settings.detailsSaved'));
       onSaved();
     } catch (e) {
       toast((e as Error).message, true);
@@ -362,23 +363,23 @@ function IdentitySection({ venue, onSaved }: { venue: VenueSummary; onSaved: () 
   return (
     <section className="card pad set-section">
       <div className="set-section-head">
-        <h2>Your salon</h2>
-        <p className="mutetext">Name and contact details as customers see them.</p>
+        <h2>{t(`admin.settings.yourSalon`)}</h2>
+        <p className="mutetext">{t(`admin.settings.yourSalonSub`)}</p>
       </div>
 
       <div className="identity-form">
-        <label>Name<input value={form.name} onChange={set('name')} /></label>
+        <label>{t(`common.name`)}<input value={form.name} onChange={set('name')} /></label>
         <label>
-          Tagline
+          {t(`admin.settings.tagline`)}
           <input
             value={form.tagline}
             onChange={set('tagline')}
-            placeholder="Hair, nails and spa in one studio"
+            placeholder={t(`admin.settings.taglinePlaceholder`)}
           />
         </label>
-        <label>Address<input value={form.address} onChange={set('address')} /></label>
-        <label>City<input value={form.city} onChange={set('city')} /></label>
-        <label>Phone<input value={form.phone} onChange={set('phone')} /></label>
+        <label>{t(`admin.settings.address`)}<input value={form.address} onChange={set('address')} /></label>
+        <label>{t(`admin.settings.city`)}<input value={form.city} onChange={set('city')} /></label>
+        <label>{t(`admin.settings.phone`)}<input value={form.phone} onChange={set('phone')} /></label>
 
         <button className="btn btn-primary" disabled={busy || !form.name.trim()} onClick={save}>
           {busy ? 'Saving…' : 'Save'}
@@ -396,6 +397,7 @@ function IdentitySection({ venue, onSaved }: { venue: VenueSummary; onSaved: () 
  * from fixing a typo in the tagline.
  */
 function BookingRulesSection({ venue, onSaved }: { venue: VenueSummary; onSaved: () => void }) {
+  const { t } = useTranslation();
   const toast = useToast();
   const s = (venue.settingsJson ?? {}) as Record<string, unknown>;
 
@@ -416,7 +418,7 @@ function BookingRulesSection({ venue, onSaved }: { venue: VenueSummary; onSaved:
     setBusy(true);
     try {
       await gql(UPDATE_SETTINGS, { input: rules });
-      toast('Booking rules saved');
+      toast(t('admin.settings.rulesSaved'));
       onSaved();
     } catch (e) {
       toast((e as Error).message, true);
@@ -428,15 +430,15 @@ function BookingRulesSection({ venue, onSaved }: { venue: VenueSummary; onSaved:
   return (
     <section className="card pad set-section">
       <div className="set-section-head">
-        <h2>Booking rules</h2>
+        <h2>{t(`admin.settings.bookingRules`)}</h2>
         <p className="mutetext">
-          What online customers are offered, and what they can undo without telephoning you.
+          {t(`admin.settings.rulesBody`)}
         </p>
       </div>
 
       <div className="identity-form">
         <label>
-          Booking slots every
+          {t(`admin.settings.slotEvery`)}
           <select value={rules.slotStepMin} onChange={pick('slotStepMin')}>
             {[5, 10, 15, 20, 30, 60].map((m) => (
               <option key={m} value={m}>{m} minutes</option>
@@ -445,7 +447,7 @@ function BookingRulesSection({ venue, onSaved }: { venue: VenueSummary; onSaved:
         </label>
 
         <label>
-          Bookable up to
+          {t(`admin.settings.bookableUpTo`)}
           <select value={rules.bookingHorizonDays} onChange={pick('bookingHorizonDays')}>
             {[14, 30, 60, 90, 180, 365].map((d) => (
               <option key={d} value={d}>{d} days ahead</option>
@@ -454,9 +456,9 @@ function BookingRulesSection({ venue, onSaved }: { venue: VenueSummary; onSaved:
         </label>
 
         <label>
-          Notice needed
+          {t(`admin.settings.noticeNeeded`)}
           <select value={rules.bookingLeadMin} onChange={pick('bookingLeadMin')}>
-            <option value={0}>None — up to the last minute</option>
+            <option value={0}>{t(`admin.settings.leadNone`)}</option>
             {[30, 60, 120, 240, 480, 1440].map((m) => (
               <option key={m} value={m}>
                 {m < 60 ? `${m} minutes` : `${m / 60} hour${m === 60 ? '' : 's'}`}
@@ -466,12 +468,12 @@ function BookingRulesSection({ venue, onSaved }: { venue: VenueSummary; onSaved:
         </label>
 
         <label>
-          Customers may cancel online until
+          {t(`admin.settings.cancelUntil`)}
           <select
             value={rules.cancellationWindowHours}
             onChange={pick('cancellationWindowHours')}
           >
-            <option value={0}>Any time before the appointment</option>
+            <option value={0}>{t(`admin.settings.cancelAnyTime`)}</option>
             {[2, 4, 12, 24, 48, 72].map((h) => (
               <option key={h} value={h}>{h} hours before</option>
             ))}
@@ -487,9 +489,9 @@ function BookingRulesSection({ venue, onSaved }: { venue: VenueSummary; onSaved:
             }
           />
           <span>
-            Confirm online bookings automatically
+            {t(`admin.settings.autoConfirm`)}
             <span className="fainttext">
-              Off means they arrive as requests for you to confirm on the calendar.
+              {t(`admin.settings.autoConfirmHint`)}
             </span>
           </span>
         </label>

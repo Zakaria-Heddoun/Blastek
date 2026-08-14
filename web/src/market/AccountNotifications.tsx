@@ -7,6 +7,7 @@
 // to prevent. The copy says so plainly rather than leaving the absence to be
 // noticed.
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { gql } from '../lib/gql';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../components/ui';
@@ -18,6 +19,7 @@ const UPDATE = `mutation($reminders: Boolean, $marketing: Boolean) {
 }`;
 
 export default function AccountNotifications() {
+  const { t } = useTranslation();
   const { user, refreshMe } = useAuth();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
@@ -30,7 +32,7 @@ export default function AccountNotifications() {
     try {
       await gql(UPDATE, { [key]: value });
       await refreshMe();
-      toast(value ? 'Turned on' : 'Turned off');
+      toast(t('account.prefsSaved'));
     } catch (e) {
       toast((e as Error).message, true);
     } finally {
@@ -42,29 +44,26 @@ export default function AccountNotifications() {
 
   return (
     <>
-      <h2 className="section-title">Messages</h2>
+      <h2 className="section-title">{t(`account.notificationsTitle`)}</h2>
 
       <div className="card pad acct-prefs">
         <Toggle
-          label="Appointment reminders"
-          hint="The evening before, and again a few hours ahead."
+          label={t(`account.remindersLabel`)}
+          hint={t(`account.remindersHint`)}
           checked={prefs.reminders !== false}
           busy={busy}
           onChange={set('reminders')}
         />
 
         <Toggle
-          label="Offers and news"
-          hint="Occasional messages about salons near you. Off by default."
+          label={t(`account.marketingLabel`)}
+          hint={t(`account.marketingHint`)}
           checked={prefs.marketing === true}
           busy={busy}
           onChange={set('marketing')}
         />
 
-        <p className="fainttext acct-prefs-note">
-          Booking confirmations, cancellations and sign-in codes are always sent — they are the
-          record of something you just did.
-        </p>
+        <p className="fainttext acct-prefs-note">{t(`account.notificationsBody`)}</p>
       </div>
     </>
   );

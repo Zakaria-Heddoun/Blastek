@@ -248,7 +248,7 @@
   width: 7px;
   height: 7px;
   border-radius: 999px;
-  margin-right: 9px;
+  margin-inline-end: 9px;
   background: var(--fg-3);
   opacity: 0.45;
 }
@@ -454,7 +454,7 @@
 .mkt .vcard-thumb { position: relative; }
 .mkt .vcard-dist {
   position: absolute;
-  left: 10px;
+  inset-inline-start: 10px;
   bottom: 10px;
   padding: 3px 8px;
   border-radius: 999px;
@@ -481,7 +481,7 @@
 }
 
 .mkt .sess-current {
-  margin-left: 8px;
+  margin-inline-start: 8px;
   padding: 2px 8px;
   border-radius: 999px;
   background: var(--panel);

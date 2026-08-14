@@ -1,5 +1,6 @@
 // Reports: stat tiles, single-series daily revenue bars, top services/staff.
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { gql } from '../lib/gql';
 import type { ReportSummary } from '../lib/types';
 import { addDays, fmtDateShort, fmtMAD, todayStr } from '../lib/format';
@@ -15,6 +16,7 @@ const QUERY = `query($days: Int) {
 }`;
 
 export default function ReportsPage() {
+  const { t } = useTranslation();
   const [days, setDays] = useState(30);
   const [r, setR] = useState<ReportSummary | null>(null);
   const [tip, setTip] = useState<{ x: number; y: number; text: string } | null>(null);
@@ -24,7 +26,7 @@ export default function ReportsPage() {
     gql<{ reportSummary: ReportSummary }>(QUERY, { days }).then((d) => setR(d.reportSummary));
   }, [days]);
 
-  if (!r) return <div className="empty">Loading…</div>;
+  if (!r) return <div className="empty">{t(`common.loading`)}</div>;
 
   const noShowRate = r.appointments.total
     ? Math.round((r.appointments.noShows / r.appointments.total) * 100) : 0;
@@ -42,7 +44,7 @@ export default function ReportsPage() {
   return (
     <>
       <div className="page-head">
-        <h1>Reports</h1><div className="grow" />
+        <h1>{t(`admin.reports.title`)}</h1><div className="grow" />
         <div className="chip-row">
           {[7, 30, 90].map((d) => (
             <button key={d} className={`chip ${days === d ? 'active' : ''}`} onClick={() => setDays(d)}>
@@ -52,12 +54,12 @@ export default function ReportsPage() {
         </div>
       </div>
       <div className="tiles">
-        <div className="card tile"><div className="v">{fmtMAD(r.revenueCents)}</div><div className="l">Revenue</div></div>
-        <div className="card tile"><div className="v">{r.salesCount}</div><div className="l">Sales</div></div>
-        <div className="card tile"><div className="v">{fmtMAD(r.tipsCents)}</div><div className="l">Tips collected</div></div>
-        <div className="card tile"><div className="v">{r.appointments.completed}</div><div className="l">Appointments completed</div></div>
-        <div className="card tile"><div className="v">{noShowRate}%</div><div className="l">No-show rate</div></div>
-        <div className="card tile"><div className="v">{onlineShare}%</div><div className="l">Booked online</div></div>
+        <div className="card tile"><div className="v">{fmtMAD(r.revenueCents)}</div><div className="l">{t(`admin.reports.revenue`)}</div></div>
+        <div className="card tile"><div className="v">{r.salesCount}</div><div className="l">{t(`admin.sales.title`)}</div></div>
+        <div className="card tile"><div className="v">{fmtMAD(r.tipsCents)}</div><div className="l">{t(`admin.reports.tips`)}</div></div>
+        <div className="card tile"><div className="v">{r.appointments.completed}</div><div className="l">{t(`admin.reports.completed`)}</div></div>
+        <div className="card tile"><div className="v">{noShowRate}%</div><div className="l">{t(`admin.reports.noShowRate`)}</div></div>
+        <div className="card tile"><div className="v">{onlineShare}%</div><div className="l">{t(`admin.reports.bookedOnline`)}</div></div>
       </div>
       <div className="card pad">
         <h2 style={{ fontSize: 16, marginBottom: 14 }}>Daily revenue — last {days} days</h2>
@@ -99,9 +101,9 @@ export default function ReportsPage() {
       </div>
       <div className="two-col">
         <div className="card">
-          <div className="pad" style={{ paddingBottom: 0 }}><h2 style={{ fontSize: 16 }}>Top services</h2></div>
+          <div className="pad" style={{ paddingBottom: 0 }}><h2 style={{ fontSize: 16 }}>{t(`admin.reports.topServices`)}</h2></div>
           <table className="list">
-            <thead><tr><th>Service</th><th className="num">Sold</th><th className="num">Revenue</th></tr></thead>
+            <thead><tr><th>{t(`admin.reports.service`)}</th><th className="num">{t(`admin.reports.sold`)}</th><th className="num">{t(`admin.reports.revenue`)}</th></tr></thead>
             <tbody>
               {r.topServices.map((s) => (
                 <tr key={s.name}><td>{s.name}</td>
@@ -111,9 +113,9 @@ export default function ReportsPage() {
           </table>
         </div>
         <div className="card">
-          <div className="pad" style={{ paddingBottom: 0 }}><h2 style={{ fontSize: 16 }}>Team performance</h2></div>
+          <div className="pad" style={{ paddingBottom: 0 }}><h2 style={{ fontSize: 16 }}>{t(`admin.reports.teamPerformance`)}</h2></div>
           <table className="list">
-            <thead><tr><th>Team member</th><th className="num">Completed</th><th className="num">Revenue</th></tr></thead>
+            <thead><tr><th>{t(`admin.reports.teamMember`)}</th><th className="num">{t(`admin.reports.completedCol`)}</th><th className="num">{t(`admin.reports.revenue`)}</th></tr></thead>
             <tbody>
               {r.topStaff.map((s) => (
                 <tr key={s.name}>

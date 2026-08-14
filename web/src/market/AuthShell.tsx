@@ -2,6 +2,7 @@
 // AuthPage and the professional-side ProLogin. They differ only in copy, which
 // fields show, and what happens after a successful submit.
 import { useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -137,9 +138,12 @@ export default function AuthShell({
   /** Rendered above the form — the sign-in method switcher. */
   above?: ReactNode;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className="bungee blastek-home auth-shell">
-      <Link to="/" className="auth-back" aria-label="Blastek home">
+      {/* i18n-exempt: the brand name is the same word in every language. */}
+      <Link to="/" className="auth-back" aria-label="Blastek">
         <span className="brand-word">blastek</span>
       </Link>
 
@@ -174,7 +178,7 @@ export default function AuthShell({
                 <div className="auth-err">{form.err}</div>
 
                 <button className="auth-submit" disabled={form.busy} onClick={form.submit}>
-                  {form.busy ? 'Please wait…' : submitLabel}
+                  {form.busy ? t('common.pleaseWait') : submitLabel}
                 </button>
               </>
             )}
@@ -189,7 +193,7 @@ export default function AuthShell({
               {toggle}
             </button>
 
-            {demo && <div className="auth-demo">Demo — {demo}</div>}
+            {demo && <div className="auth-demo">{t(`auth.demoLabel`, { demo })}</div>}
           </motion.div>
         </div>
       </div>

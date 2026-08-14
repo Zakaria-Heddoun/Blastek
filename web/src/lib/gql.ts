@@ -1,4 +1,5 @@
 // Minimal GraphQL client over fetch — Vite proxies /api to the Phoenix server.
+import i18n from './i18n';
 
 // Thrown when the server never gave a usable answer: offline, 5xx, or a body
 // that isn't GraphQL. In all three cases the request's fate is unknown, as
@@ -65,22 +66,26 @@ export async function gql<T>(query: string, variables: Record<string, unknown> =
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        // Which language to resolve owner-written content in — service names,
+        // taglines. The server prefers a signed-in user's saved choice over
+        // this, so it matters most for visitors who have not signed in.
+        'Accept-Language': i18n.resolvedLanguage ?? 'fr',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(venue ? { 'X-Venue-Slug': venue } : {}),
       },
       body: JSON.stringify({ query, variables }),
     });
   } catch {
-    throw new ConnectionError('Could not reach the server');
+    throw new ConnectionError(i18n.t('errors.offline'));
   }
 
   const json: GqlResponse<T> | null = await res.json().catch(() => null);
   if (json?.errors?.length) throw new GqlError(json.errors);
   if (res.status === 429) {
-    throw new GqlError([{ message: 'Too many requests — please slow down.', code: 'rate_limited' }]);
+    throw new GqlError([{ message: i18n.t('errors.rateLimited'), code: 'rate_limited' }]);
   }
   if (res.status >= 500) throw new ConnectionError(`The server is unavailable (${res.status})`);
   if (!res.ok) throw new Error(`Request failed (${res.status})`);
-  if (json?.data == null) throw new ConnectionError('The server returned a malformed response');
+  if (json?.data == null) throw new ConnectionError(i18n.t('errors.malformed'));
   return json.data;
 }

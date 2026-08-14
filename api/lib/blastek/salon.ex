@@ -44,6 +44,14 @@ defmodule Blastek.Salon do
     |> reindexed(venue_id)
   end
 
+  @doc "Renames a category, in one language or several (E7-T7)."
+  def update_category(venue_id, id, attrs) do
+    get_scoped!(Repo, Category, id, venue_id)
+    |> Category.changeset(attrs)
+    |> Repo.update()
+    |> reindexed(venue_id)
+  end
+
   def list_services(venue_id, opts \\ []) do
     q = from s in scope(Service, venue_id), order_by: [s.category_id, s.id], preload: [:staff]
     q = if opts[:active_only], do: from(s in q, where: s.active), else: q
@@ -1162,6 +1170,9 @@ defmodule Blastek.Salon do
       settings: %{
         business_name: venue.name,
         business_tagline: venue.tagline,
+        # Carried through so the GraphQL layer can resolve the tagline in the
+        # reader's language; the domain does not know who is asking.
+        translations: venue.translations || %{},
         business_address: venue.address,
         business_phone: venue.phone
       },

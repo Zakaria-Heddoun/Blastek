@@ -3,6 +3,7 @@
 // "Log out the device I lost" is the reason sessions became server-side rows at
 // all, so this list is the visible half of that work.
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { gql } from '../lib/gql';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../components/ui';
@@ -18,6 +19,7 @@ interface Session {
 const SESSIONS = `{ mySessions { id device ip lastUsedAt current } }`;
 
 export default function AccountSecurity() {
+  const { t } = useTranslation();
   const { user, refreshMe } = useAuth();
   const toast = useToast();
 
@@ -56,12 +58,12 @@ export default function AccountSecurity() {
   const revoke = (id: string) =>
     act(async () => {
       await gql(`mutation($id: ID!) { revokeSession(id: $id) }`, { id });
-    }, 'Device signed out');
+    }, t('account.deviceSignedOut'));
 
   const revokeOthers = () =>
     act(async () => {
       await gql(`mutation { revokeOtherSessions }`);
-    }, 'Other devices signed out');
+    }, t('account.othersSignedOut'));
 
   const savePassword = () =>
     act(async () => {
@@ -75,32 +77,32 @@ export default function AccountSecurity() {
       setCurrent('');
       setNext('');
       await refreshMe();
-    }, 'Password updated');
+    }, t('account.passwordUpdated'));
 
   const others = (sessions ?? []).filter((s) => !s.current).length;
 
   return (
     <>
-      <h2 className="section-title">Devices</h2>
+      <h2 className="section-title">{t(`account.devices`)}</h2>
       <p className="mutetext" style={{ marginTop: 0 }}>
         Signed in on {sessions?.length ?? 0} device{sessions?.length === 1 ? '' : 's'}. Do not
         recognise one? Sign it out — it stops working immediately.
       </p>
 
-      {sessions === null && <div className="empty">Loading…</div>}
+      {sessions === null && <div className="empty">{t(`common.loading`)}</div>}
 
       {sessions?.map((session) => (
         <div key={session.id} className="card pad sess-row">
           <div className="grow">
             <b>{session.device}</b>
-            {session.current && <span className="sess-current">This device</span>}
+            {session.current && <span className="sess-current">{t(`account.thisDevice`)}</span>}
             <div className="fainttext">
               {session.ip || 'unknown address'} · last used {relative(session.lastUsedAt)}
             </div>
           </div>
           {!session.current && (
             <button className="btn btn-sm btn-danger" disabled={busy} onClick={() => revoke(session.id)}>
-              Sign out
+              {t(`common.signOut`)}
             </button>
           )}
         </div>
@@ -108,21 +110,21 @@ export default function AccountSecurity() {
 
       {others > 0 && (
         <button className="btn btn-sm" disabled={busy} onClick={revokeOthers}>
-          Sign out all other devices
+          {t(`account.signOutAll`)}
         </button>
       )}
 
-      <h2 className="section-title">Password</h2>
+      <h2 className="section-title">{t(`account.passwordSection`)}</h2>
       <p className="mutetext" style={{ marginTop: 0 }}>
         {user?.hasPassword
-          ? 'Changing it signs you out of every other device.'
-          : 'You sign in with a code. Setting a password is optional — you can keep using codes.'}
+          ? t('account.changeSignsOut')
+          : t('account.codeUserHint')}
       </p>
 
       <div className="card pad sess-password">
         {user?.hasPassword && (
           <div className="auth-field">
-            <label htmlFor="current-password">Current password</label>
+            <label htmlFor="current-password">{t(`account.currentPassword`)}</label>
             <input
               id="current-password"
               type="password"
@@ -135,7 +137,7 @@ export default function AccountSecurity() {
 
         <div className="auth-field">
           <label htmlFor="next-password">
-            {user?.hasPassword ? 'New password' : 'Password'} — min 8 characters
+            {user?.hasPassword ? t('auth.newPasswordLabel') : 'Password'} — min 8 characters
           </label>
           <input
             id="next-password"
@@ -151,7 +153,7 @@ export default function AccountSecurity() {
           disabled={busy || next.length < 8 || (Boolean(user?.hasPassword) && !current)}
           onClick={savePassword}
         >
-          {user?.hasPassword ? 'Change password' : 'Set password'}
+          {user?.hasPassword ? t('account.changePassword') : t('account.setPassword')}
         </button>
       </div>
     </>

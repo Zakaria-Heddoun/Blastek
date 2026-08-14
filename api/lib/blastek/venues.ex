@@ -5,10 +5,17 @@ defmodule Blastek.Venues.Venue do
 
   @statuses ~w(pending active suspended)
 
+  # `name` is deliberately not translatable: it is the business's own name, it
+  # is what the slug and every search index are built from, and a salon called
+  # "Le Salon Anfa" is called that in Arabic too. The tagline is marketing copy
+  # and genuinely reads differently per language.
+  @translatable [:tagline]
+
   schema "venues" do
     field :slug, :string
     field :name, :string
     field :tagline, :string, default: ""
+    field :translations, :map, default: %{}
     field :address, :string, default: ""
     field :city, :string, default: ""
     field :phone, :string, default: ""
@@ -27,12 +34,15 @@ defmodule Blastek.Venues.Venue do
     timestamps(type: :naive_datetime)
   end
 
+  def translatable_fields, do: @translatable
+
   def changeset(venue, attrs) do
     venue
     |> cast(attrs, [
       :slug,
       :name,
       :tagline,
+      :translations,
       :address,
       :city,
       :phone,
@@ -44,6 +54,7 @@ defmodule Blastek.Venues.Venue do
       :rejected_reason
     ])
     |> validate_required([:name])
+    |> Blastek.I18n.cast_translations(@translatable)
     |> validate_number(:lat, greater_than_or_equal_to: -90, less_than_or_equal_to: 90)
     |> validate_number(:lng, greater_than_or_equal_to: -180, less_than_or_equal_to: 180)
     |> maybe_put_slug()

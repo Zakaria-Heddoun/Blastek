@@ -5,6 +5,7 @@
 // icons are referenced by relative URL and break under a bundler, and drawing
 // them in CSS means they can be branded and given a real focus ring.
 import { useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { MapContainer, TileLayer, Marker, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -69,7 +70,7 @@ export default function VenueMap({
   onPick,
   height = 320,
   fitToMarkers = true,
-  ariaLabel = 'Map',
+  ariaLabel,
 }: {
   markers: MapMarker[];
   center?: [number, number];
@@ -79,6 +80,8 @@ export default function VenueMap({
   fitToMarkers?: boolean;
   ariaLabel?: string;
 }) {
+  const { t } = useTranslation();
+
   const initialCenter = useMemo<[number, number]>(() => {
     if (center) return center;
     if (markers.length > 0) return [markers[0].lat, markers[0].lng];
@@ -86,7 +89,7 @@ export default function VenueMap({
   }, [center, markers]);
 
   return (
-    <div className="venue-map" style={{ height }} role="region" aria-label={ariaLabel}>
+    <div className="venue-map" style={{ height }} role="region" aria-label={ariaLabel ?? t(`common.mapLabel`)}>
       <MapContainer
         center={initialCenter}
         zoom={zoom}
@@ -96,6 +99,7 @@ export default function VenueMap({
         <TileLayer
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           // Required by the OSM tile usage policy.
+          // i18n-exempt: a legal attribution naming a project, not copy.
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           maxZoom={19}
         />
@@ -120,7 +124,7 @@ export default function VenueMap({
       </MapContainer>
 
       {onPick && (
-        <p className="venue-map-hint">Click the map to move the pin to your entrance.</p>
+        <p className="venue-map-hint">{t(`onboard.mapHint`)}</p>
       )}
     </div>
   );

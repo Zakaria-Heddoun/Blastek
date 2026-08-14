@@ -4,6 +4,8 @@
 // (reviews), and can I actually get there (about, map, hours).
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { useVenue } from './MarketLayout';
 import { IMG } from './assets';
 import { Icon, StarRow } from '../lib/icons';
@@ -11,7 +13,7 @@ import { useToast } from '../components/ui';
 import VenueMap from '../components/VenueMap';
 import type { Photo } from '../lib/types';
 import {
-  fmtDateShort, fmtDur, fmtMAD, fmtTime, initials, WEEKDAYS_FULL,
+  fmtDateShort, fmtDur, fmtMAD, fmtTime, initials, weekdaysFull,
 } from '../lib/format';
 
 // Shown only until a venue uploads its own photos. Deliberately generic stock:
@@ -31,7 +33,7 @@ const PLACEHOLDER_GALLERY = [
  * and get `card`. Serving `hero` to all five is how a venue page ends up costing
  * several megabytes on a phone.
  */
-function galleryTiles(photos: Photo[] | undefined, venueName: string) {
+function galleryTiles(photos: Photo[] | undefined, venueName: string, t: TFunction) {
   if (!photos || photos.length === 0) return PLACEHOLDER_GALLERY;
 
   return photos.slice(0, 5).map((photo, index) => ({
@@ -40,28 +42,35 @@ function galleryTiles(photos: Photo[] | undefined, venueName: string) {
       photo.urls?.card ||
       photo.urls?.original ||
       '',
-    alt: photo.alt || `${venueName} photo ${index + 1}`,
+    alt: photo.alt || t('venue.photoAlt', { name: venueName, index: index + 1 }),
   }));
 }
 
 /** Minutes-from-midnight comparison against the wall clock. */
-function openState(hours: { open: number | null; close: number | null }[], now: Date) {
+function openState(
+  hours: { open: number | null; close: number | null }[],
+  now: Date,
+  t: TFunction,
+) {
   const today = hours[now.getDay()];
   const nowMin = now.getHours() * 60 + now.getMinutes();
 
-  if (today?.open == null || today.close == null) return { open: false, label: 'Closed today' };
+  if (today?.open == null || today.close == null) {
+    return { open: false, label: t('venue.closedToday') };
+  }
 
   if (nowMin < today.open) {
-    return { open: false, label: `Opens at ${fmtTime(today.open, true)}` };
+    return { open: false, label: t('venue.opensAt', { time: fmtTime(today.open, true) }) };
   }
   if (nowMin >= today.close) {
-    return { open: false, label: `Closed · opens tomorrow` };
+    return { open: false, label: t('venue.closedOpensTomorrow') };
   }
-  return { open: true, label: `Open until ${fmtTime(today.close, true)}` };
+  return { open: true, label: t('venue.openUntil', { time: fmtTime(today.close, true) }) };
 }
 
 export default function VenuePage() {
   const { venue: v, slug, booking } = useVenue();
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const toast = useToast();
   const [params] = useSearchParams();
@@ -80,7 +89,8 @@ export default function VenuePage() {
   }, [name, focusSvc]);
 
   const now = new Date();
-  const status = openState(v.hours, now);
+  const status = openState(v.hours, now, t);
+  const weekdayNames = weekdaysFull();
   const cats = focusCat ? v.categories.filter((c) => c.id === focusCat) : v.categories;
 
   const startFlow = (serviceId: string | null) => {
@@ -103,7 +113,7 @@ export default function VenuePage() {
     )}`;
 
   const pinned = v.lat != null && v.lng != null;
-  const tiles = galleryTiles(v.photos, name);
+  const tiles = galleryTiles(v.photos, name, t);
 
   const share = async () => {
     const url = window.location.href;
@@ -112,7 +122,7 @@ export default function VenuePage() {
       if (navigator.share) await navigator.share({ title: name, url });
       else {
         await navigator.clipboard.writeText(url);
-        toast('Link copied');
+        toast(t('venue.linkCopied'));
       }
     } catch {
       // A cancelled share sheet is not an error worth reporting.
@@ -124,10 +134,10 @@ export default function VenuePage() {
   return (
     <>
       <div className="bk-shell venue-top">
-        <nav className="crumbs" aria-label="Breadcrumb">
-          <Link to="/">Home</Link>
+        <nav className="crumbs" aria-label={t('venue.breadcrumb')}>
+          <Link to="/">{t('nav.home')}</Link>
           <span aria-hidden="true">›</span>
-          <Link to="/venues">Venues</Link>
+          <Link to="/venues">{t('nav.venues')}</Link>
           {v.city && (
             <>
               <span aria-hidden="true">›</span>
@@ -156,7 +166,7 @@ export default function VenuePage() {
                   <span className="dot-sep" aria-hidden="true">·</span>
                   <span>{address}</span>
                   <a className="linky" href={directionsUrl} target="_blank" rel="noreferrer">
-                    Get directions
+                    {t('venue.getDirections')}
                   </a>
                 </>
               )}
@@ -164,7 +174,12 @@ export default function VenuePage() {
           </div>
 
           <div className="venue-actions">
-            <button className="icon-btn" onClick={share} aria-label="Share this venue" title="Share">
+            <button
+              className="icon-btn"
+              onClick={share}
+              aria-label={t('venue.shareLabel')}
+              title={t('venue.share')}
+            >
               <Icon name="external" size={17} />
             </button>
           </div>
@@ -187,9 +202,11 @@ export default function VenuePage() {
 
       <div className="bk-body" style={{ paddingTop: 8 }}>
         <div>
-          <h2 className="section-title">Treatments</h2>
+          <h2 className="section-title">{t('venue.treatments')}</h2>
           <div className="chip-row" style={{ marginBottom: 14 }}>
-            <Link className={`chip ${!focusCat ? 'active' : ''}`} to={`/v/${slug}`}>All</Link>
+            <Link className={`chip ${!focusCat ? 'active' : ''}`} to={`/v/${slug}`}>
+              {t('common.all')}
+            </Link>
             {v.categories.map((c) => (
               <Link key={c.id} className={`chip ${focusCat === c.id ? 'active' : ''}`}
                 to={`/v/${slug}?cat=${c.id}`}>{c.name}</Link>
@@ -211,14 +228,16 @@ export default function VenuePage() {
                         <div className="mutetext" style={{ marginTop: 4, fontSize: 13 }}>{s.description}</div>}
                     </div>
                     <span className="price">{fmtMAD(s.priceCents)}</span>
-                    <button className="btn svc-book" onClick={() => startFlow(s.id)}>Book</button>
+                    <button className="btn svc-book" onClick={() => startFlow(s.id)}>
+                      {t('venue.book')}
+                    </button>
                   </div>
                 ))}
               </div>
             );
           })}
 
-          <h2 className="section-title">Team</h2>
+          <h2 className="section-title">{t('venue.team')}</h2>
           <div className="pro-grid">
             {v.staff.map((st) => (
               <div key={st.id} className="pro-card" style={{ cursor: 'default' }}>
@@ -229,9 +248,9 @@ export default function VenuePage() {
             ))}
           </div>
 
-          <h2 className="section-title">Reviews</h2>
+          <h2 className="section-title">{t('venue.reviews')}</h2>
           {v.reviews.length === 0 ? (
-            <div className="empty">No reviews yet — be the first after your visit.</div>
+            <div className="empty">{t('venue.noReviews')}</div>
           ) : (
             <>
               <div className="reviews-summary">
@@ -239,7 +258,7 @@ export default function VenuePage() {
                 <div>
                   <StarRow rating={v.rating} size={16} />
                   <div className="fainttext">
-                    Based on {v.reviews.length} verified visit{v.reviews.length === 1 ? '' : 's'}
+                    {t('venue.basedOn', { count: v.reviews.length })}
                   </div>
                 </div>
               </div>
@@ -265,16 +284,15 @@ export default function VenuePage() {
               {v.reviews.length > 6 && !showAllReviews && (
                 <button className="btn" style={{ marginTop: 14 }}
                   onClick={() => setShowAllReviews(true)}>
-                  See all {v.reviews.length} reviews
+                  {t('venue.seeAllReviews', { count: v.reviews.length })}
                 </button>
               )}
             </>
           )}
 
-          <h2 className="section-title">About</h2>
+          <h2 className="section-title">{t('venue.about')}</h2>
           <p className="mutetext" style={{ marginTop: 0 }}>
-            {v.settings.businessTagline}. Walk-ins welcome when the calendar allows — booking
-            ahead guarantees your slot.
+            {t('venue.aboutFallback', { tagline: v.settings.businessTagline })}
           </p>
 
           {pinned ? (
@@ -284,14 +302,14 @@ export default function VenuePage() {
               ]}
               zoom={16}
               height={300}
-              ariaLabel={`Map showing ${name}`}
+              ariaLabel={t('venue.mapLabel', { name })}
             />
           ) : (
             // A venue is listable before anyone has geocoded it, so the address
             // card is a real state rather than an error.
             <div className="card pad venue-map-fallback">
               <Icon name="pin" size={18} />
-              <div className="grow">{fullAddress || 'Location on request'}</div>
+              <div className="grow">{fullAddress || t('venue.locationOnRequest')}</div>
             </div>
           )}
 
@@ -299,23 +317,25 @@ export default function VenuePage() {
             {/* Seeded addresses often already end in the city; don't repeat it. */}
             <div className="fainttext">{fullAddress}</div>
             <a className="linky" href={directionsUrl} target="_blank" rel="noreferrer">
-              Get directions
+              {t('venue.getDirections')}
             </a>
           </div>
 
           <div className="info-grid">
             <div>
-              <h3 className="section-title">Opening times</h3>
+              <h3 className="section-title">{t('venue.openingTimes')}</h3>
               <table className="hours-table">
                 <tbody>
                   {v.hours.map((h) => (
                     <tr key={h.weekday} className={h.weekday === now.getDay() ? 'today' : ''}>
                       <td>
                         <span className={`hour-dot ${h.open != null ? 'on' : ''}`} aria-hidden="true" />
-                        {WEEKDAYS_FULL[h.weekday]}
+                        {weekdayNames[h.weekday]}
                       </td>
                       <td className="num">
-                        {h.open != null ? `${fmtTime(h.open, true)} – ${fmtTime(h.close!, true)}` : 'Closed'}
+                        {h.open != null
+                          ? `${fmtTime(h.open, true)} – ${fmtTime(h.close!, true)}`
+                          : t('common.closed')}
                       </td>
                     </tr>
                   ))}
@@ -324,7 +344,7 @@ export default function VenuePage() {
             </div>
 
             <div>
-              <h3 className="section-title">Additional information</h3>
+              <h3 className="section-title">{t('venue.additionalInfo')}</h3>
               <ul className="amenities">
                 {(v.amenities ?? []).map((a) => (
                   <li key={a}><Icon name="check" size={15} /> {a}</li>
@@ -352,9 +372,11 @@ export default function VenuePage() {
               </div>
             )}
             <div className={`fainttext ${status.open ? 'open-now' : 'closed-now'}`}>{status.label}</div>
-            <button className="btn btn-accent cta" onClick={() => startFlow(null)}>Book now</button>
+            <button className="btn btn-accent cta" onClick={() => startFlow(null)}>
+              {t('venue.bookNow')}
+            </button>
             <a className="linky block" href={directionsUrl} target="_blank" rel="noreferrer">
-              <Icon name="pin" size={14} /> Get directions
+              <Icon name="pin" size={14} /> {t('venue.getDirections')}
             </a>
           </div>
         </div>

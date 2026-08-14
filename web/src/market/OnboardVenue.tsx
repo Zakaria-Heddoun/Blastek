@@ -9,6 +9,7 @@
 //   * a starter catalog instead of a blank menu, since typing thirty services
 //     on a phone is how people abandon this.
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
 import { gql, setActiveVenue } from '../lib/gql';
 import { useAuth } from '../lib/auth';
@@ -61,17 +62,18 @@ const APPLY = `mutation($ids: [ID!]!, $locale: String) {
 const SUBMIT = `mutation { submitVenue { id status } }`;
 
 const CATALOG_LABELS: Record<string, string> = {
-  coiffure_femme: 'Women’s hair',
-  coiffure_homme: 'Men’s hair',
+  coiffure_femme: 'onboard.womensHair',
+  coiffure_homme: 'onboard.mensHair',
   barbier: 'Barbershop',
   onglerie: 'Nails',
-  hammam_spa: 'Hammam & spa',
+  hammam_spa: 'onboard.hammamSpa',
 };
 
 const STEPS = ['basics', 'category', 'services', 'team', 'hours', 'review'] as const;
 type Step = (typeof STEPS)[number];
 
 export default function OnboardVenue() {
+  const { t } = useTranslation();
   const { user, loading, refreshMe } = useAuth();
   const navigate = useNavigate();
 
@@ -82,7 +84,7 @@ export default function OnboardVenue() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    document.title = 'Blastek — List your salon';
+    document.title = t('onboard.pageTitle');
   }, []);
 
   // Resume: if this account already started a venue, pick up where it stopped
@@ -125,16 +127,16 @@ export default function OnboardVenue() {
     await gql(UPDATE_STEP, { step: name, data: JSON.stringify(data) });
   };
 
-  if (loading) return <Shell><p className="auth-sub">One moment…</p></Shell>;
+  if (loading) return <Shell><p className="auth-sub">{t(`action.working`)}</p></Shell>;
 
   // Signing in first: a venue has to belong to somebody, and phone sign-in is
   // one code rather than a password to invent.
   if (!user) {
     return (
       <Shell>
-        <h1 className="auth-title">List your salon on Blastek.</h1>
+        <h1 className="auth-title">{t(`onboard.heroTitle`)}</h1>
         <p className="auth-sub">
-          Ten minutes, from your phone. Start by confirming your number — no password needed.
+          {t(`onboard.heroSub`)}
         </p>
         <PhoneAuth onDone={() => undefined} />
       </Shell>
@@ -166,9 +168,9 @@ export default function OnboardVenue() {
           — and has to be told what to change before they walk through it. */}
       {venue?.rejectedReason && (
         <div className="wiz-rejected">
-          <b>We could not publish it yet.</b>
+          <b>{t(`onboard.rejectedHeading`)}</b>
           <p>{venue.rejectedReason}</p>
-          <p className="fainttext">Fix it and send it again — everything you entered is still here.</p>
+          <p className="fainttext">{t(`onboard.rejectedBody`)}</p>
         </div>
       )}
 
@@ -271,15 +273,17 @@ function nextAfter(step: Step): Step {
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation();
   return (
     <div className="bungee blastek-home auth-shell wiz-shell">
-      <Link to="/" className="auth-back" aria-label="Blastek home">
+      {/* i18n-exempt: the brand name is the same word in every language. */}
+      <Link to="/" className="auth-back" aria-label="Blastek">
         <span className="brand-word">blastek</span>
       </Link>
       <div className="auth-grid">
         <div className="auth-form-col">
           <div className="auth-form wiz-form">
-            <span className="mono">( For professionals )</span>
+            <span className="mono">{t(`onboard.eyebrow`)}</span>
             {children}
           </div>
         </div>
@@ -297,27 +301,28 @@ function BasicsStep({
   existing: VenueSummary | null;
   onNext: (values: { name: string; city: string; phone: string }) => void;
 }) {
+  const { t } = useTranslation();
   const [name, setName] = useState(existing?.name ?? '');
   const [city, setCity] = useState(existing?.city ?? '');
   const [phone, setPhone] = useState(existing?.phone ?? '');
 
   return (
     <>
-      <h1 className="auth-title">Your salon.</h1>
-      <p className="auth-sub">Just the basics — everything is editable later.</p>
+      <h1 className="auth-title">{t(`onboard.businessStepTitle`)}</h1>
+      <p className="auth-sub">{t(`onboard.businessStepSub`)}</p>
 
       <div className="auth-fields">
         <div className="auth-field">
-          <label htmlFor="wiz-name">Salon name</label>
+          <label htmlFor="wiz-name">{t(`onboard.businessName`)}</label>
           <input id="wiz-name" value={name} onChange={(e) => setName(e.target.value)} />
         </div>
         <div className="auth-field">
-          <label htmlFor="wiz-city">City</label>
-          <input id="wiz-city" placeholder="Casablanca" value={city}
+          <label htmlFor="wiz-city">{t(`onboard.city`)}</label>
+          <input id="wiz-city" placeholder={t(`onboard.cityPlaceholder`)} value={city}
             onChange={(e) => setCity(e.target.value)} />
         </div>
         <div className="auth-field">
-          <label htmlFor="wiz-phone">Salon phone</label>
+          <label htmlFor="wiz-phone">{t(`onboard.phone`)}</label>
           <input id="wiz-phone" type="tel" placeholder="05 22 …" value={phone}
             onChange={(e) => setPhone(e.target.value)} />
         </div>
@@ -332,6 +337,7 @@ function BasicsStep({
 }
 
 function CategoryStep({ busy, onNext }: { busy: boolean; onNext: (catalog: string) => void }) {
+  const { t } = useTranslation();
   const [catalogs, setCatalogs] = useState<Catalog[]>([]);
   const [chosen, setChosen] = useState('');
 
@@ -343,8 +349,8 @@ function CategoryStep({ busy, onNext }: { busy: boolean; onNext: (catalog: strin
 
   return (
     <>
-      <h1 className="auth-title">What do you do?</h1>
-      <p className="auth-sub">This picks a starter menu you can edit.</p>
+      <h1 className="auth-title">{t(`onboard.typeStepTitle`)}</h1>
+      <p className="auth-sub">{t(`onboard.typeStepSub`)}</p>
 
       <div className="wiz-choices">
         {catalogs.map((c) => (
@@ -375,6 +381,7 @@ function ServicesStep({
   catalog: string;
   onNext: (ids: string[]) => void;
 }) {
+  const { t } = useTranslation();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [chosen, setChosen] = useState<string[]>([]);
 
@@ -394,9 +401,9 @@ function ServicesStep({
 
   return (
     <>
-      <h1 className="auth-title">Your menu.</h1>
+      <h1 className="auth-title">{t(`onboard.menuStepTitle`)}</h1>
       <p className="auth-sub">
-        Untick anything you do not offer. Prices are suggestions — change them any time.
+        {t(`onboard.menuSub`)}
       </p>
 
       <div className="wiz-services">
@@ -421,12 +428,13 @@ function ServicesStep({
 }
 
 function TeamStep({ busy, onNext }: { busy: boolean; onNext: (size: string) => void }) {
-  const sizes = ['Just me', '2–3', '4–6', '7 or more'];
+  const { t } = useTranslation();
+  const sizes = [t('onboard.justMe'), '2–3', '4–6', '7 or more'];
 
   return (
     <>
-      <h1 className="auth-title">How many of you?</h1>
-      <p className="auth-sub">You can invite them properly from the dashboard later.</p>
+      <h1 className="auth-title">{t(`onboard.teamStepTitle`)}</h1>
+      <p className="auth-sub">{t(`onboard.teamStepSub`)}</p>
 
       <div className="wiz-choices">
         {sizes.map((size) => (
@@ -446,23 +454,24 @@ function HoursStep({
   busy: boolean;
   onNext: (values: Record<string, unknown>) => void;
 }) {
+  const { t } = useTranslation();
   const [opens, setOpens] = useState('09:00');
   const [closes, setCloses] = useState('19:00');
 
   return (
     <>
-      <h1 className="auth-title">When are you open?</h1>
+      <h1 className="auth-title">{t(`onboard.hoursStepTitle`)}</h1>
       <p className="auth-sub">
-        A rough weekly shape. Per-day hours, Ramadan schedules and closures all live in Settings.
+        {t(`onboard.hoursSub`)}
       </p>
 
       <div className="auth-row2">
         <div className="auth-field">
-          <label htmlFor="wiz-open">Opens</label>
+          <label htmlFor="wiz-open">{t(`onboard.opens`)}</label>
           <input id="wiz-open" type="time" value={opens} onChange={(e) => setOpens(e.target.value)} />
         </div>
         <div className="auth-field">
-          <label htmlFor="wiz-close">Closes</label>
+          <label htmlFor="wiz-close">{t(`onboard.closes`)}</label>
           <input id="wiz-close" type="time" value={closes} onChange={(e) => setCloses(e.target.value)} />
         </div>
       </div>
@@ -485,9 +494,10 @@ function ReviewStep({
   onSubmit: () => void;
   onSkip: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <>
-      <h1 className="auth-title">Ready when you are.</h1>
+      <h1 className="auth-title">{t(`onboard.readyTitle`)}</h1>
       <p className="auth-sub">
         Send {venue?.name ?? 'your salon'} for review and we will check it over. Your dashboard
         already works — take bookings by phone, build your catalog, invite your team. Only the
@@ -495,11 +505,11 @@ function ReviewStep({
       </p>
 
       <button className="auth-submit" disabled={busy} onClick={onSubmit}>
-        {busy ? 'Sending…' : 'Submit for review'}
+        {busy ? 'Sending…' : t('onboard.submitForReview')}
       </button>
 
       <button className="auth-toggle" onClick={onSkip}>
-        Not yet — <b>take me to the dashboard</b>
+        {t(`onboard.notYet`)} <b>take me to the dashboard</b>
       </button>
     </>
   );
@@ -512,24 +522,24 @@ function SubmittedStep({
   venue: VenueSummary | null;
   onDashboard: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <>
       <div className="wiz-done" aria-hidden="true">
         <Icon name="check" size={28} />
       </div>
 
-      <h1 className="auth-title">Sent for review.</h1>
+      <h1 className="auth-title">{t(`onboard.sentTitle`)}</h1>
       <p className="auth-sub">
-        {venue?.name ?? 'Your salon'} is with our team. We usually come back within a working day,
+        {venue?.name ?? t('onboard.yourSalonLabel')} is with our team. We usually come back within a working day,
         and you will get a message either way.
       </p>
       <p className="auth-sub">
-        Nothing is on hold in the meantime — your dashboard is already live, so you can take
-        bookings by phone, finish your catalog and invite your team. Only the public page waits.
+        {t(`onboard.pendingBody`)}
       </p>
 
       <button className="auth-submit" onClick={onDashboard}>
-        Go to my dashboard
+        {t(`onboard.toDashboard`)}
       </button>
     </>
   );

@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+
 // Offset pager for the paginated dashboard lists (clients, sales).
 // Hidden entirely when everything fits on one page, so small venues never see it.
 
@@ -11,6 +13,8 @@ export default function Pager({
   totalCount: number;
   onChange: (offset: number) => void;
 }) {
+  const { t } = useTranslation();
+
   if (totalCount <= limit) return null;
 
   const page = Math.floor(offset / limit) + 1;
@@ -29,7 +33,7 @@ export default function Pager({
         disabled={offset === 0}
         onClick={() => onChange(Math.max(0, offset - limit))}
       >
-        Previous
+        {t(`venues.previous`)}
       </button>
       <span className="fainttext">Page {page} of {pages}</span>
       <button
@@ -37,7 +41,7 @@ export default function Pager({
         disabled={last >= totalCount}
         onClick={() => onChange(offset + limit)}
       >
-        Next
+        {t(`venues.next`)}
       </button>
     </div>
   );

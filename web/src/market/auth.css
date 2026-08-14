@@ -6,7 +6,7 @@
 .auth-back {
   position: absolute;
   top: clamp(16px, 2.4vw, 28px);
-  left: clamp(18px, 2.6vw, 40px);
+  inset-inline-start: clamp(18px, 2.6vw, 40px);
   z-index: 5;
 }
 
@@ -293,7 +293,7 @@ a.auth-submit {
   border-radius: 12px;
   background: none;
   font: inherit;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
 }
 .wiz-choice.active { border-color: #1e1e1e; background: #f5f7fa; }
@@ -307,7 +307,7 @@ a.auth-submit {
      phone screen. */
   max-height: 46vh;
   overflow-y: auto;
-  padding-right: 4px;
+  padding-inline-end: 4px;
 }
 .wiz-services label {
   display: flex;
