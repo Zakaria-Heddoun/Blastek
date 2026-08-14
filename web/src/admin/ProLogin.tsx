@@ -4,18 +4,20 @@
 // Dashboard access comes from venue membership: signing in requires an account
 // that manages at least one venue, and signing up creates that venue.
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import AuthShell, { AuthField, useAuthForm } from '../market/AuthShell';
 
 export default function ProLogin() {
+  const { t } = useTranslation();
   const { login, signUp, logout } = useAuth();
   const navigate = useNavigate();
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const isLogin = mode === 'login';
 
   useEffect(() => {
-    document.title = 'Blastek — For professionals';
+    document.title = `Blastek — ${t('admin.login.title')}`;
     window.scrollTo(0, 0);
   }, []);
 
@@ -23,7 +25,7 @@ export default function ProLogin() {
     // Without a salon name the server would create a plain customer account,
     // burning the email on a login that can never reach the dashboard.
     if (!isLogin && !f.businessName.trim()) {
-      throw new Error('Please enter your salon name.');
+      throw new Error(t('admin.login.needSalonName'));
     }
 
     const user = isLogin
@@ -40,7 +42,7 @@ export default function ProLogin() {
       // login/signUp already stored the token — drop it so a rejected sign-in
       // doesn't leave the client silently logged in behind the error message.
       logout();
-      throw new Error('This account does not manage a venue — use it on the booking side.');
+      throw new Error(t('admin.login.notAVenue'));
     }
 
     navigate('/dashboard/calendar');
@@ -49,41 +51,42 @@ export default function ProLogin() {
   return (
     <AuthShell
       media={{
-        eyebrow: 'For professionals',
-        heading: 'Run your salon — calendar, clients, checkout and reports.',
+        eyebrow: t('admin.login.title'),
+        heading: t('admin.login.mediaHeading'),
       }}
-      eyebrow="For professionals"
-      title={isLogin ? 'Sign in to your salon.' : 'Set up your salon account.'}
+      eyebrow={t(`admin.login.title`)}
+      title={isLogin ? t('admin.login.signInSub') : t('admin.login.signUpSub')}
       sub={
         isLogin
-          ? 'Manage your calendar, clients and sales in one place.'
-          : 'Create a business account to start taking online bookings.'
+          ? t('admin.login.signInLead')
+          : t('admin.login.signUpLead')
       }
       form={form}
       fields={
         <>
           {!isLogin && (
             <>
-              <AuthField label="Salon name" name="businessName" form={form} />
+              <AuthField label={t(`admin.login.salonName`)} name="businessName" form={form} />
               <div className="auth-row2">
-                <AuthField label="First name" name="firstName" form={form} />
-                <AuthField label="Last name" name="lastName" form={form} />
+                <AuthField label={t(`auth.firstName`)} name="firstName" form={form} />
+                <AuthField label={t(`auth.lastName`)} name="lastName" form={form} />
               </div>
             </>
           )}
           <AuthField label="Email" name="email" type="email" form={form} />
-          <AuthField label="Password" name="password" type="password" form={form} />
+          <AuthField label={t(`common.password`)} name="password" type="password" form={form} />
         </>
       }
-      submitLabel={isLogin ? 'Sign in' : 'Create account'}
+      submitLabel={isLogin ? t('auth.signIn') : t('auth.createAccount')}
       toggle={
         isLogin ? (
-          <>New to Blastek? <b>Create a business account</b></>
+          <>{t(`admin.login.newHere`)} <b>{t(`admin.login.createBusiness`)}</b></>
         ) : (
-          <>Already registered? <b>Sign in</b></>
+          <>{t(`admin.login.alreadyRegistered`)} <b>{t(`auth.signIn`)}</b></>
         )
       }
       onToggle={() => setMode(isLogin ? 'signup' : 'login')}
+      // i18n-exempt: demo credentials, not copy.
       demo={isLogin ? 'owner@salonanfa.ma · blastek123' : undefined}
     />
   );

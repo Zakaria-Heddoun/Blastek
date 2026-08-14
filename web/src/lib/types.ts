@@ -9,7 +9,10 @@ export interface Settings {
 
 export interface Category {
   id: string;
+  /** Resolved for the reader's language (E7). */
   name: string;
+  /** Every locale's values, for the catalog editor. */
+  translations?: Record<string, Record<string, string>>;
   sort: number;
 }
 
@@ -21,6 +24,8 @@ export interface Service {
   durationMin: number;
   priceCents: number;
   active: boolean;
+  /** Every locale's name and description, for the catalog editor (E7-T7). */
+  translations?: Record<string, Record<string, string>>;
   staffIds: string[];
 }
 

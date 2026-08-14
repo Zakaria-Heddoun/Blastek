@@ -1,7 +1,7 @@
 // Shared UI: modal, toast, status badge.
 import { createContext, useCallback, useContext, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { STATUS_LABEL } from '../lib/format';
+import { statusLabel } from '../lib/format';
 
 export function Modal({ children, onClose, wide = false }:
   { children: ReactNode; onClose: () => void; wide?: boolean }) {
@@ -13,7 +13,7 @@ export function Modal({ children, onClose, wide = false }:
 }
 
 export function StatusBadge({ status }: { status: string }) {
-  return <span className={`badge ${status}`}>{STATUS_LABEL[status] ?? status}</span>;
+  return <span className={`badge ${status}`}>{statusLabel(status)}</span>;
 }
 
 const ToastCtx = createContext<(msg: string, bad?: boolean) => void>(() => {});

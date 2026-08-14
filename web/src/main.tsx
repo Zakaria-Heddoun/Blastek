@@ -2,6 +2,10 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
+// Imported for its side effects, and imported *first*: it sets `lang`/`dir` on
+// the document before React paints, so an Arabic visitor never sees a frame of
+// left-to-right layout before it flips.
+import './lib/i18n';
 import './styles.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

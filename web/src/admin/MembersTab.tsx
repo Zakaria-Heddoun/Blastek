@@ -7,6 +7,7 @@
 // merging the two concepts is what makes "remove their access" accidentally
 // delete a year of appointments.
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { gql } from '../lib/gql';
 import type { Staff } from '../lib/types';
 import { Modal, useToast } from '../components/ui';
@@ -34,15 +35,18 @@ const LOAD = `{
 }`;
 
 const ROLES = [
-  { value: 'owner', label: 'Owner', hint: 'Everything, including the team and billing.' },
-  { value: 'manager', label: 'Manager', hint: 'Catalog, team roster, sales and reports.' },
-  { value: 'receptionist', label: 'Receptionist', hint: 'Calendar, clients and checkout. No revenue.' },
-  { value: 'staff', label: 'Staff', hint: 'Their own calendar and their own clients.' },
+  { value: 'owner', labelKey: 'admin.team.roles.owner', hintKey: 'admin.team.ownerHint' },
+  { value: 'manager', labelKey: 'admin.team.roles.manager', hintKey: 'admin.team.managerHint' },
+  { value: 'receptionist', labelKey: 'admin.team.roles.receptionist', hintKey: 'admin.team.receptionistHint' },
+  { value: 'staff', labelKey: 'admin.team.roles.staff', hintKey: 'admin.team.staffHint' },
 ];
 
-const roleLabel = (value: string) => ROLES.find((r) => r.value === value)?.label ?? value;
+// Roles are stored in English; what a member is *called* is copy.
+const roleLabelKey = (value: string) =>
+  ROLES.find((r) => r.value === value)?.labelKey ?? `admin.team.roles.${value}`;
 
 export default function MembersTab({ staff }: { staff: Staff[] }) {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const toast = useToast();
 
@@ -86,19 +90,18 @@ export default function MembersTab({ staff }: { staff: Staff[] }) {
     <>
       <div className="page-head">
         <div>
-          <h2 style={{ fontSize: 16, margin: 0 }}>Access</h2>
+          <h2 style={{ fontSize: 16, margin: 0 }}>{t(`admin.team.access`)}</h2>
           <p className="mutetext" style={{ margin: '4px 0 0', fontSize: 13 }}>
-            People who can sign in to this venue. Removing someone takes their access away and
-            keeps their appointments.
+            {t(`admin.team.accessBody`)}
           </p>
         </div>
         <div className="grow" />
         <button className="btn btn-primary" onClick={() => setInviting(true)}>
-          <Icon name="plus" size={16} /> Invite
+          <Icon name="plus" size={16} /> {t(`admin.team.invite`)}
         </button>
       </div>
 
-      {members === null && <div className="empty">Loading…</div>}
+      {members === null && <div className="empty">{t(`common.loading`)}</div>}
 
       <div className="member-rows">
         {members?.map((member) => {
@@ -113,12 +116,12 @@ export default function MembersTab({ staff }: { staff: Staff[] }) {
                 <b>
                   {[member.user?.firstName, member.user?.lastName].filter(Boolean).join(' ') ||
                     member.user?.phone ||
-                    'Invited member'}
+                    t('admin.team.invited')}
                 </b>
-                {isMe && <span className="member-you">You</span>}
+                {isMe && <span className="member-you">{t(`common.you`)}</span>}
                 <div className="fainttext">
                   {member.user?.email || member.user?.phone || '—'}
-                  {member.staffId && ' · has a calendar'}
+                  {member.staffId && ` ${t('admin.team.hasCalendar')}`}
                 </div>
               </div>
 
@@ -131,28 +134,28 @@ export default function MembersTab({ staff }: { staff: Staff[] }) {
                     `mutation($id: ID!, $role: String!) {
                       updateMemberRole(id: $id, role: $role) { id role } }`,
                     { id: member.id, role: e.target.value },
-                    'Role updated',
+                    t('admin.team.roleUpdated'),
                   )
                 }
               >
                 {ROLES.map((r) => (
-                  <option key={r.value} value={r.value}>{r.label}</option>
+                  <option key={r.value} value={r.value}>{t(r.labelKey)}</option>
                 ))}
               </select>
 
               <button
                 className="btn btn-sm btn-danger"
                 disabled={busy || lastOwner}
-                title={lastOwner ? 'A venue must keep at least one owner' : undefined}
+                title={lastOwner ? t('admin.team.lastOwner') : undefined}
                 onClick={() =>
                   act(
                     `mutation($id: ID!) { removeMember(id: $id) { id } }`,
                     { id: member.id },
-                    'Access removed',
+                    t('admin.team.accessRemoved'),
                   )
                 }
               >
-                Remove
+                {t(`common.remove`)}
               </button>
             </div>
           );
@@ -161,15 +164,17 @@ export default function MembersTab({ staff }: { staff: Staff[] }) {
 
       {invitations.length > 0 && (
         <>
-          <h2 className="section-title" style={{ fontSize: 15 }}>Pending invitations</h2>
+          <h2 className="section-title" style={{ fontSize: 15 }}>{t(`admin.team.pendingInvitations`)}</h2>
           <div className="member-rows">
             {invitations.map((invitation) => (
               <div key={invitation.id} className="card pad member-row is-pending">
                 <div className="grow">
                   <b>{invitation.phone || invitation.email}</b>
                   <div className="fainttext">
-                    Invited as {roleLabel(invitation.role)} · expires{' '}
-                    {new Date(`${invitation.expiresAt}Z`).toLocaleDateString()}
+                    {t(`admin.team.invitedAs`, {
+                      role: t(roleLabelKey(invitation.role)),
+                      date: new Date(`${invitation.expiresAt}Z`).toLocaleDateString(),
+                    })}
                   </div>
                 </div>
                 <button
@@ -179,11 +184,11 @@ export default function MembersTab({ staff }: { staff: Staff[] }) {
                     act(
                       `mutation($id: ID!) { revokeInvitation(id: $id) { id } }`,
                       { id: invitation.id },
-                      'Invitation withdrawn',
+                      t('admin.team.invitationWithdrawn'),
                     )
                   }
                 >
-                  Withdraw
+                  {t(`admin.team.withdraw`)}
                 </button>
               </div>
             ))}
@@ -214,6 +219,7 @@ function InviteModal({
   onClose: () => void;
   onDone: () => void;
 }) {
+  const { t } = useTranslation();
   const toast = useToast();
   const [role, setRole] = useState('staff');
   const [phone, setPhone] = useState('');
@@ -235,7 +241,7 @@ function InviteModal({
       // owner standing next to the invitee should not have to wait for an SMS.
       setLink(d.inviteMember.url);
       setDelivered(d.inviteMember.delivered);
-      toast(d.inviteMember.delivered ? 'Invitation sent' : 'Invitation created');
+      toast(d.inviteMember.delivered ? t('admin.team.invitationSent') : t('admin.team.invitationCreated'));
     } catch (e) {
       toast((e as Error).message, true);
     } finally {
@@ -245,7 +251,7 @@ function InviteModal({
 
   return (
     <Modal onClose={link ? onDone : onClose}>
-      <h2 style={{ fontSize: 17, margin: '0 0 14px' }}>Invite a team member</h2>
+      <h2 style={{ fontSize: 17, margin: '0 0 14px' }}>{t(`admin.team.inviteMember`)}</h2>
       {link ? (
         <div className="invite-done">
           <p className="mutetext">
@@ -257,12 +263,12 @@ function InviteModal({
             — it works once and expires in 7 days.
           </p>
           <input readOnly value={link} onFocus={(e) => e.currentTarget.select()} />
-          <button className="btn btn-primary" onClick={onDone}>Done</button>
+          <button className="btn btn-primary" onClick={onDone}>{t(`admin.team.done`)}</button>
         </div>
       ) : (
         <div className="invite-form">
           <label>
-            Mobile number
+            {t(`admin.team.mobileNumber`)}
             <input
               type="tel"
               inputMode="tel"
@@ -273,7 +279,7 @@ function InviteModal({
           </label>
 
           <fieldset className="invite-roles">
-            <legend>Role</legend>
+            <legend>{t(`admin.team.role`)}</legend>
             {ROLES.map((r) => (
               <label key={r.value} className={role === r.value ? 'active' : ''}>
                 <input
@@ -284,8 +290,8 @@ function InviteModal({
                   onChange={() => setRole(r.value)}
                 />
                 <span>
-                  <b>{r.label}</b>
-                  <span className="fainttext">{r.hint}</span>
+                  <b>{t(r.labelKey)}</b>
+                  <span className="fainttext">{t(r.hintKey)}</span>
                 </span>
               </label>
             ))}
@@ -293,9 +299,9 @@ function InviteModal({
 
           {role === 'staff' && (
             <label>
-              Calendar column (optional)
+              {t(`admin.team.calendarColumn`)}
               <select value={staffId} onChange={(e) => setStaffId(e.target.value)}>
-                <option value="">No calendar — dashboard access only</option>
+                <option value="">{t(`admin.team.noCalendar`)}</option>
                 {staff.map((s) => (
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
@@ -304,9 +310,9 @@ function InviteModal({
           )}
 
           <div className="modal-actions">
-            <button className="btn" onClick={onClose}>Cancel</button>
+            <button className="btn" onClick={onClose}>{t(`common.cancel`)}</button>
             <button className="btn btn-primary" disabled={busy || !phone.trim()} onClick={send}>
-              {busy ? 'Sending…' : 'Send invitation'}
+              {busy ? 'Sending…' : t('admin.team.sendInvite')}
             </button>
           </div>
         </div>

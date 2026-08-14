@@ -590,16 +590,76 @@ deployment, normalizing that column is worth doing for tidiness — there are no
 outside development today.
 
 ### E7 · i18n — F0.11
-| ID | Task | Est | Labels |
-|---|---|---|---|
-| E7-T1 | i18next setup (fr/ar/en), language switcher, persistence, locale plug API-side | S | web,api |
-| E7-T2 | String extraction: market pages (Home, Venue, Flow, Auth, Account) | M | web |
-| E7-T3 | String extraction: admin pages (all 7) + platform | M | web |
-| E7-T4 | RTL audit + fixes for both CSS systems (logical properties pass) | L | web,design |
-| E7-T5 | FR + AR translation files (professional review, Darija tone for consumer) | M | design |
-| E7-T6 | DB content translations JSONB (services/categories/venues) + locale-resolving fields | M | api |
-| E7-T7 | Catalog editor per-locale inputs (FR/AR tabs) | S | web |
-| E7-T8 | Hardcoded-string CI lint gate | XS | infra |
+
+**Status: ✅ COMPLETE and verified** (514 API tests; the interface driven in all
+three languages, RTL included).
+
+| ID | Task | Est | Labels | Status |
+|---|---|---|---|---|
+| E7-T1 | i18next setup (fr/ar/en), language switcher, persistence, locale plug API-side | S | web,api | ✅ |
+| E7-T2 | String extraction: market pages (Home, Venue, Flow, Auth, Account) | M | web | ✅ |
+| E7-T3 | String extraction: admin pages (all 7) + platform | M | web | ✅ |
+| E7-T4 | RTL audit + fixes for both CSS systems (logical properties pass) | L | web,design | ✅ |
+| E7-T5 | FR + AR translation files (professional review, Darija tone for consumer) | M | design | ✅ |
+| E7-T6 | DB content translations JSONB (services/categories/venues) + locale-resolving fields | M | api | ✅ |
+| E7-T7 | Catalog editor per-locale inputs (FR/AR tabs) | S | web | ✅ |
+| E7-T8 | Hardcoded-string CI lint gate | XS | infra | ✅ |
+
+**Notes**
+
+* **French is both the default and the fallback.** A key missing from `ar`
+  renders the French string, never English and never the raw key. The market is
+  Morocco; English exists for tourists and for us, and is a leaf that falls back
+  through French rather than the other way round.
+* **`dir="rtl"` goes on `<html>`, once.** That is what makes the browser's own
+  bidi algorithm, form controls, scrollbars and `text-align: start` all agree.
+  Every attempt to do direction per-component ends with a dropdown opening off
+  the left edge of the screen.
+* **The CSS is logical, not mirrored.** `inset-inline-start`, `border-inline-end`
+  and `text-align: start` replaced every single-sided offset in both design
+  systems, so there is one stylesheet rather than an LTR one and an RTL one to
+  keep in step. What logical properties cannot express — chevrons pointing along
+  the reading direction, Latin brand words needing bidi isolation, the calendar
+  grid staying LTR because it is a time axis rather than prose — is a short,
+  commented block at the end of `styles.css`.
+* **Western digits, deliberately.** `Intl` renders Arabic locales with
+  Arabic-Indic numerals by default and Morocco does not use them; the
+  `-u-nu-latn` extension keeps Arabic words with Western numbers. Weekday and
+  month names come from `Intl` rather than from the bundles — twelve hand-typed
+  Arabic month names is twelve chances to be wrong.
+* **Owner-written content falls back per field, never to nothing.** A salon with
+  a French menu and no Arabic one is fully bookable in Arabic: `ar → fr → base
+  column`, and the base column is always the last link. The failure mode of
+  getting this wrong is not a missing translation but a blank service name — a
+  booking flow with an unlabelled button.
+* **French lives in the base columns, not in the JSONB.** The catalog editor
+  shows one tab per language and does not know that one of them is stored
+  differently; `I18n.expose/2` and `I18n.split/2` are the two halves of keeping
+  that an implementation detail. Storing French in both places is how the two
+  get to disagree.
+* **A user's saved locale beats `Accept-Language`.** Choosing Arabic in the
+  switcher is a more deliberate statement than a browser default, and phones
+  sold in Morocco very often ship set to French or English whatever their owner
+  reads. It is saved on the account, not only in the browser, so a phone and a
+  laptop agree — and so E6's WhatsApp reminders arrive in the chosen language.
+
+**Defects found while verifying**
+
+| Where | Defect | Found by |
+|---|---|---|
+| `I18n.sanitize/2` | `normalize/1` is total and answers `"fr"` for anything unrecognised, so the "is this a real locale?" guard passed for every string — a translations map with a `de` key was stored **as French**, silently overwriting the owner's French text. Split into `parse/1` (honest, returns `:error`) and `normalize/1` (total, for rendering). | The first unit test written for it |
+| `check-i18n.mjs` | The gate scanned **line by line**, so it could not see JSX text that Prettier had wrapped onto its own line — which is most of it. It reported success over 74 untranslated strings. Now scans whole files. | Reading the Arabic homepage and seeing English on it |
+| `check-i18n.mjs` | Nothing checked that a key the source *asks for* exists. Deleting an unused key left all three bundles in perfect agreement while the page rendered the literal text `venues.useMyLocation` to a customer. | A screenshot |
+| `check-i18n.mjs` | Copy in object literals (`{ value: 'rating', label: 'Top rated' }`) and inside JSX expressions (`{searched ? 'Search results' : 'Book an appointment'}`) was invisible to a JSX-text scan. Both are now covered. | The same screenshot |
+| `role_matrix_test.exs` | The new `updateCategory` mutation had no row in the matrix — the E6 review's inventory check caught it on the first run. | The suite |
+
+**Not done, deliberately**: `venues.search_tsv` is still built from the base
+columns only, so an Arabic-only service name is readable but not *searchable*.
+Postgres has no Arabic stemmer configured here and `unaccent` does nothing for
+it, which makes that a real piece of work rather than an oversight — F0.6's
+search is unchanged and correct for the French and Latin text it already
+indexes. The `bungee/` route is also left in English: it is a standalone
+re-creation of somebody else's marketing template, not part of the product.
 
 ### E8 · Discovery — F0.6
 

@@ -1,0 +1,87 @@
+/* Language picker (E7-T1). Direction-neutral throughout — this control appears
+   in both CSS systems and in both directions, so every offset here is logical
+   (`inset-inline-end`, `margin-inline`) rather than left/right. */
+
+.lang-menu {
+  position: relative;
+  display: inline-block;
+}
+
+.lang-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.75;
+  transition: opacity 0.15s ease;
+}
+.lang-trigger:hover { opacity: 1; }
+
+.lang-list {
+  position: absolute;
+  /* Anchored to the *end* of the trigger, which flips with the document. */
+  inset-inline-end: 0;
+  top: calc(100% + 6px);
+  z-index: 60;
+  min-width: 148px;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.13);
+}
+
+.lang-list button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 11px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  color: #1e1e1e;
+  /* `start`, not `left`: the label follows the reading direction of the
+     language it names, which is the whole point of naming it in itself. */
+  text-align: start;
+  cursor: pointer;
+}
+.lang-list button:hover { background: #f4f6f9; }
+.lang-list button.active { font-weight: 600; }
+
+/* Inline variant — a settings panel, where three buttons beat a dropdown. */
+.lang-inline {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 999px;
+}
+.lang-inline button {
+  border: 0;
+  border-radius: 999px;
+  padding: 7px 16px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: #5a6271;
+  cursor: pointer;
+}
+.lang-inline button.active { background: #1e1e1e; color: #fff; }
+
+/* On the dark marketing header the control inherits a light colour; the menu
+   itself stays a light surface, so its text must not. */
+.blastek-home .lang-list button { color: #1e1e1e; }

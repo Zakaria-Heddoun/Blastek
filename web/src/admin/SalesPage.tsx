@@ -1,5 +1,6 @@
 // Sales: transaction ledger with quick date ranges.
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { gql } from '../lib/gql';
 import type { Sale } from '../lib/types';
 import { Icon } from '../lib/icons';
@@ -18,6 +19,7 @@ const QUERY = `query($from: Date!, $limit: Int, $offset: Int) {
 }`;
 
 export default function SalesPage() {
+  const { t } = useTranslation();
   const [days, setDays] = useState(7);
   const [sales, setSales] = useState<Sale[]>([]);
   const [total, setTotal] = useState(0);
@@ -44,7 +46,7 @@ export default function SalesPage() {
   return (
     <>
       <div className="page-head">
-        <h1>Sales</h1><div className="grow" />
+        <h1>{t(`admin.sales.title`)}</h1><div className="grow" />
         <div className="chip-row">
           {[[1, 'Today'], [7, '7 days'], [30, '30 days']].map(([d, label]) => (
             <button key={d} className={`chip ${days === d ? 'active' : ''}`}
@@ -55,8 +57,8 @@ export default function SalesPage() {
       <div className="card">
         <table className="list">
           <thead><tr>
-            <th>When</th><th>Client</th><th>Items</th><th>Method</th>
-            <th className="num">Tip</th><th className="num">Total</th>
+            <th>{t(`admin.sales.when`)}</th><th>{t(`admin.sales.client`)}</th><th>{t(`admin.sales.items`)}</th><th>{t(`admin.sales.method`)}</th>
+            <th className="num">{t(`common.tip`)}</th><th className="num">{t(`common.total`)}</th>
           </tr></thead>
           <tbody>
             {sales.map((s) => (
@@ -70,12 +72,12 @@ export default function SalesPage() {
                 <td className="num"><b>{fmtMAD(s.totalCents)}</b></td>
               </tr>
             ))}
-            {sales.length === 0 && <tr><td colSpan={6} className="empty">No sales in this period</td></tr>}
+            {sales.length === 0 && <tr><td colSpan={6} className="empty">{t(`admin.sales.empty`)}</td></tr>}
             {sales.length > 0 && (
               <tr>
                 <td colSpan={5} className="num">
                   <b>{total} sale{total === 1 ? '' : 's'} in this period</b>
-                  {total > sales.length && <span className="fainttext"> · this page</span>}
+                  {total > sales.length && <span className="fainttext"> {t(`admin.sales.thisPage`)}</span>}
                 </td>
                 <td className="num"><b>{fmtMAD(pageTotal)}</b></td>
               </tr>

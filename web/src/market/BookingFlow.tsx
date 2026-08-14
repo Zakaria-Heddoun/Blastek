@@ -2,15 +2,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { gql } from '../lib/gql';
 import type { BookingResult, Slot } from '../lib/types';
-import { STEPS, useVenue } from './MarketLayout';
+import { STEP_KEYS, useVenue } from './MarketLayout';
 import { useAuth } from '../lib/auth';
 import { Icon, Sparkle } from '../lib/icons';
-import { addDays, fmtDateLong, fmtDateShort, fmtDur, fmtMAD, fmtTime, initials, todayStr, WEEKDAYS } from '../lib/format';
+import { addDays, fmtDateLong, fmtDateShort, fmtDur, fmtMAD, fmtTime, initials, todayStr, weekdaysShort } from '../lib/format';
 
 export default function BookingFlow() {
   const { venue: v, slug, booking } = useVenue();
+  const { t } = useTranslation();
   const { user } = useAuth();
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
@@ -31,6 +33,7 @@ export default function BookingFlow() {
     booking.services.every((id) => st.serviceIds.includes(id))), [v.staff, booking.services]);
 
   const days = [...Array(14)].map((_, i) => addDays(todayStr(), i));
+  const weekdayNames = weekdaysShort();
 
   useEffect(() => { window.scrollTo(0, 0); }, [step, result]);
 
@@ -78,15 +81,22 @@ export default function BookingFlow() {
     return (
       <div className="bk-shell confirm-hero sparkle-field">
         <div className="sparkmark"><Sparkle size={56} /></div>
-        <h1>Booked. See you {fmtDateShort(result.date)} at {fmtTime(result.startMin, true)}.</h1>
-        <div className="mutetext">Reference <b>{result.bookingRef}</b></div>
-        <div className="card pad" style={{ maxWidth: 420, margin: '22px auto', textAlign: 'left' }}>
+        <h1>
+          {t('flow.confirmedTitle', {
+            date: fmtDateShort(result.date),
+            time: fmtTime(result.startMin, true),
+          })}
+        </h1>
+        <div className="mutetext">{t('flow.reference')} <b>{result.bookingRef}</b></div>
+        {/* `text-align: start` rather than `left`: this card holds a right-to-left
+            summary in Arabic. */}
+        <div className="card pad" style={{ maxWidth: 420, margin: '22px auto', textAlign: 'start' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0' }}>
-            <span className="mutetext">When</span>
+            <span className="mutetext">{t('flow.summaryWhen')}</span>
             <b>{fmtDateLong(result.date)}, {fmtTime(result.startMin, true)}</b>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0' }}>
-            <span className="mutetext">Professional</span><b>{result.staffName}</b>
+            <span className="mutetext">{t('flow.summaryProfessional')}</span><b>{result.staffName}</b>
           </div>
           {result.appointments.map((a) => (
             <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0' }}>
@@ -96,14 +106,15 @@ export default function BookingFlow() {
         </div>
         <button className="btn btn-primary" style={{ padding: '11px 22px' }}
           onClick={() => { booking.setServices([]); setResult(null); setSlot(null); setStep(1); navigate('/'); }}>
-          Book another appointment
+          {t('flow.bookAnother')}
         </button>
       </div>
     );
   }
 
+  const anyLabel = t('flow.anyProfessional');
   const staffName = booking.staffId === 'any'
-    ? (slot ? v.staff.find((s) => s.id === slot.staffId)?.name ?? 'Any professional' : 'Any professional')
+    ? (slot ? v.staff.find((s) => s.id === slot.staffId)?.name ?? anyLabel : anyLabel)
     : v.staff.find((s) => s.id === booking.staffId)?.name ?? '';
 
   const summary = (cta: string, enabled: boolean, onCta: () => void, extra?: ReactNode) => (
@@ -119,10 +130,15 @@ export default function BookingFlow() {
           <b>{fmtMAD(s.priceCents)}</b>
         </div>
       ))}
-      {selected.length === 0 && <div className="fainttext" style={{ padding: '8px 0' }}>No services selected yet</div>}
+      {selected.length === 0 && (
+        <div className="fainttext" style={{ padding: '8px 0' }}>{t('flow.noServicesSelected')}</div>
+      )}
       {extra}
       {selected.length > 0 && (
-        <div className="line total"><span>Total ({fmtDur(totalDur)})</span><span>{fmtMAD(totalPrice)}</span></div>
+        <div className="line total">
+          <span>{t('flow.totalWithDuration', { duration: fmtDur(totalDur) })}</span>
+          <span>{fmtMAD(totalPrice)}</span>
+        </div>
       )}
       <button className="btn btn-primary cta" disabled={!enabled} onClick={onCta}>{cta}</button>
     </div>
@@ -131,10 +147,10 @@ export default function BookingFlow() {
   return (
     <>
       <div className="bk-steps bk-shell" style={{ paddingTop: 16 }}>
-        {STEPS.map((s, i) => (
-          <span key={s} style={{ display: 'contents' }}>
-            <span className={`st ${step === i + 1 ? 'on' : ''}`}>{s}</span>
-            {i < STEPS.length - 1 && <span className="sep">›</span>}
+        {STEP_KEYS.map((key, i) => (
+          <span key={key} style={{ display: 'contents' }}>
+            <span className={`st ${step === i + 1 ? 'on' : ''}`}>{t(`flow.steps.${key}`)}</span>
+            {i < STEP_KEYS.length - 1 && <span className="sep">›</span>}
           </span>
         ))}
       </div>
@@ -145,7 +161,7 @@ export default function BookingFlow() {
               <Link className="btn btn-ghost" to={`/v/${slug}`}>
                 <Icon name="left" size={16} /> {v.settings.businessName}
               </Link>
-              <h1 style={{ fontSize: 24, margin: '12px 0 6px' }}>Select services</h1>
+              <h1 style={{ fontSize: 24, margin: '12px 0 6px' }}>{t('flow.selectServices')}</h1>
               {v.categories.map((c) => {
                 const svcs = v.services.filter((s) => s.categoryId === c.id);
                 if (!svcs.length) return null;
@@ -176,12 +192,12 @@ export default function BookingFlow() {
           {step === 2 && (
             <>
               <button className="btn btn-ghost" onClick={() => setStep(1)}>
-                <Icon name="left" size={16} /> Services
+                <Icon name="left" size={16} /> {t('flow.steps.services')}
               </button>
-              <h1 style={{ fontSize: 24, margin: '12px 0 18px' }}>Choose a professional</h1>
+              <h1 style={{ fontSize: 24, margin: '12px 0 18px' }}>{t('flow.chooseProfessional')}</h1>
               {eligible.length === 0 && (
                 <div className="card pad" style={{ marginBottom: 14 }}>
-                  No single professional offers all selected services — try fewer services.
+                  {t('flow.noSingleProfessional')}
                 </div>
               )}
               <div className="pro-grid">
@@ -190,8 +206,8 @@ export default function BookingFlow() {
                   <div className="avatar" style={{ background: 'var(--brand-wine)', color: 'var(--brand-gold)' }}>
                     <Sparkle size={20} />
                   </div>
-                  <b>Any professional</b>
-                  <div className="fainttext">for maximum availability</div>
+                  <b>{t('flow.anyProfessional')}</b>
+                  <div className="fainttext">{t('flow.anyProfessionalHint')}</div>
                 </div>
                 {eligible.map((st) => (
                   <div key={st.id} className={`pro-card ${booking.staffId === st.id ? 'sel' : ''}`}
@@ -208,25 +224,30 @@ export default function BookingFlow() {
           {step === 3 && (
             <>
               <button className="btn btn-ghost" onClick={() => setStep(2)}>
-                <Icon name="left" size={16} /> Professional
+                <Icon name="left" size={16} /> {t('flow.steps.professional')}
               </button>
-              <h1 style={{ fontSize: 24, margin: '12px 0 18px' }}>Pick a time</h1>
+              <h1 style={{ fontSize: 24, margin: '12px 0 18px' }}>{t('flow.pickTime')}</h1>
               <div className="date-strip">
                 {days.map((d) => {
                   const dt = new Date(d + 'T12:00:00');
                   return (
                     <div key={d} className={`date-pill ${d === date ? 'sel' : ''}`}
                       onClick={() => { setDate(d); setSlot(null); }}>
-                      <small>{WEEKDAYS[dt.getDay()]}</small>{dt.getDate()}
+                      <small>{weekdayNames[dt.getDay()]}</small>{dt.getDate()}
                     </div>
                   );
                 })}
               </div>
               {slots === null ? (
-                <div className="empty">Loading availability…</div>
+                <div className="empty">{t('flow.loadingAvailability')}</div>
               ) : slots.length === 0 ? (
                 <div className="empty">
-                  No availability this day — try another date{booking.staffId !== 'any' ? ' or "Any professional"' : ''}.
+                  {/* The suggestion only makes sense when a specific professional
+                      was chosen, so it is a separate sentence rather than a
+                      fragment glued on — which is unglueable in Arabic. */}
+                  {booking.staffId !== 'any'
+                    ? t('flow.noAvailabilityAny')
+                    : t('flow.noAvailability')}
                 </div>
               ) : (
                 <div className="slot-grid">
@@ -244,35 +265,41 @@ export default function BookingFlow() {
           {step === 4 && slot && (
             <>
               <button className="btn btn-ghost" onClick={() => setStep(3)}>
-                <Icon name="left" size={16} /> Time
+                <Icon name="left" size={16} /> {t('flow.steps.time')}
               </button>
-              <h1 style={{ fontSize: 24, margin: '12px 0 6px' }}>Review and confirm</h1>
+              <h1 style={{ fontSize: 24, margin: '12px 0 6px' }}>{t('flow.reviewConfirm')}</h1>
               <div className="mutetext" style={{ marginBottom: 16 }}>
-                {fmtDateLong(date)} at {fmtTime(slot.startMin, true)} with {staffName}
+                {t('flow.atWith', {
+                  date: fmtDateLong(date),
+                  time: fmtTime(slot.startMin, true),
+                  staff: staffName,
+                })}
               </div>
               {user ? (
                 <div className="card pad">
                   <div className="review-who" style={{ marginBottom: 4 }}>
                     <div className="avatar">{initials(`${user.firstName} ${user.lastName}`)}</div>
                     <div>
-                      <b>Booking as {user.firstName} {user.lastName}</b>
+                      <b>
+                        {t('flow.bookingAs', {
+                          name: `${user.firstName} ${user.lastName}`.trim(),
+                        })}
+                      </b>
                       <div className="fainttext">{user.email}{user.phone ? ` · ${user.phone}` : ''}</div>
                     </div>
                   </div>
-                  <label>Booking notes (optional)</label>
-                  <textarea rows={2} placeholder="Anything the team should know?"
+                  <label>{t('flow.notesLabel')}</label>
+                  <textarea rows={2} placeholder={t('flow.notesPlaceholder')}
                     value={notes} onChange={(e) => setNotes(e.target.value)} />
                   <div className="err">{err}</div>
                 </div>
               ) : (
                 <div className="card pad" style={{ textAlign: 'center', padding: 32 }}>
-                  <h2 style={{ fontSize: 17, marginBottom: 6 }}>Sign in to complete your booking</h2>
-                  <p className="mutetext" style={{ marginTop: 0 }}>
-                    Your selection is saved — create an account or sign in to confirm it.
-                  </p>
+                  <h2 style={{ fontSize: 17, marginBottom: 6 }}>{t('flow.signInTitle')}</h2>
+                  <p className="mutetext" style={{ marginTop: 0 }}>{t('flow.signInBody')}</p>
                   <Link className="btn btn-accent" style={{ borderRadius: 999, padding: '10px 22px' }}
                     to={`/login?next=${encodeURIComponent(`/v/${slug}/flow`)}`}>
-                    Sign in or create account
+                    {t('flow.signInCta')}
                   </Link>
                 </div>
               )}
@@ -280,15 +307,24 @@ export default function BookingFlow() {
           )}
         </div>
         <div>
-          {step === 1 && summary('Continue', selected.length > 0, () => setStep(2))}
-          {step === 2 && summary('Continue', eligible.length > 0 || booking.staffId === 'any', () => setStep(3))}
-          {step === 3 && summary('Continue', !!slot, () => setStep(4), slot && (
-            <div className="line"><span>Time</span><b>{fmtDateShort(date)}, {fmtTime(slot.startMin, true)}</b></div>
+          {step === 1 && summary(t('common.continue'), selected.length > 0, () => setStep(2))}
+          {step === 2 && summary(t('common.continue'),
+            eligible.length > 0 || booking.staffId === 'any', () => setStep(3))}
+          {step === 3 && summary(t('common.continue'), !!slot, () => setStep(4), slot && (
+            <div className="line">
+              <span>{t('flow.summaryTime')}</span>
+              <b>{fmtDateShort(date)}, {fmtTime(slot.startMin, true)}</b>
+            </div>
           ))}
-          {step === 4 && slot && summary('Book now', !!user, submit, (
+          {step === 4 && slot && summary(t('venue.bookNow'), !!user, submit, (
             <>
-              <div className="line"><span>Time</span><b>{fmtDateShort(date)}, {fmtTime(slot.startMin, true)}</b></div>
-              <div className="line"><span>Professional</span><b>{staffName}</b></div>
+              <div className="line">
+                <span>{t('flow.summaryTime')}</span>
+                <b>{fmtDateShort(date)}, {fmtTime(slot.startMin, true)}</b>
+              </div>
+              <div className="line">
+                <span>{t('flow.summaryProfessional')}</span><b>{staffName}</b>
+              </div>
             </>
           ))}
         </div>

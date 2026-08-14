@@ -2,11 +2,13 @@
 // (see ../bungee/bungee.css) with Blastek's own content: a beauty &
 // wellness booking marketplace for Morocco. Standalone full page.
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { gql } from '../lib/gql';
 import type { VenueSummary } from '../lib/types';
 import { IMG } from './assets';
+import LanguageSwitcher from '../components/LanguageSwitcher';
 import SearchBar from './SearchBar';
 import '../bungee/bungee.css';
 import './home.css';
@@ -14,12 +16,14 @@ import './market.css';
 
 const BG = '/bungee'; // reuse the pixel-mosaic category icons from the Bungee assets
 
+// Only the number and the destination are structural; the label is copy and
+// comes from `home.nav` in the same order.
 const NAV = [
-  ['Home', '_01', '#top'],
-  ['Book', '_02', '/venues'],
-  ['For pros', '_03', '/dashboard'],
-  ['Log in', '_04', '/login'],
-  ['Contact', '_05', '#contact'],
+  ['_01', '#top'],
+  ['_02', '/venues'],
+  ['_03', '/dashboard'],
+  ['_04', '/login'],
+  ['_05', '#contact'],
 ] as const;
 
 const CAROUSEL = [
@@ -38,76 +42,27 @@ const FEATURED = `{
   venues { id slug name city address rating reviewCount priceFromCents }
 }`;
 
-const SERVICES = [
-  {
-    num: '01',
-    title: 'Hair',
-    desc: 'Cuts, colour, balayage and treatments from expert stylists.',
-    icon: 'BZpmeobL3RknjynlTBvNC6SHNF0.svg',
-    bg: 'linear-gradient(150deg, #ede4fb 0%, #ddccf6 100%)',
-  },
-  {
-    num: '02',
-    title: 'Barbering',
-    desc: 'Fades, beard trims and hot-towel shaves, booked in seconds.',
-    icon: 'R83AHWxl1VSJAqb7qOjxFirVwRc.svg',
-    bg: 'linear-gradient(150deg, #d9f4d0 0%, #c3edb6 100%)',
-  },
-  {
-    num: '03',
-    title: 'Nails',
-    desc: 'Manicures, gel and nail art at studios near you.',
-    icon: 'HfhC85ieUBMrAbi9v8f3VKOlQ.svg',
-    bg: 'linear-gradient(150deg, #fbd9d9 0%, #f6c2c2 100%)',
-  },
-  {
-    num: '04',
-    title: 'Massage & Spa',
-    desc: 'Facials, massage and wellness rituals to help you unwind.',
-    icon: 'WS8HWySlI6hVuzWoL4783IH5IOA.svg',
-    bg: 'linear-gradient(150deg, #fce9bc 0%, #f8d99b 100%)',
-  },
-] as const;
-
-const METRICS = [
-  { to: 12, suffix: 'k+', label: 'Appointments booked on Blastek.' },
-  { to: 40, suffix: '+', label: 'Salons, barbershops and spas.' },
-  { to: 60, suffix: '+', label: 'Treatments you can book online.' },
-  { to: 98, suffix: '%', label: 'Clients who would book again.' },
+// Art direction only — the title and description live in the locale files and
+// are matched to these by position.
+const SERVICE_ART = [
+  { num: '01', icon: 'BZpmeobL3RknjynlTBvNC6SHNF0.svg', bg: 'linear-gradient(150deg, #ede4fb 0%, #ddccf6 100%)' },
+  { num: '02', icon: 'R83AHWxl1VSJAqb7qOjxFirVwRc.svg', bg: 'linear-gradient(150deg, #ffe9d6 0%, #ffd5b0 100%)' },
+  { num: '03', icon: 'BZpmeobL3RknjynlTBvNC6SHNF0.svg', bg: 'linear-gradient(150deg, #ffe1ec 0%, #ffc6dc 100%)' },
+  { num: '04', icon: 'R83AHWxl1VSJAqb7qOjxFirVwRc.svg', bg: 'linear-gradient(150deg, #d9f2ec 0%, #b8e6da 100%)' },
+  { num: '05', icon: 'BZpmeobL3RknjynlTBvNC6SHNF0.svg', bg: 'linear-gradient(150deg, #e6efff 0%, #c9dcff 100%)' },
+  { num: '06', icon: 'R83AHWxl1VSJAqb7qOjxFirVwRc.svg', bg: 'linear-gradient(150deg, #f6f0e2 0%, #eadfc4 100%)' },
 ];
 
-const FAQ = [
-  [
-    'How do I book on Blastek?',
-    'Pick a treatment, choose a venue and a time from live availability, and confirm. You get instant confirmation — no phone calls, no waiting.',
-  ],
-  [
-    'Do I need an account to book?',
-    'Yes — a quick sign-up lets you manage, reschedule and cancel your appointments from your account page.',
-  ],
-  [
-    'Can I cancel or reschedule?',
-    'Absolutely. Head to “My appointments” to cancel or move any upcoming booking, right up to the venue’s cancellation window.',
-  ],
-  [
-    'How much does Blastek cost me?',
-    'Booking on Blastek is free for clients. You pay the salon for your treatment as usual — in person, at the venue.',
-  ],
-  [
-    'How do I find salons near me?',
-    'Search by treatment and city, or browse featured venues. Every listing shows real ratings, services, prices and availability.',
-  ],
-  [
-    'I run a salon — how do I join?',
-    'Blastek is also a full business dashboard: calendar, clients, checkout and reports. Open the dashboard to see how it works.',
-  ],
-] as const;
-
-const POSTS = [
-  { title: 'How to prep for your first balayage appointment', img: IMG.hair2 },
-  { title: 'Barbershop etiquette: getting the cut you actually want', img: IMG.barber1 },
-  { title: 'Building a skincare routine that actually sticks', img: IMG.spa3 },
+// Counters only; the labels are copy, matched by position.
+const METRIC_NUMBERS = [
+  { to: 12, suffix: 'k+' },
+  { to: 40, suffix: '+' },
+  { to: 60, suffix: '+' },
+  { to: 98, suffix: '%' },
 ];
+
+// Images only; the titles are copy.
+const POST_IMAGES = [IMG.hair2, IMG.barber1, IMG.spa3];
 
 /* -------------------- building blocks -------------------- */
 
@@ -179,39 +134,43 @@ const reveal = {
 /* -------------------- sections -------------------- */
 
 function Nav() {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
+  const labels = t('home.nav', { returnObjects: true }) as string[];
   return (
     <>
       <nav className="nav">
-        <a href="#top" className="brand-mark" aria-label="Blastek home">
+        {/* i18n-exempt: the brand name is the same word in every language. */}
+        <a href="#top" className="brand-mark" aria-label="Blastek">
           <span className="brand-word">blastek</span>
         </a>
         <button
           className={`menu-btn${open ? ' open' : ''}`}
           onClick={() => setOpen((o) => !o)}
-          aria-label={open ? 'Close menu' : 'Open menu'}
+          aria-label={open ? t('home.closeMenu') : t('home.openMenu')}
         >
           <span className="plus" />
         </button>
       </nav>
       <div className={`menu-overlay${open ? ' show' : ''}`}>
         <div className="menu-links">
-          {NAV.map(([label, num, href]) =>
+          {NAV.map(([num, href], i) =>
             href.startsWith('#') ? (
-              <a key={label} href={href} onClick={() => setOpen(false)}>
+              <a key={num} href={href} onClick={() => setOpen(false)}>
                 <sup>{num}</sup>
-                {label}
+                {labels[i]}
               </a>
             ) : (
-              <Link key={label} to={href} onClick={() => setOpen(false)}>
+              <Link key={num} to={href} onClick={() => setOpen(false)}>
                 <sup>{num}</sup>
-                {label}
+                {labels[i]}
               </Link>
             ),
           )}
           <Link to="/venues" className="menu-mail" onClick={() => setOpen(false)}>
-            Book an appointment ↗
+            {t('home.ctaButton')}
           </Link>
+          <div className="menu-lang"><LanguageSwitcher variant="inline" /></div>
         </div>
       </div>
     </>
@@ -225,6 +184,7 @@ function Hero() {
         <Clock />
       </div>
       <div className="hero-region">
+        {/* i18n-exempt: city abbreviations, the same in every language. */}
         <span className="hot">CASA</span> / RBT / RAK
       </div>
 
@@ -235,6 +195,7 @@ function Hero() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ type: 'spring', stiffness: 62, damping: 12, mass: 1.15, delay: 0.15 }}
         >
+          {/* i18n-exempt: the wordmark. */}
           Blastek<span className="reg">®</span>
         </motion.h1>
         <motion.p
@@ -276,11 +237,12 @@ function Hero() {
 }
 
 function Intro() {
+  const { t } = useTranslation();
+
   return (
     <section className="intro">
       <motion.p className="intro-line" {...reveal}>
-        Blastek — book top salons, barbershops and spas near you. Real availability, instant
-        confirmation, no phone calls.
+        {t(`home.intro`)}
       </motion.p>
       <div className="logos-marquee">
         <div className="logos-marquee-track">
@@ -297,6 +259,7 @@ function Intro() {
 }
 
 function Venues() {
+  const { t } = useTranslation();
   const [venues, setVenues] = useState<VenueSummary[] | null>(null);
 
   useEffect(() => {
@@ -312,11 +275,11 @@ function Venues() {
     <section className="wrap pad-y" id="venues">
       <div className="sec-head">
         <div>
-          <span className="mono">( Featured venues )</span>
-          <h2 className="sec-title">Top-rated near you.</h2>
+          <span className="mono">{t('home.featuredEyebrow')}</span>
+          <h2 className="sec-title">{t('home.featuredHeading')}</h2>
         </div>
         <Link to="/venues" className="pill">
-          See all
+          {t('home.seeAll')}
         </Link>
       </div>
 
@@ -349,6 +312,8 @@ function Venues() {
 }
 
 function Services() {
+  const { t } = useTranslation();
+  const services = t('home.services', { returnObjects: true }) as { title: string; desc: string }[];
   const track = useRef<HTMLDivElement>(null);
   const [atStart, setAtStart] = useState(true);
   const [atEnd, setAtEnd] = useState(false);
@@ -381,9 +346,9 @@ function Services() {
   return (
     <section className="wrap pad-b" id="categories">
       <div className="sec-head services-head">
-        <h2 className="sec-title">Categories.</h2>
+        <h2 className="sec-title">{t('home.categoriesHeading')}</h2>
         <Link to="/venues" className="get-in-touch">
-          Book now <span>+</span>
+          {t('nav.bookNow')} <span>+</span>
         </Link>
       </div>
 
@@ -391,20 +356,20 @@ function Services() {
         <button
           className={`svc-arrow prev${atStart ? ' hidden' : ''}`}
           onClick={() => scroll(-1)}
-          aria-label="Previous"
+          aria-label={t('home.previous')}
         >
           ‹
         </button>
         <div className="svc-track" ref={track}>
-          {SERVICES.map((s) => (
-            <div className="svc-card" key={s.num} style={{ background: s.bg }}>
-              <span className="svc-num">( {s.num} )</span>
+          {SERVICE_ART.map((art, i) => (
+            <div className="svc-card" key={art.num} style={{ background: art.bg }}>
+              <span className="svc-num">( {art.num} )</span>
               <div className="svc-ic">
-                <img src={`${BG}/${s.icon}`} alt="" />
+                <img src={`${BG}/${art.icon}`} alt="" />
               </div>
               <div className="svc-foot">
-                <h3>{s.title}</h3>
-                <p>{s.desc}</p>
+                <h3>{services[i]?.title}</h3>
+                <p>{services[i]?.desc}</p>
               </div>
             </div>
           ))}
@@ -412,7 +377,7 @@ function Services() {
         <button
           className={`svc-arrow next${atEnd ? ' hidden' : ''}`}
           onClick={() => scroll(1)}
-          aria-label="Next"
+          aria-label={t('home.next')}
         >
           ›
         </button>
@@ -422,21 +387,24 @@ function Services() {
 }
 
 function Metrics() {
+  const { t } = useTranslation();
+  const labels = t('home.metrics', { returnObjects: true }) as string[];
+
   return (
     <section className="wrap pad-b">
       <motion.h2 className="metrics-intro" {...reveal}>
-        Blastek helps clients book and salons run — beautifully.
+        {t('home.metricsIntro')}
       </motion.h2>
 
       <motion.div className="metrics-video" {...reveal}>
-        <img src={IMG.salon1} alt="Le Salon Anfa interior" loading="lazy" />
+        <img src={IMG.salon1} alt={t('home.interiorAlt')} loading="lazy" />
       </motion.div>
 
       <div className="metrics-grid">
-        {METRICS.map((m) => (
-          <div className="metric" key={m.label}>
+        {METRIC_NUMBERS.map((m, i) => (
+          <div className="metric" key={m.to}>
             <CountUp to={m.to} suffix={m.suffix} />
-            <p>{m.label}</p>
+            <p>{labels[i]}</p>
           </div>
         ))}
       </div>
@@ -445,16 +413,18 @@ function Metrics() {
 }
 
 function Faq() {
+  const { t } = useTranslation();
   const [open, setOpen] = useState<number | null>(0);
+  const faq = t('home.faq', { returnObjects: true }) as { q: string; a: string }[];
   return (
     <section className="wrap pad-y">
       <div className="faq-grid">
         <div>
-          <span className="mono">( FAQ )</span>
-          <h2 className="sec-title">FAQ.</h2>
+          <span className="mono">{t('home.faqEyebrow')}</span>
+          <h2 className="sec-title">{t('home.faqHeading')}</h2>
         </div>
         <div className="faq-list">
-          {FAQ.map(([q, a], i) => {
+          {faq.map(({ q, a }, i) => {
             const isOpen = open === i;
             return (
               <div className={`faq-item${isOpen ? ' open' : ''}`} key={q}>
@@ -480,25 +450,28 @@ function Faq() {
 }
 
 function Journal() {
+  const { t } = useTranslation();
+  const posts = t('home.posts', { returnObjects: true }) as { title: string }[];
+
   return (
     <section className="wrap pad-y" id="blog">
       <div className="sec-head">
         <div>
-          <span className="mono">( The Blastek edit )</span>
-          <h2 className="sec-title">From the journal.</h2>
+          <span className="mono">{t('home.journalEyebrow')}</span>
+          <h2 className="sec-title">{t('home.journalHeading')}</h2>
         </div>
         <a href="#blog" className="pill">
-          Read more
+          {t('home.readMore')}
         </a>
       </div>
       <div className="journal-grid">
-        {POSTS.map((p) => (
-          <motion.a className="post" href="#blog" key={p.title} {...reveal}>
+        {POST_IMAGES.map((img, i) => (
+          <motion.a className="post" href="#blog" key={img} {...reveal}>
             <div className="post-thumb">
-              <img src={p.img} alt="" loading="lazy" />
+              <img src={img} alt="" loading="lazy" />
             </div>
-            <div className="date">Beauty &amp; grooming</div>
-            <h3>{p.title}</h3>
+            <div className="date">{t('home.postCategory')}</div>
+            <h3>{posts[i]?.title}</h3>
           </motion.a>
         ))}
       </div>
@@ -507,13 +480,14 @@ function Journal() {
 }
 
 function Newsletter() {
+  const { t } = useTranslation();
   const [sent, setSent] = useState(false);
   return (
     <div className="newsletter">
-      <h4>Join the list</h4>
-      <p>Beauty tips and new venues, straight to your inbox.</p>
+      <h4>{t('home.newsletterTitle')}</h4>
+      <p>{t('home.newsletterBody')}</p>
       {sent ? (
-        <p className="mono">( Thanks — you’re on the list. )</p>
+        <p className="mono">{t('home.newsletterThanks')}</p>
       ) : (
         <form
           onSubmit={(e) => {
@@ -521,8 +495,13 @@ function Newsletter() {
             setSent(true);
           }}
         >
-          <input type="email" required placeholder="Your email" aria-label="Your email" />
-          <button type="submit">Send</button>
+          <input
+            type="email"
+            required
+            placeholder={t('home.emailPlaceholder')}
+            aria-label={t('home.emailPlaceholder')}
+          />
+          <button type="submit">{t('home.send')}</button>
         </form>
       )}
     </div>
@@ -530,31 +509,37 @@ function Newsletter() {
 }
 
 function Footer() {
+  const { t } = useTranslation();
+
   return (
     <footer className="footer" id="contact">
       <div className="wrap footer-inner">
         <div className="hero-bar footer-bar">
           <div className="region region-dark">
+            {/* i18n-exempt: city abbreviations. */}
             <span>CASA</span>
+            {/* i18n-exempt: city abbreviations. */}
+            {/* i18n-exempt: city abbreviations. */}
             <span>RBT</span>
+            {/* i18n-exempt: city abbreviations. */}
             <span>RAK</span>
           </div>
           <Clock />
         </div>
 
-        <h2 className="cta-h">Ready to book? Your next appointment is a few taps away.</h2>
+        <h2 className="cta-h">{t('home.ctaHeading')}</h2>
         <Link to="/venues" className="cta-mail">
-          Book an appointment ↗
+          {t('home.ctaButton')}
         </Link>
 
         <div className="foot-cols">
           <Newsletter />
           <div className="foot-nav">
             <ul>
-              <li><Link to="/venues">Book now</Link></li>
-              <li><Link to="/for-business">For professionals</Link></li>
-              <li><Link to="/login">Log in</Link></li>
-              <li><a href="#top">Back to top</a></li>
+              <li><Link to="/venues">{t('nav.bookNow')}</Link></li>
+              <li><Link to="/for-business">{t('nav.forProfessionals')}</Link></li>
+              <li><Link to="/login">{t('nav.login')}</Link></li>
+              <li><a href="#top">{t('home.backToTop')}</a></li>
             </ul>
           </div>
         </div>
@@ -562,8 +547,8 @@ function Footer() {
         <div className="foot-big">blastek</div>
 
         <div className="foot-bottom">
-          <span className="mono">( © 2026 Blastek )</span>
-          <span className="mono">Book beauty &amp; wellness in Morocco</span>
+          <span className="mono">{t('home.copyright')}</span>
+          <span className="mono">{t('home.footerLine')}</span>
         </div>
       </div>
     </footer>
@@ -571,10 +556,12 @@ function Footer() {
 }
 
 export default function Home() {
+  const { t } = useTranslation();
+
   useEffect(() => {
-    document.title = 'Blastek — Book beauty & wellness';
+    document.title = t('home.title');
     window.scrollTo(0, 0);
-  }, []);
+  }, [t]);
   return (
     <div className="bungee blastek-home">
       <Nav />

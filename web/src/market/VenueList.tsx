@@ -4,6 +4,7 @@
 // back button behave, and a reload land where the shopper was — and it means the
 // component has no filter state of its own to fall out of sync.
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link, useSearchParams } from 'react-router-dom';
 import { gql } from '../lib/gql';
 import type { CategoryFacet, CityFacet, VenuePage, VenueSummary } from '../lib/types';
@@ -45,14 +46,15 @@ const FACETS = `{
 const COVERS = [IMG.salon1, IMG.hair1, IMG.barber1, IMG.nails1, IMG.spa1, IMG.hair2];
 
 const SORTS = [
-  { value: 'relevance', label: 'Most relevant' },
-  { value: 'rating', label: 'Best rated' },
-  { value: 'price', label: 'Lowest price' },
-  { value: 'distance', label: 'Nearest' },
-  { value: 'name', label: 'Name (A–Z)' },
+  { value: 'relevance', labelKey: 'venues.sortRelevance' },
+  { value: 'rating', labelKey: 'venues.sortRating' },
+  { value: 'price', labelKey: 'venues.sortPrice' },
+  { value: 'distance', labelKey: 'venues.sortDistance' },
+  { value: 'name', labelKey: 'venues.sortName' },
 ];
 
 export default function VenueList() {
+  const { t } = useTranslation();
   const [params, setParams] = useSearchParams();
 
   const q = params.get('q') ?? '';
@@ -126,13 +128,13 @@ export default function VenueList() {
     const parts = [q, where, city].filter(Boolean);
     document.title = parts.length
       ? `Blastek — ${parts.join(' · ')}`
-      : 'Blastek — Book a salon, barbershop or spa';
+      : t('venues.pageTitle');
     load();
   }, [load, q, where, city]);
 
   const locate = () => {
     if (!navigator.geolocation) {
-      setError('This browser cannot share your location.');
+      setError(t('venues.noGeolocation'));
       return;
     }
     setLocating(true);
@@ -144,7 +146,7 @@ export default function VenueList() {
       },
       () => {
         setLocating(false);
-        setError('We could not get your location. Try picking a city instead.');
+        setError(t('venues.geolocationFailed'));
       },
       { timeout: 8000 },
     );
@@ -170,9 +172,9 @@ export default function VenueList() {
       <div className="bk-shell vlist-shell">
         <SearchBar initialQ={q} initialWhere={where} variant="inline" />
 
-        <div className="vfilters" role="group" aria-label="Filter results">
-          <select aria-label="City" value={city} onChange={(e) => update({ city: e.target.value })}>
-            <option value="">All cities</option>
+        <div className="vfilters" role="group" aria-label={t(`venues.filterResults`)}>
+          <select aria-label={t(`venues.wherePlaceholder`)} value={city} onChange={(e) => update({ city: e.target.value })}>
+            <option value="">{t(`venues.allCities`)}</option>
             {cities.map((c) => (
               <option key={c.city} value={c.city}>
                 {c.city} ({c.venueCount})
@@ -181,11 +183,11 @@ export default function VenueList() {
           </select>
 
           <select
-            aria-label="Treatment category"
+            aria-label={t(`venues.allCategories`)}
             value={category}
             onChange={(e) => update({ category: e.target.value })}
           >
-            <option value="">All treatments</option>
+            <option value="">{t(`venues.allCategories`)}</option>
             {categories.map((c) => (
               <option key={c.name} value={c.name}>
                 {c.name}
@@ -194,14 +196,14 @@ export default function VenueList() {
           </select>
 
           <select
-            aria-label="Sort results"
+            aria-label={t(`venues.sortLabel`)}
             value={sort}
             onChange={(e) => update({ sort: e.target.value })}
           >
             {SORTS.map((s) => (
               <option key={s.value} value={s.value} disabled={s.value === 'distance' && !near}>
-                {s.label}
-                {s.value === 'distance' && !near ? ' — needs your location' : ''}
+                {t(s.labelKey)}
+                {s.value === 'distance' && !near ? t('venues.needsLocation') : ''}
               </option>
             ))}
           </select>
@@ -212,12 +214,12 @@ export default function VenueList() {
               checked={womenOnly}
               onChange={(e) => update({ women: e.target.checked ? '1' : null })}
             />
-            Women only
+            {t(`venues.womenOnly`)}
           </label>
 
           <button className="btn btn-sm" onClick={locate} disabled={locating}>
             <Icon name="pin" size={14} />{' '}
-            {locating ? 'Locating…' : near ? 'Near you' : 'Use my location'}
+            {locating ? t('venues.locating') : near ? t('venues.nearYou') : t('venues.useMyLocation')}
           </button>
 
           {filtersOn && (
@@ -225,59 +227,59 @@ export default function VenueList() {
               className="btn btn-sm vfilter-clear"
               onClick={() => update({ city: null, category: null, women: null })}
             >
-              Clear filters
+              {t(`venues.clearFilters`)}
             </button>
           )}
 
           <div className="grow" />
 
-          <div className="vview" role="group" aria-label="Result view">
+          <div className="vview" role="group" aria-label={t(`venues.resultView`)}>
             <button
               className={view === 'list' ? 'active' : ''}
               onClick={() => update({ view: null }, true)}
               aria-pressed={view === 'list'}
             >
-              List
+              {t(`venues.listLabel`)}
             </button>
             <button
               className={view === 'map' ? 'active' : ''}
               onClick={() => update({ view: 'map' }, true)}
               aria-pressed={view === 'map'}
             >
-              Map
+              {t(`venues.mapView`)}
             </button>
           </div>
         </div>
 
         <div className="vlist-head">
           <h1>
-            {searched ? 'Search results' : 'Book an appointment'}
+            {searched ? t('venues.searchResults') : t('venues.bookAppointment')}
             {page && (
               <span className="vlist-count">
                 {' '}
-                · {page.totalCount} venue{page.totalCount === 1 ? '' : 's'}
+                · {t('venues.resultCount', { count: page.totalCount })}
               </span>
             )}
           </h1>
           <p className="mutetext">
             {searched
-              ? 'Showing venues that match your search.'
-              : 'Choose a salon, barbershop or spa to see live availability.'}
+              ? t('venues.searchLead')
+              : t('venues.browseLead')}
           </p>
         </div>
 
         {error && <div className="empty">{error}</div>}
-        {!page && !error && <div className="empty">Searching…</div>}
+        {!page && !error && <div className="empty">{t(`venues.searching`)}</div>}
 
         {page?.totalCount === 0 && (
           <div className="empty">
-            No venues match that search. <Link to="/venues">Browse all venues</Link>
+            {t(`venues.empty`)} <Link to="/venues">{t(`venues.browseAll`)}</Link>
           </div>
         )}
 
         {view === 'map' && venues.length > 0 && (
           <>
-            <VenueMap markers={markers} height={420} ariaLabel="Map of search results" />
+            <VenueMap markers={markers} height={420} ariaLabel={t(`venues.mapAria`)} />
             {markers.length < venues.length && (
               <p className="fainttext vmap-note">
                 {venues.length - markers.length} of these venues have not placed a map pin yet, so
@@ -322,6 +324,7 @@ function VenueCard({
   fallbackCover: string;
   onHover: (id: string | null) => void;
 }) {
+  const { t } = useTranslation();
   const reviewed = (venue.reviewCount ?? 0) > 0;
 
   return (
@@ -347,7 +350,7 @@ function VenueCard({
             <span className="fainttext">({venue.reviewCount})</span>
           </div>
         ) : (
-          <div className="fainttext">New on Blastek</div>
+          <div className="fainttext">{t(`venues.newBadge`)}</div>
         )}
 
         <div className="vcard-where">
@@ -355,7 +358,7 @@ function VenueCard({
         </div>
 
         {venue.priceFromCents != null && (
-          <div className="vcard-price">from {fmtMAD(venue.priceFromCents)}</div>
+          <div className="vcard-price">{t(`venues.priceFrom`, { price: fmtMAD(venue.priceFromCents) })}</div>
         )}
       </div>
     </Link>

@@ -18,6 +18,7 @@ defmodule BlastekWeb.Schema do
   alias Blastek.Accounts
   alias Blastek.Audit
   alias Blastek.Discovery
+  alias Blastek.I18n
   alias Blastek.Media
   alias Blastek.Notifications
   alias Blastek.Repo
@@ -41,22 +42,58 @@ defmodule BlastekWeb.Schema do
 
   object :settings do
     field :business_name, :string
-    field :business_tagline, :string
+
+    @desc "Marketing copy, in the reader's language where the venue has written one."
+    field :business_tagline, :string do
+      resolve(fn settings, _, %{context: ctx} ->
+        {:ok, I18n.translate(taglinable(settings), :tagline, ctx[:locale])}
+      end)
+    end
+
     field :business_address, :string
     field :business_phone, :string
   end
 
   object :category do
     field :id, :id
-    field :name, :string
+
+    @desc "In the reader's language, falling back to French and then to what the owner typed."
+    field :name, :string do
+      resolve(localized(:name))
+    end
+
+    @desc """
+    Every locale's values, for the catalog editor (E7-T7).
+
+    French appears here too even though it lives in the base columns — the
+    editor thinks in tabs and should not have to know that one of them is
+    stored differently.
+    """
+    field :translations, :json do
+      resolve(translations_of(Blastek.Salon.Category))
+    end
+
     field :sort, :integer
   end
 
   object :service do
     field :id, :id
     field :category_id, :id
-    field :name, :string
-    field :description, :string
+
+    @desc "In the reader's language, falling back to French and then to what the owner typed."
+    field :name, :string do
+      resolve(localized(:name))
+    end
+
+    field :description, :string do
+      resolve(localized(:description))
+    end
+
+    @desc "Every locale's values, for the catalog editor (E7-T7)."
+    field :translations, :json do
+      resolve(translations_of(Blastek.Salon.Service))
+    end
+
     field :duration_min, :integer
     field :price_cents, :integer
     field :active, :boolean
@@ -649,6 +686,14 @@ defmodule BlastekWeb.Schema do
     field :notification_prefs, :notification_prefs do
       resolve(fn user, _, _ -> {:ok, Notifications.prefs(user)} end)
     end
+
+    @desc """
+    The language this account reads, or null if they have never chosen.
+
+    Null rather than "fr" so the client can tell "has not chosen" from "chose
+    French" — only the first should let `Accept-Language` decide.
+    """
+    field :locale, :string
   end
 
   @desc "Optional message categories. Transactional messages always send."
@@ -1285,10 +1330,31 @@ defmodule BlastekWeb.Schema do
 
     field :create_category, :category do
       arg(:name, non_null(:string))
+
+      @desc "Per-locale names, `{\"ar\": {\"name\": \"…\"}}`. French writes the base column."
+      arg(:translations, :json)
+
       middleware(RequireMember, "manager")
 
-      resolve(fn %{name: name}, %{context: ctx} ->
-        Salon.create_category(ctx.venue_id, %{name: name, sort: 99}) |> format_errors()
+      resolve(fn args, %{context: ctx} ->
+        Salon.create_category(
+          ctx.venue_id,
+          %{name: args.name, translations: args[:translations] || %{}, sort: 99}
+        )
+        |> format_errors()
+      end)
+    end
+
+    field :update_category, :category do
+      arg(:id, non_null(:id))
+      arg(:name, :string)
+      arg(:translations, :json)
+
+      middleware(RequireMember, "manager")
+
+      resolve(fn args, %{context: ctx} ->
+        {id, attrs} = Map.pop(args, :id)
+        found(fn -> Salon.update_category(ctx.venue_id, id, attrs) |> format_errors() end)
       end)
     end
 
@@ -1296,6 +1362,10 @@ defmodule BlastekWeb.Schema do
       arg(:category_id, non_null(:id))
       arg(:name, non_null(:string))
       arg(:description, :string)
+
+      @desc "Per-locale name and description. French writes the base columns."
+      arg(:translations, :json)
+
       arg(:duration_min, non_null(:integer))
       arg(:price_cents, non_null(:integer))
       arg(:staff_ids, list_of(non_null(:id)))
@@ -1315,6 +1385,7 @@ defmodule BlastekWeb.Schema do
       arg(:category_id, :id)
       arg(:name, :string)
       arg(:description, :string)
+      arg(:translations, :json)
       arg(:duration_min, :integer)
       arg(:price_cents, :integer)
       arg(:active, :boolean)
@@ -2004,6 +2075,24 @@ defmodule BlastekWeb.Schema do
       end)
     end
 
+    @desc """
+    Remembers which language this account reads (E7-T1 / F0.11).
+
+    Saved on the account rather than only in the browser, so somebody who
+    switched to Arabic on their phone is not back in French on a laptop — and so
+    their WhatsApp reminders arrive in the language they chose, which is the
+    half a `localStorage` key cannot do.
+    """
+    field :update_locale, :user do
+      arg(:locale, non_null(:string))
+
+      middleware(RequireAuth)
+
+      resolve(fn %{locale: locale}, %{context: %{current_user: user}} ->
+        Accounts.update_locale(user, locale) |> format_errors()
+      end)
+    end
+
     ## --- membership management ---
 
     field :update_member_role, :venue_membership do
@@ -2123,6 +2212,34 @@ defmodule BlastekWeb.Schema do
   # only path an appointment changes by.
   defdelegate broadcast(result), to: BlastekWeb.LiveUpdates
   defdelegate broadcast_booking(result), to: BlastekWeb.LiveUpdates
+
+  ## ---------- localization (E7 / F0.11) ----------
+  #
+  # Owner-written content — a service name, a category, a tagline — is resolved
+  # in the reader's language here rather than in the domain, because the locale
+  # is a property of the request and `Blastek.Salon` should not have to know
+  # who is asking. The fallback chain lives in `Blastek.I18n`; the important
+  # part is that it never returns nothing, since a blank service name is a
+  # booking flow with an unlabelled button.
+
+  defp localized(field) do
+    fn record, _args, %{context: ctx} ->
+      {:ok, I18n.translate(record, field, ctx[:locale])}
+    end
+  end
+
+  defp translations_of(schema) do
+    fn record, _args, _res ->
+      {:ok, I18n.expose(record, schema.translatable_fields())}
+    end
+  end
+
+  # `venue_view/1` flattens a venue into a settings map, so the tagline arrives
+  # here divorced from the column it is a translation of. This puts it back into
+  # the shape `I18n.translate/3` reads.
+  defp taglinable(settings) do
+    %{tagline: settings[:business_tagline], translations: settings[:translations] || %{}}
+  end
 
   ## ---------- helpers ----------
 

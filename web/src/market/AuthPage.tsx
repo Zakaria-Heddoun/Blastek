@@ -7,11 +7,13 @@
 // will arrive — there is no password to invent or forget.
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../lib/auth';
 import AuthShell, { AuthField, safeNext, useAuthForm } from './AuthShell';
 import PhoneAuth from './PhoneAuth';
 
 export default function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
+  const { t } = useTranslation();
   const { login, signUp } = useAuth();
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -22,9 +24,9 @@ export default function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
   const [method, setMethod] = useState<'phone' | 'email'>('phone');
 
   useEffect(() => {
-    document.title = isLogin ? 'Blastek — Log in' : 'Blastek — Sign up';
+    document.title = `Blastek — ${isLogin ? t('auth.login') : t('auth.signup')}`;
     window.scrollTo(0, 0);
-  }, [isLogin]);
+  }, [isLogin, t]);
 
   const form = useAuthForm(async (f) => {
     if (isLogin) {
@@ -37,35 +39,35 @@ export default function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
   });
 
   const methodToggle = (
-    <div className="auth-methods" role="group" aria-label="Sign-in method">
+    <div className="auth-methods" role="group" aria-label={t(`auth.signInMethod`)}>
       <button
         className={method === 'phone' ? 'active' : ''}
         aria-pressed={method === 'phone'}
         onClick={() => setMethod('phone')}
       >
-        Phone
+        {t(`auth.methodPhone`)}
       </button>
       <button
         className={method === 'email' ? 'active' : ''}
         aria-pressed={method === 'email'}
         onClick={() => setMethod('email')}
       >
-        Email
+        {t(`auth.methodEmail`)}
       </button>
     </div>
   );
 
   return (
     <AuthShell
-      media={{ eyebrow: 'Blastek®', heading: <>Book beauty &amp; wellness across Morocco.</> }}
-      eyebrow={isLogin ? 'Log in' : 'Sign up'}
-      title={isLogin ? 'Welcome back.' : 'Create your account.'}
+      media={{ eyebrow: 'Blastek®', heading: <>{t('auth.mediaHeading')}</> }}
+      eyebrow={isLogin ? t('auth.login') : t('auth.signup')}
+      title={isLogin ? t('auth.loginTitle') : t('auth.signupTitle')}
       sub={
         method === 'phone'
-          ? 'Enter your phone number and we will text you a code.'
+          ? t('auth.phoneSub')
           : isLogin
-            ? 'Sign in to book and manage your appointments.'
-            : 'One account for all your bookings — book, reschedule and cancel with ease.'
+            ? t('auth.loginSub')
+            : t('auth.signupSub')
       }
       form={form}
       // The phone flow owns its own steps, buttons and errors, so AuthShell
@@ -77,15 +79,15 @@ export default function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
           {!isLogin && (
             <>
               <div className="auth-row2">
-                <AuthField label="First name" name="firstName" form={form} />
-                <AuthField label="Last name" name="lastName" form={form} />
+                <AuthField label={t(`auth.firstName`)} name="firstName" form={form} />
+                <AuthField label={t(`auth.lastName`)} name="lastName" form={form} />
               </div>
-              <AuthField label="Phone" name="phone" placeholder="+212 6 …" form={form} />
+              <AuthField label={t(`common.phone`)} name="phone" placeholder={t(`auth.phonePlaceholder`)} form={form} />
             </>
           )}
-          <AuthField label="Email" name="email" type="email" form={form} />
+          <AuthField label={t(`common.email`)} name="email" type="email" form={form} />
           <AuthField
-            label={`Password${isLogin ? '' : ' — min 8 characters'}`}
+            label={isLogin ? t('common.password') : t('auth.passwordMin')}
             name="password"
             type="password"
             form={form}
@@ -93,21 +95,22 @@ export default function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
           {isLogin && (
             <div className="auth-forgot">
               <button className="linky" onClick={() => navigate('/forgot-password')}>
-                Forgot your password?
+                {t(`auth.forgotPassword`)}
               </button>
             </div>
           )}
         </>
       }
-      submitLabel={isLogin ? 'Sign in' : 'Create account'}
+      submitLabel={isLogin ? t('auth.signIn') : t('auth.createAccount')}
       toggle={
         isLogin ? (
-          <>Don’t have an account? <b>Sign up</b></>
+          <>{t('auth.noAccount')} <b>{t('auth.createOne')}</b></>
         ) : (
-          <>Already have an account? <b>Sign in</b></>
+          <>{t('auth.haveAccount')} <b>{t('auth.logIn')}</b></>
         )
       }
       onToggle={() => navigate(`/${isLogin ? 'signup' : 'login'}${nextQ}`)}
+      // i18n-exempt: demo credentials, not copy.
       demo={isLogin && method === 'email' ? 'leila.bennani@example.com · blastek123' : undefined}
     />
   );

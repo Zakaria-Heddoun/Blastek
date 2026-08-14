@@ -132,7 +132,7 @@ body.dark .btn-ghost:hover { background: var(--surface-2); }
 /* ---------- dashboard layout ---------- */
 .app { display: flex; height: 100vh; overflow: hidden; }
 .sidebar {
-  width: 240px; flex: none; background: var(--card); border-right: 1px solid var(--border);
+  width: 240px; flex: none; background: var(--card); border-inline-end: 1px solid var(--border);
   display: flex; flex-direction: column; padding: var(--space-5) var(--space-3);
 }
 .logo {
@@ -194,14 +194,14 @@ body.dark .chip.active { background: var(--brand-gold); border-color: var(--bran
 /* ---------- tables ---------- */
 table.list { width: 100%; border-collapse: collapse; }
 table.list th {
-  text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+  text-align: start; font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
   color: var(--fg-3); padding: 10px 14px; border-bottom: 1px solid var(--border); font-weight: 600;
 }
 table.list td { padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
 table.list tr:last-child td { border-bottom: none; }
 table.list tbody tr.rowlink { cursor: pointer; }
 table.list tbody tr.rowlink:hover, table.list tbody tr.sel { background: var(--surface-hover); }
-td.num, th.num { text-align: right; }
+td.num, th.num { text-align: end; }
 
 /* ---------- calendar ---------- */
 .cal-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -215,18 +215,18 @@ td.num, th.num { text-align: right; }
 }
 .cal-head small { display: block; color: var(--fg-3); font-weight: 500; }
 .cal-head.clickable { cursor: pointer; }
-.cal-gutter { border-right: 1px solid var(--border); position: relative; background: var(--card); }
+.cal-gutter { border-inline-end: 1px solid var(--border); position: relative; background: var(--card); }
 .cal-gutter .tick {
-  position: absolute; right: 8px; transform: translateY(-7px);
+  position: absolute; inset-inline-end: 8px; transform: translateY(-7px);
   font-family: var(--font-mono); font-size: 10.5px; color: var(--fg-3);
 }
-.cal-col { position: relative; border-right: 1px solid var(--border); background: var(--card); }
+.cal-col { position: relative; border-inline-end: 1px solid var(--border); background: var(--card); }
 .cal-col .hourline { position: absolute; left: 0; right: 0; border-top: 1px solid rgba(191, 165, 141, .22); }
 .cal-col .offhours { position: absolute; left: 0; right: 0; background: var(--surface);
   background-image: repeating-linear-gradient(135deg, transparent 0 6px, rgba(191,165,141,.18) 6px 7px); }
 .appt {
-  position: absolute; left: 4px; right: 6px; border-radius: var(--r-md); padding: 4px 8px;
-  background: var(--card); border: 1px solid var(--border); border-left-width: 4px;
+  position: absolute; inset-inline-start: 4px; inset-inline-end: 6px; border-radius: var(--r-md); padding: 4px 8px;
+  background: var(--card); border: 1px solid var(--border); border-inline-start-width: 4px;
   box-shadow: var(--shadow-sm); overflow: hidden; cursor: pointer; z-index: 2; font-size: 12px;
   transition: box-shadow var(--dur-fast) var(--ease-out);
 }
@@ -300,7 +300,7 @@ td.num, th.num { text-align: right; }
   transition: background var(--dur-fast) var(--ease-out); }
 .bar-slot:hover .bar { background: var(--brand-wine); }
 .gridline { position: absolute; left: 0; right: 0; border-top: 1px solid rgba(183, 138, 86, .25); }
-.gridline .gl { position: absolute; right: 100%; margin-right: 8px; transform: translateY(-8px);
+.gridline .gl { position: absolute; inset-inline-end: 100%; margin-inline-end: 8px; transform: translateY(-8px);
   font-family: var(--font-mono); font-size: 10.5px; color: var(--fg-3); white-space: nowrap; }
 .x-labels { display: flex; margin-top: 6px; }
 .x-labels span { flex: 1; text-align: center; font-family: var(--font-mono); font-size: 10.5px; color: var(--fg-3); }
@@ -470,10 +470,10 @@ body.dark .badge.online    { background: rgba(183, 138, 86, .25); color: #DCBB8E
 .search-card {
   display: flex; align-items: stretch; gap: 0; max-width: 780px; margin: 0 auto;
   background: var(--surface); border: 1px solid var(--border-strong);
-  border-radius: var(--r-xl); padding: 10px; text-align: left;
+  border-radius: var(--r-xl); padding: 10px; text-align: start;
 }
-.search-card .sfield { flex: 1; padding: 4px 14px; border-right: 1px solid var(--border); min-width: 0; }
-.search-card .sfield:nth-last-of-type(1) { border-right: none; }
+.search-card .sfield { flex: 1; padding: 4px 14px; border-inline-end: 1px solid var(--border); min-width: 0; }
+.search-card .sfield:nth-last-of-type(1) { border-inline-end: none; }
 .search-card .sfield label { margin: 0 0 2px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3); }
 .search-card .sfield select, .search-card .sfield input {
   width: 100%; border: none; background: transparent; padding: 2px 0; font-weight: 600;
@@ -486,7 +486,7 @@ body.dark input[type="date"] { color-scheme: dark; }
 body.light input[type="date"] { color-scheme: light; }
 @media (max-width: 760px) {
   .search-card { flex-direction: column; gap: 8px; }
-  .search-card .sfield { border-right: none; border-bottom: 1px solid var(--border); padding: 8px 6px; }
+  .search-card .sfield { border-inline-end: none; border-bottom: 1px solid var(--border); padding: 8px 6px; }
   .search-card .search-btn { padding: 12px; }
 }
 .mk-section { padding-top: var(--space-8); }
@@ -496,7 +496,7 @@ body.light input[type="date"] { color-scheme: light; }
   transition: transform var(--dur-slow) var(--ease-out); }
 .tile:hover img { transform: scale(1.03); }
 .tile span {
-  position: absolute; left: 12px; bottom: 10px; font-weight: 600; color: var(--brand-cream);
+  position: absolute; inset-inline-start: 12px; bottom: 10px; font-weight: 600; color: var(--brand-cream);
   background: rgba(28, 8, 13, .72); padding: 4px 12px; border-radius: var(--r-pill); font-size: 13px;
 }
 .venue-rail { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-4); }
@@ -545,4 +545,70 @@ body.light input[type="date"] { color-scheme: light; }
   gap: 12px;
   padding: 12px 16px;
   border-top: 1px solid var(--line);
+}
+
+/* ---------- right-to-left (E7-T4 / F0.11) ---------- */
+/*
+   Nearly all of the mirroring is done by logical properties in the rules above
+   — `inset-inline-start`, `border-inline-end`, `text-align: start`. What is
+   left here is the handful of things logical properties cannot express,
+   because they are about *glyphs and geometry* rather than about box edges.
+*/
+
+/* Chevrons, arrows and the breadcrumb separator point along the reading
+   direction. `›` in an RTL sentence still points right, which turns a
+   breadcrumb into a contradiction and a "back" arrow into a "forward" one. */
+[dir='rtl'] .crumbs span[aria-hidden='true'],
+[dir='rtl'] .bk-steps .sep {
+  display: inline-block;
+  transform: scaleX(-1);
+}
+
+/* Stroke icons are drawn LTR. Only the directional ones flip: a clock or a pin
+   mirrored is just a wrong clock, so this is deliberately a short list rather
+   than `svg { transform: scaleX(-1) }`. */
+[dir='rtl'] .btn > .ic.dir-icon,
+[dir='rtl'] .linky > .ic.dir-icon {
+  transform: scaleX(-1);
+}
+
+/* A latin brand word inside an RTL line: the isolate keeps "blastek" from
+   being reordered against the Arabic around it. Same reasoning as the
+   `U+2066` wrapping the notification templates do server-side. */
+[dir='rtl'] .brand-word,
+[dir='rtl'] .mkt-brand,
+[dir='rtl'] .adm-brand {
+  unicode-bidi: isolate;
+}
+
+/* Numbers, times and prices are Western digits in Morocco (see `lib/format.ts`)
+   and are therefore LTR runs inside RTL text. Isolating them stops a price and
+   its currency, or the two halves of a time range, from swapping places. */
+[dir='rtl'] .price,
+[dir='rtl'] .num,
+[dir='rtl'] .slot,
+[dir='rtl'] .reviews-score,
+[dir='rtl'] .hours-table .num {
+  unicode-bidi: isolate;
+}
+
+/* The calendar is a time grid, not prose: hours run top to bottom and the
+   columns are staff members, so it reads the same in both directions. Forcing
+   it LTR keeps the appointment blocks aligned with their gutter labels. */
+[dir='rtl'] .cal-grid,
+[dir='rtl'] .cal-wrap {
+  direction: ltr;
+}
+/* …but the text inside a block is still Arabic. */
+[dir='rtl'] .cal-grid .appt,
+[dir='rtl'] .cal-grid .cal-head {
+  direction: rtl;
+}
+
+/* The language switcher on the one-tap landing page, mirrored with the page. */
+.auth-lang {
+  position: absolute;
+  top: clamp(16px, 2.4vw, 28px);
+  inset-inline-end: clamp(18px, 2.6vw, 40px);
+  z-index: 5;
 }

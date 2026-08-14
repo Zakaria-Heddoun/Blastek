@@ -6,6 +6,7 @@
 // before telling them what they are joining is how people click through things
 // they should not.
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { gql, setActiveVenue } from '../lib/gql';
 import { useAuth } from '../lib/auth';
@@ -22,13 +23,14 @@ interface Preview {
 }
 
 const ROLE_COPY: Record<string, string> = {
-  owner: 'an owner — full access, including the team',
-  manager: 'a manager — catalog, roster, sales and reports',
-  receptionist: 'a receptionist — calendar, clients and checkout',
-  staff: 'a team member — your own calendar and clients',
+  owner: 'join.ownerRole',
+  manager: 'join.managerRole',
+  receptionist: 'join.receptionistRole',
+  staff: 'join.staffRole',
 };
 
 export default function JoinVenue() {
+  const { t } = useTranslation();
   const [params] = useSearchParams();
   const token = params.get('token') ?? '';
   const { user, loading, refreshMe } = useAuth();
@@ -39,12 +41,12 @@ export default function JoinVenue() {
   const [joining, setJoining] = useState(false);
 
   useEffect(() => {
-    document.title = 'Blastek — Join a team';
+    document.title = `Blastek — ${t('join.title')}`;
   }, []);
 
   useEffect(() => {
     if (!token) {
-      setError('This link is missing its invitation code.');
+      setError(t('join.missingCode'));
       return;
     }
 
@@ -84,15 +86,15 @@ export default function JoinVenue() {
     if (error && !preview) {
       return (
         <>
-          <h1 className="auth-title">This link has expired.</h1>
+          <h1 className="auth-title">{t(`join.expired`)}</h1>
           <p className="auth-sub">{error}</p>
-          <p className="auth-sub">Ask whoever invited you to send a new one.</p>
-          <Link className="auth-submit auth-submit-link" to="/">Back to Blastek</Link>
+          <p className="auth-sub">{t(`join.askNew`)}</p>
+          <Link className="auth-submit auth-submit-link" to="/">{t(`join.backHome`)}</Link>
         </>
       );
     }
 
-    if (!preview) return <p className="auth-sub">Checking your invitation…</p>;
+    if (!preview) return <p className="auth-sub">{t(`join.checking`)}</p>;
 
     return (
       <>
@@ -102,7 +104,7 @@ export default function JoinVenue() {
         </p>
 
         {loading ? (
-          <p className="auth-sub">One moment…</p>
+          <p className="auth-sub">{t(`action.working`)}</p>
         ) : user?.profileComplete ? (
           <>
             <p className="auth-hint">
@@ -122,8 +124,8 @@ export default function JoinVenue() {
           <>
             <p className="auth-hint">
               {user
-                ? 'Almost there — tell us your name.'
-                : 'Sign in with your phone to accept. No password needed.'}
+                ? t('join.namePrompt')
+                : t('join.phoneHint')}
             </p>
             {/* Gated on `profileComplete`, not merely on `user`: signing in
                 sets the user immediately, and switching on that would unmount
@@ -138,14 +140,15 @@ export default function JoinVenue() {
 
   return (
     <div className="bungee blastek-home auth-shell">
-      <Link to="/" className="auth-back" aria-label="Blastek home">
+      {/* i18n-exempt: the brand name is the same word in every language. */}
+      <Link to="/" className="auth-back" aria-label="Blastek">
         <span className="brand-word">blastek</span>
       </Link>
 
       <div className="auth-grid">
         <div className="auth-form-col">
           <div className="auth-form">
-            <span className="mono">( Invitation )</span>
+            <span className="mono">{t(`auth.invitationEyebrow`)}</span>
             {body()}
           </div>
         </div>

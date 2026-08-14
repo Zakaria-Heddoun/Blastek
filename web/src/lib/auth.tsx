@@ -23,6 +23,8 @@ export interface User {
   hasPassword: boolean;
   /** Which optional messages this account accepts (E6). */
   notificationPrefs: { reminders: boolean; marketing: boolean };
+  /** The language saved on the account, or null if they have never chosen (E7). */
+  locale: string | null;
   venues: VenueMembership[];
 }
 
@@ -58,7 +60,7 @@ const Ctx = createContext<AuthCtx>(null!);
 export const useAuth = () => useContext(Ctx);
 
 const USER_FIELDS = `id email role firstName lastName phone
-  phoneVerified profileComplete hasPassword
+  phoneVerified profileComplete hasPassword locale
   notificationPrefs { reminders marketing }
   venues { id role venue { id slug name city status } }`;
 

@@ -62,7 +62,7 @@
   width: 252px;
   flex: none;
   background: #fff;
-  border-right: 1px solid var(--line);
+  border-inline-end: 1px solid var(--line);
   display: flex;
   flex-direction: column;
   padding: 22px 18px;
@@ -178,7 +178,7 @@
   letter-spacing: 0.06em;
   color: var(--muted);
   margin-top: 6px;
-  padding-left: 2px;
+  padding-inline-start: 2px;
 }
 
 /* ---------- venue presence settings: photos, pin, listing (E8-T7) ---------- */
@@ -254,7 +254,7 @@
 
 .adm .team-tabs {
   display: inline-flex;
-  margin-left: 18px;
+  margin-inline-start: 18px;
   border: 1px solid var(--line);
   border-radius: 999px;
   padding: 3px;
@@ -278,7 +278,7 @@
 .adm .member-row.is-pending { border-style: dashed; }
 
 .adm .member-you {
-  margin-left: 8px;
+  margin-inline-start: 8px;
   padding: 2px 8px;
   border-radius: 999px;
   background: var(--surface-2);
@@ -394,7 +394,7 @@
 .adm .tpl-row b { text-transform: capitalize; }
 
 .adm .tpl-badge {
-  margin-left: 8px;
+  margin-inline-start: 8px;
   padding: 2px 8px;
   border-radius: 999px;
   background: var(--accent);
@@ -454,8 +454,8 @@
 }
 /* An amber edge, not a red one: these bookings are a decision to make, not an
    error that has happened. */
-.adm .closure-conflicts.has-conflicts { border-left: 3px solid #d18b2c; }
-.adm .closure-conflicts ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 4px; }
+.adm .closure-conflicts.has-conflicts { border-inline-start: 3px solid #d18b2c; }
+.adm .closure-conflicts ul { margin: 8px 0 0; padding-inline-start: 18px; display: grid; gap: 4px; }
 
 .adm .closure-rows { display: grid; gap: 10px; margin-top: 14px; }
 .adm .closure-row { display: flex; align-items: center; gap: 12px; }
@@ -493,4 +493,64 @@
   font-size: 10px;
   font-weight: 600;
   white-space: nowrap;
+}
+
+/* Language picker in the dashboard sidebar (E7-T1). */
+.adm .adm-lang {
+  padding: 10px 16px 4px;
+}
+.adm .adm-lang .lang-inline {
+  border-color: rgba(255, 255, 255, 0.18);
+}
+.adm .adm-lang .lang-inline button {
+  color: rgba(255, 255, 255, 0.66);
+}
+.adm .adm-lang .lang-inline button.active {
+  background: #fff;
+  color: #1e1e1e;
+}
+
+/* Per-locale inputs in the catalog editor (E7-T7). */
+.adm .i18n-tabs {
+  margin-bottom: 6px;
+}
+.adm .i18n-tablist {
+  display: flex;
+  gap: 2px;
+  margin: 4px 0 10px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  width: fit-content;
+}
+.adm .i18n-tablist button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 999px;
+  padding: 6px 15px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.adm .i18n-tablist button.active {
+  background: var(--ink);
+  color: #fff;
+}
+/* A filled tab is worth seeing without opening it — this is the only way an
+   owner can tell which languages they have already written. */
+.adm .i18n-filled {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.65;
+}
+.adm .i18n-hint {
+  margin-top: -4px;
+  margin-bottom: 10px;
+  font-size: 12px;
 }

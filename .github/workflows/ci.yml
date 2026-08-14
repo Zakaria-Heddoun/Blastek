@@ -94,6 +94,12 @@ jobs:
 
       - run: npm ci
 
+      # Before the build, because a hardcoded English string compiles perfectly
+      # and only shows up when somebody switches to Arabic — which is exactly
+      # the thing nobody does before merging.
+      - name: No hardcoded copy, and every locale complete
+        run: npm run check:i18n
+
       - name: Typecheck and build
         run: npm run build
 

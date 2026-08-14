@@ -5,6 +5,7 @@
 // step lives in component state, not the URL — a half-finished verification is
 // not something to link to or come back to.
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { GqlError } from '../lib/gql';
 import { useAuth } from '../lib/auth';
 
@@ -24,6 +25,7 @@ export default function PhoneAuth({
    */
   initialStep?: Step;
 }) {
+  const { t } = useTranslation();
   const { requestOtp, verifyOtp, completeProfile } = useAuth();
 
   const [step, setStep] = useState<Step>(initialStep);
@@ -94,27 +96,25 @@ export default function PhoneAuth({
     return (
       <div className="auth-fields">
         <div className="auth-field">
-          <label htmlFor="otp-phone">Phone number</label>
+          <label htmlFor="otp-phone">{t(`auth.phoneLabel`)}</label>
           <input
             id="otp-phone"
             type="tel"
             inputMode="tel"
             autoComplete="tel"
-            placeholder="06 12 34 56 78"
+            placeholder={t(`auth.phonePlaceholder`)}
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             onKeyDown={onKey(send)}
           />
         </div>
 
-        <p className="auth-hint">
-          We will text you a 6-digit code. No password needed.
-        </p>
+        <p className="auth-hint">{t(`auth.otpHint`)}</p>
 
         <div className="auth-err">{error}</div>
 
         <button className="auth-submit" disabled={busy || !phone.trim()} onClick={send}>
-          {busy ? 'Sending…' : 'Send code'}
+          {busy ? t('auth.sending') : t('auth.sendCode')}
         </button>
       </div>
     );
@@ -124,7 +124,7 @@ export default function PhoneAuth({
     return (
       <div className="auth-fields">
         <div className="auth-field">
-          <label htmlFor="otp-code">Enter the code</label>
+          <label htmlFor="otp-code">{t(`auth.codeLabel`)}</label>
           <input
             id="otp-code"
             ref={codeInput}
@@ -141,17 +141,17 @@ export default function PhoneAuth({
           />
         </div>
 
-        <p className="auth-hint">Sent to {masked}.</p>
+        <p className="auth-hint">{t(`auth.sentTo`, { phone: masked })}</p>
 
         <div className="auth-err">{error}</div>
 
         <button className="auth-submit" disabled={busy || code.length < 6} onClick={check}>
-          {busy ? 'Checking…' : 'Continue'}
+          {busy ? t('auth.checking') : t('common.continue')}
         </button>
 
         <div className="auth-code-actions">
           <button className="linky" disabled={busy || resendIn > 0} onClick={send}>
-            {resendIn > 0 ? `Resend in ${resendIn}s` : 'Resend code'}
+            {resendIn > 0 ? t('auth.resendIn', { seconds: resendIn }) : t('auth.resend')}
           </button>
           <button
             className="linky"
@@ -161,7 +161,7 @@ export default function PhoneAuth({
               setError('');
             }}
           >
-            Change number
+            {t(`auth.changeNumber`)}
           </button>
         </div>
       </div>
@@ -170,11 +170,11 @@ export default function PhoneAuth({
 
   return (
     <div className="auth-fields">
-      <p className="auth-hint">Almost there — what should we call you?</p>
+      <p className="auth-hint">{t(`auth.namePrompt`)}</p>
 
       <div className="auth-row2">
         <div className="auth-field">
-          <label htmlFor="otp-first">First name</label>
+          <label htmlFor="otp-first">{t(`auth.firstName`)}</label>
           <input
             id="otp-first"
             autoComplete="given-name"
@@ -184,7 +184,7 @@ export default function PhoneAuth({
           />
         </div>
         <div className="auth-field">
-          <label htmlFor="otp-last">Last name</label>
+          <label htmlFor="otp-last">{t(`auth.lastName`)}</label>
           <input
             id="otp-last"
             autoComplete="family-name"
@@ -198,7 +198,7 @@ export default function PhoneAuth({
       <div className="auth-err">{error}</div>
 
       <button className="auth-submit" disabled={busy || !firstName.trim()} onClick={save}>
-        {busy ? 'Saving…' : 'Finish'}
+        {busy ? t('common.saving') : t('auth.finish')}
       </button>
     </div>
   );

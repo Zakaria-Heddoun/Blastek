@@ -21,6 +21,11 @@ defmodule Blastek.Accounts.User do
     # grows every epic. Written through `Blastek.Notifications.update_prefs/2`,
     # never cast from user input directly.
     field :notification_prefs, :map, default: %{}
+    # Which language this person reads (E7-T1). Null, not "fr", because null
+    # means "has never chosen" — that is what lets `Accept-Language` decide for
+    # somebody who has not touched the switcher, and a default would make every
+    # account claim French from the moment it was created.
+    field :locale, :string
     has_many :memberships, Blastek.Venues.VenueMember
     timestamps(type: :naive_datetime)
   end
@@ -62,10 +67,11 @@ defmodule Blastek.Accounts.User do
 
   defp base_changeset(user, attrs) do
     user
-    |> cast(attrs, [:email, :role, :first_name, :last_name, :phone, :phone_verified_at])
+    |> cast(attrs, [:email, :role, :first_name, :last_name, :phone, :phone_verified_at, :locale])
     |> update_change(:email, &normalize_email/1)
     |> validate_format(:email, ~r/@/, message: "must be a valid email")
     |> validate_inclusion(:role, ~w(customer admin))
+    |> validate_inclusion(:locale, Blastek.I18n.locales())
     |> unique_constraint(:email, name: :users_email_index, message: "is already registered")
   end
 
@@ -216,6 +222,21 @@ defmodule Blastek.Accounts do
 
   @doc "Ids of every client record this account owns, across venues."
   def client_ids(%User{} = user), do: Salon.list_client_ids_for_user(user.id)
+
+  @doc """
+  Remembers the language this person reads (E7-T1 / F0.11).
+
+  Rejects anything the product does not speak rather than storing it and
+  falling back at read time: a locale column holding "de" would make every
+  future "which languages do our users want?" question unanswerable.
+  """
+  def update_locale(%User{} = user, locale) do
+    if Blastek.I18n.known?(locale) do
+      user |> Ecto.Changeset.change(%{locale: locale}) |> Repo.update()
+    else
+      {:error, "That language is not available."}
+    end
+  end
 
   ## ---------- phone-first auth ----------
 

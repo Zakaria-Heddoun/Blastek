@@ -7,10 +7,17 @@ defmodule BlastekWeb.AuthContext do
   The active venue is always resolved from the caller's own memberships —
   never from an argument — so a client cannot address a venue it has no access
   to by passing an id.
+
+  It also resolves the **locale** (E7-T1 / F0.11), which every resolver that
+  returns owner-written content reads. A signed-in user's saved preference beats
+  `Accept-Language`: choosing Arabic in the switcher is a more deliberate
+  statement than a browser's default, and phones sold in Morocco very often ship
+  with a French or English system locale whatever their owner reads.
   """
   @behaviour Plug
   import Plug.Conn
 
+  alias Blastek.I18n
   alias Blastek.Venues
 
   def init(opts), do: opts
@@ -24,15 +31,20 @@ defmodule BlastekWeb.AuthContext do
     # so a new session can be labelled with the device that started it.
     base = %{
       client_ip: conn.remote_ip |> :inet.ntoa() |> to_string(),
-      user_agent: user_agent(conn)
+      user_agent: user_agent(conn),
+      accept_language: accept_language(conn)
     }
 
     case current_user(conn) do
       nil ->
-        base
+        Map.put(base, :locale, I18n.resolve(accept_language: base.accept_language))
 
       {user, session} ->
         base
+        |> Map.put(
+          :locale,
+          I18n.resolve(user: user, accept_language: base.accept_language)
+        )
         |> Map.put(:current_user, user)
         |> Map.put(:current_session, session)
         # Logout revokes the session behind the token that presented it, so the
@@ -64,6 +76,13 @@ defmodule BlastekWeb.AuthContext do
     case get_req_header(conn, "user-agent") do
       [value | _] -> value
       _ -> ""
+    end
+  end
+
+  defp accept_language(conn) do
+    case get_req_header(conn, "accept-language") do
+      [value | _] -> value
+      _ -> nil
     end
   end
 

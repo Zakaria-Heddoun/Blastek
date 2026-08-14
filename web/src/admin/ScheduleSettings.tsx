@@ -4,10 +4,12 @@
 // owner setting up Ramadan hours and an owner closing for Eid are the same
 // person on the same afternoon.
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { gql } from '../lib/gql';
 import { useToast } from '../components/ui';
 import { Icon } from '../lib/icons';
-import { fmtDateLong, WEEKDAYS } from '../lib/format';
+import { fmtDateLong, weekdaysShort } from '../lib/format';
 
 interface HourDay {
   weekday: number;
@@ -114,6 +116,7 @@ export function fmtMinutes(min: number) {
 const TIME_OPTIONS = [...Array((1440 + 360) / 15 + 1)].map((_, i) => i * 15);
 
 export default function ScheduleSettings() {
+  const { t } = useTranslation();
   const toast = useToast();
 
   const [templates, setTemplates] = useState<HourTemplate[] | null>(null);
@@ -178,7 +181,7 @@ export default function ScheduleSettings() {
     const ok = await act(
       SAVE_TEMPLATE,
       { name: editing, days: draft.map(({ weekday, working, startMin, endMin }) => ({ weekday, working, startMin, endMin })) },
-      'Schedule saved',
+      t('admin.schedule.saved'),
     );
     if (ok) setEditing(null);
   };
@@ -189,14 +192,13 @@ export default function ScheduleSettings() {
     <>
       <section className="card pad set-section">
         <div className="set-section-head">
-          <h2>Opening hours</h2>
+          <h2>{t(`admin.schedule.title`)}</h2>
           <p className="mutetext">
-            Keep more than one weekly schedule and switch between them. Ramadan moves the working
-            day rather than cancelling it, so it is worth saving once.
+            {t(`admin.schedule.templatesBody`)}
           </p>
         </div>
 
-        {templates === null && <div className="empty">Loading…</div>}
+        {templates === null && <div className="empty">{t(`common.loading`)}</div>}
 
         {/* Whatever the venue actually keeps right now, template or not. It is
             what customers are shown, so it belongs above the editing controls
@@ -205,7 +207,7 @@ export default function ScheduleSettings() {
           <div className="week-now">
             {week.map((day) => (
               <div key={day.weekday} className={`week-now-day${day.open === null ? ' is-closed' : ''}`}>
-                <span className="fainttext">{WEEKDAYS[day.weekday]}</span>
+                <span className="fainttext">{weekdaysShort()[day.weekday]}</span>
                 <b>
                   {day.open === null
                     ? 'Closed'
@@ -221,12 +223,12 @@ export default function ScheduleSettings() {
             <div key={template.id} className={`card pad tpl-row${template.active ? ' is-active' : ''}`}>
               <div className="grow">
                 <b>{template.name}</b>
-                {template.active && <span className="tpl-badge">In use</span>}
-                <div className="fainttext">{summarize(template.days)}</div>
+                {template.active && <span className="tpl-badge">{t(`admin.schedule.inUse`)}</span>}
+                <div className="fainttext">{summarize(template.days, t)}</div>
               </div>
 
               <button className="btn btn-sm" disabled={busy} onClick={() => startEditing(template.name)}>
-                Edit
+                {t(`common.edit`)}
               </button>
 
               {!template.active && (
@@ -235,7 +237,7 @@ export default function ScheduleSettings() {
                   disabled={busy}
                   onClick={() => act(SET_TEMPLATE, { name: template.name }, `Switched to ${template.name}`)}
                 >
-                  Use this
+                  {t(`admin.schedule.useThis`)}
                 </button>
               )}
             </div>
@@ -263,11 +265,11 @@ export default function ScheduleSettings() {
                     checked={day.working}
                     onChange={(e) => setDay(day.weekday, { working: e.target.checked })}
                   />
-                  {WEEKDAYS[day.weekday]}
+                  {weekdaysShort()[day.weekday]}
                 </label>
 
                 <select
-                  aria-label={`${WEEKDAYS[day.weekday]} opens`}
+                  aria-label={`${weekdaysShort()[day.weekday]} opens`}
                   disabled={!day.working}
                   value={day.startMin}
                   onChange={(e) => setDay(day.weekday, { startMin: Number(e.target.value) })}
@@ -280,7 +282,7 @@ export default function ScheduleSettings() {
                 <span className="fainttext">to</span>
 
                 <select
-                  aria-label={`${WEEKDAYS[day.weekday]} closes`}
+                  aria-label={`${weekdaysShort()[day.weekday]} closes`}
                   disabled={!day.working}
                   value={day.endMin}
                   onChange={(e) => setDay(day.weekday, { endMin: Number(e.target.value) })}
@@ -297,7 +299,7 @@ export default function ScheduleSettings() {
             ))}
 
             <div className="modal-actions">
-              <button className="btn" onClick={() => setEditing(null)}>Cancel</button>
+              <button className="btn" onClick={() => setEditing(null)}>{t(`common.cancel`)}</button>
               <button className="btn btn-primary" disabled={busy} onClick={saveDraft}>
                 Save {editing} hours
               </button>
@@ -310,8 +312,8 @@ export default function ScheduleSettings() {
         closures={closures}
         active={active?.name}
         busy={busy}
-        onCreate={(vars) => act(CREATE_CLOSURE, vars, 'Closure added')}
-        onDelete={(id) => act(DELETE_CLOSURE, { id }, 'Closure removed')}
+        onCreate={(vars) => act(CREATE_CLOSURE, vars, t('admin.schedule.closureAdded'))}
+        onDelete={(id) => act(DELETE_CLOSURE, { id }, t('admin.schedule.closureRemoved'))}
       />
     </>
   );
@@ -329,6 +331,7 @@ function ClosuresSection({
   onCreate: (vars: Record<string, unknown>) => Promise<boolean>;
   onDelete: (id: string) => void;
 }) {
+  const { t } = useTranslation();
   const [date, setDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [wholeDay, setWholeDay] = useState(true);
@@ -391,20 +394,20 @@ function ClosuresSection({
   return (
     <section className="card pad set-section">
       <div className="set-section-head">
-        <h2>Closures</h2>
+        <h2>{t(`admin.schedule.closuresTitle`)}</h2>
         <p className="mutetext">
-          Days or hours the salon is shut. Online booking stops offering them straight away.
+          {t(`admin.schedule.closuresBody`)}
         </p>
       </div>
 
       <div className="closure-form">
         <label>
-          First day
+          {t(`admin.schedule.firstDay`)}
           <input type="date" value={date} onChange={(e) => forget(setDate)(e.target.value)} />
         </label>
 
         <label>
-          Last day (optional)
+          {t(`admin.schedule.lastDay`)}
           <input type="date" value={endDate} onChange={(e) => forget(setEndDate)(e.target.value)} />
         </label>
 
@@ -414,27 +417,27 @@ function ClosuresSection({
             checked={wholeDay}
             onChange={(e) => forget(setWholeDay)(e.target.checked)}
           />
-          Closed all day
+          {t(`admin.schedule.closedAllDay`)}
         </label>
 
         {!wholeDay && (
           <div className="closure-window">
             <select value={startMin} onChange={(e) => forget(setStartMin)(Number(e.target.value))}
-              aria-label="Closed from">
+              aria-label={t(`admin.schedule.closedFrom`)}>
               {TIME_OPTIONS.map((m) => <option key={m} value={m}>{fmtMinutes(m)}</option>)}
             </select>
             <span className="fainttext">to</span>
             <select value={endMin} onChange={(e) => forget(setEndMin)(Number(e.target.value))}
-              aria-label="Closed until">
+              aria-label={t(`admin.schedule.closedUntil`)}>
               {TIME_OPTIONS.map((m) => <option key={m} value={m}>{fmtMinutes(m)}</option>)}
             </select>
           </div>
         )}
 
         <label>
-          Reason
+          {t(`admin.schedule.reason`)}
           <input
-            placeholder="Eid al-Fitr"
+            placeholder={t(`admin.schedule.reasonPlaceholder`)}
             value={reason}
             onChange={(e) => setReason(e.target.value)}
           />
@@ -442,17 +445,17 @@ function ClosuresSection({
 
         <div className="modal-actions">
           <button className="btn btn-sm" disabled={!date || checking} onClick={check}>
-            {checking ? 'Checking…' : 'Check bookings'}
+            {checking ? 'Checking…' : t('admin.schedule.checkBookings')}
           </button>
           <button className="btn btn-primary btn-sm" disabled={!date || busy} onClick={create}>
-            Add closure
+            {t(`admin.schedule.addClosure`)}
           </button>
         </div>
       </div>
 
       {checkError && (
         <div className="closure-conflicts has-conflicts">
-          <b>We could not check that period.</b>
+          <b>{t(`admin.schedule.checkFailed`)}</b>
           <p className="fainttext">
             {checkError} — try again before closing the day, rather than assuming it is empty.
           </p>
@@ -462,14 +465,14 @@ function ClosuresSection({
       {conflicts !== null && (
         <div className={`closure-conflicts${conflicts.length ? ' has-conflicts' : ''}`}>
           {conflicts.length === 0 ? (
-            <span className="fainttext">Nothing is booked in that period.</span>
+            <span className="fainttext">{t(`admin.schedule.nothingBooked`)}</span>
           ) : (
             <>
               <b>
                 {conflicts.length} appointment{conflicts.length === 1 ? '' : 's'} would need moving
               </b>
               <p className="fainttext">
-                Adding the closure does not cancel them — call these customers first.
+                {t(`admin.schedule.conflictsHint`)}
               </p>
               <ul>
                 {conflicts.map((c) => (
@@ -486,7 +489,7 @@ function ClosuresSection({
       )}
 
       {closures.length === 0 ? (
-        <div className="empty">No closures coming up.</div>
+        <div className="empty">{t(`admin.schedule.noClosures`)}</div>
       ) : (
         <div className="closure-rows">
           {closures.map((closure) => (
@@ -497,7 +500,7 @@ function ClosuresSection({
               </div>
               <button className="btn btn-sm btn-danger" disabled={busy}
                 onClick={() => onDelete(closure.id)}>
-                Remove
+                {t(`common.remove`)}
               </button>
             </div>
           ))}
@@ -516,9 +519,9 @@ function describeClosure(closure: Closure) {
   return `${span} · ${fmtMinutes(closure.startMin)}–${fmtMinutes(closure.endMin)}`;
 }
 
-function summarize(days: HourDay[]) {
+function summarize(days: HourDay[], t: TFunction) {
   const working = (days ?? []).filter((d) => d.working);
-  if (working.length === 0) return 'Closed all week';
+  if (working.length === 0) return t('admin.schedule.closedAllWeek');
 
   const sample = working[0];
   const uniform = working.every((d) => d.startMin === sample.startMin && d.endMin === sample.endMin);
@@ -531,5 +534,5 @@ function summarize(days: HourDay[]) {
     : `${fmtMinutes(Math.min(...working.map((d) => d.startMin)))}–` +
       `${fmtMinutes(Math.max(...working.map((d) => d.endMin)))}, varying by day`;
 
-  return `${working.map((d) => WEEKDAYS[d.weekday]).join(', ')} · ${times}`;
+  return `${working.map((d) => weekdaysShort()[d.weekday]).join(', ')} · ${times}`;
 }

@@ -57,6 +57,7 @@ defmodule BlastekWeb.RoleMatrixTest do
        ~s|priceCents: 1000) { id } }|, "manager"},
     {:update_service, ~s|mutation { updateService(id: "1", name: "X") { id } }|, "manager"},
     {:create_category, ~s|mutation { createCategory(name: "X") { id } }|, "manager"},
+    {:update_category, ~s|mutation { updateCategory(id: "1", name: "X") { id } }|, "manager"},
     {:create_staff, ~s|mutation { createStaff(name: "X") { id } }|, "manager"},
     {:update_staff, ~s|mutation { updateStaff(id: "1", name: "X") { id } }|, "manager"},
     {:venue_members, "{ venueMembers { id } }", "manager"},

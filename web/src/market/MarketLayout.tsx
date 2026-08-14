@@ -2,6 +2,7 @@
 // The venue is addressed by slug in the URL (`/v/:slug`), so the marketplace
 // serves every tenant from the same routes.
 import { createContext, useContext, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Outlet, useLocation, useParams } from 'react-router-dom';
 import { gql } from '../lib/gql';
 import { F } from '../lib/fragments';
@@ -43,7 +44,10 @@ const VENUE = `query($slug: String!) {
   }
 }`;
 
-export const STEPS = ['Services', 'Professional', 'Time', 'Confirm'];
+// Keys rather than labels: the step names are rendered through `t()` at the
+// point of display, so switching language re-labels the strip without the
+// component that owns the flow having to re-run.
+export const STEP_KEYS = ['services', 'professional', 'time', 'confirm'] as const;
 
 export default function MarketLayout() {
   const { slug = '' } = useParams();
@@ -52,6 +56,7 @@ export default function MarketLayout() {
   const [services, setServices] = useState<string[]>([]);
   const [staffId, setStaffId] = useState('any');
   const [date, setDate] = useState('');
+  const { t } = useTranslation();
   const location = useLocation();
   const inFlow = location.pathname.endsWith('/flow');
 
@@ -67,7 +72,7 @@ export default function MarketLayout() {
   }, [slug]);
 
   if (error) return <div className="empty">{error}</div>;
-  if (!venue) return <div className="empty">Loading…</div>;
+  if (!venue) return <div className="empty">{t(`common.loading`)}</div>;
 
   return (
     <VenueCtx.Provider

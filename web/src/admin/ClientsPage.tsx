@@ -1,5 +1,6 @@
 // Clients: searchable directory + profile with allergy alert, notes and history.
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { gql } from '../lib/gql';
 import type { Client } from '../lib/types';
 import { Modal, StatusBadge, useToast } from '../components/ui';
@@ -22,6 +23,7 @@ const DETAIL = `query($id: ID!) {
 }`;
 
 export default function ClientsPage() {
+  const { t } = useTranslation();
   const toast = useToast();
   const [q, setQ] = useState('');
   const [rows, setRows] = useState<Client[]>([]);
@@ -61,7 +63,7 @@ export default function ClientsPage() {
         firstName: detail.firstName, lastName: detail.lastName, email: detail.email,
         phone: detail.phone, allergies: detail.allergies, notes: detail.notes,
       }});
-    toast('Profile saved');
+    toast(t('admin.clients.profileSaved'));
     load();
   };
 
@@ -70,19 +72,19 @@ export default function ClientsPage() {
   return (
     <>
       <div className="page-head">
-        <h1>Clients</h1><div className="grow" />
+        <h1>{t(`admin.clients.title`)}</h1><div className="grow" />
         <button className="btn btn-primary" onClick={() => setShowNew(true)}>
-          <Icon name="plus" size={16} /> New client
+          <Icon name="plus" size={16} /> {t(`admin.clients.newClient`)}
         </button>
       </div>
       <div className="split">
         <div className="card">
           <div className="pad" style={{ paddingBottom: 10 }}>
-            <input placeholder="Search name, email or phone…" style={{ width: '100%' }}
+            <input placeholder={t(`admin.clients.searchLong`)} style={{ width: '100%' }}
               value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
           <table className="list">
-            <thead><tr><th>Client</th><th className="num">Visits</th><th className="num">Total spent</th></tr></thead>
+            <thead><tr><th>{t(`admin.calendar.client`)}</th><th className="num">{t(`admin.clients.visits`)}</th><th className="num">{t(`admin.clients.totalSpent`)}</th></tr></thead>
             <tbody>
               {rows.map((c) => (
                 <tr key={c.id} className={`rowlink ${c.id === selected ? 'sel' : ''}`} onClick={() => show(c.id)}>
@@ -95,14 +97,14 @@ export default function ClientsPage() {
                   <td className="num">{fmtMAD(c.totalSpentCents ?? 0)}</td>
                 </tr>
               ))}
-              {rows.length === 0 && <tr><td colSpan={3} className="empty">No clients found</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={3} className="empty">{t(`admin.clients.notFound`)}</td></tr>}
             </tbody>
           </table>
           <Pager offset={offset} limit={PAGE_SIZE} totalCount={total} onChange={goTo} />
         </div>
         <div className="card pad">
           {!detail ? (
-            <div className="empty">Select a client to view their profile</div>
+            <div className="empty">{t(`admin.clients.selectOne`)}</div>
           ) : (
             <>
               <div className="detail-head">
@@ -121,23 +123,23 @@ export default function ClientsPage() {
                 </div>
               )}
               <div className="grid2">
-                <div><label>First name</label>
+                <div><label>{t(`auth.firstName`)}</label>
                   <input value={detail.firstName} onChange={(e) => set({ firstName: e.target.value })} /></div>
-                <div><label>Last name</label>
+                <div><label>{t(`auth.lastName`)}</label>
                   <input value={detail.lastName} onChange={(e) => set({ lastName: e.target.value })} /></div>
-                <div><label>Email</label>
+                <div><label>{t(`common.email`)}</label>
                   <input value={detail.email} onChange={(e) => set({ email: e.target.value })} /></div>
-                <div><label>Phone</label>
+                <div><label>{t(`common.phone`)}</label>
                   <input value={detail.phone} onChange={(e) => set({ phone: e.target.value })} /></div>
               </div>
-              <label>Allergies & alerts</label>
+              <label>{t(`admin.clients.allergiesAlerts`)}</label>
               <input value={detail.allergies} onChange={(e) => set({ allergies: e.target.value })} />
-              <label>Notes</label>
+              <label>{t(`common.notes`)}</label>
               <textarea rows={2} value={detail.notes} onChange={(e) => set({ notes: e.target.value })} />
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
-                <button className="btn btn-primary" onClick={saveProfile}>Save profile</button>
+                <button className="btn btn-primary" onClick={saveProfile}>{t(`admin.clients.saveProfile`)}</button>
               </div>
-              <h3 style={{ marginTop: 18 }}>History & upcoming</h3>
+              <h3 style={{ marginTop: 18 }}>{t(`admin.clients.history`)}</h3>
               <div className="hist">
                 {detail.appointments?.map((a) => (
                   <div key={a.id} className="hist-row">
@@ -151,7 +153,7 @@ export default function ClientsPage() {
                     <div className="num" style={{ width: 80 }}>{fmtMAD(a.priceCents)}</div>
                   </div>
                 ))}
-                {!detail.appointments?.length && <div className="empty">No appointments yet</div>}
+                {!detail.appointments?.length && <div className="empty">{t(`admin.clients.noAppointments`)}</div>}
               </div>
             </>
           )}
@@ -164,35 +166,36 @@ export default function ClientsPage() {
 }
 
 function NewClientModal({ onClose, onDone }: { onClose: () => void; onDone: (id: string) => void }) {
+  const { t } = useTranslation();
   const toast = useToast();
   const [f, setF] = useState({ firstName: '', lastName: '', email: '', phone: '', allergies: '' });
   const [err, setErr] = useState('');
 
   const save = async () => {
     try {
-      if (!f.firstName.trim()) throw new Error('First name is required');
+      if (!f.firstName.trim()) throw new Error(t('admin.clients.firstNameRequired'));
       const d = await gql<{ createClient: { id: string } }>(
         'mutation($input: ClientInput!) { createClient(input: $input) { id } }', { input: f });
-      toast('Client added');
+      toast(t('admin.clients.added'));
       onDone(d.createClient.id);
     } catch (e) { setErr((e as Error).message); }
   };
 
   return (
     <Modal onClose={onClose}>
-      <h2>New client</h2>
+      <h2>{t(`admin.clients.newClient`)}</h2>
       <div className="grid2">
-        <div><label>First name</label><input value={f.firstName} onChange={(e) => setF({ ...f, firstName: e.target.value })} /></div>
-        <div><label>Last name</label><input value={f.lastName} onChange={(e) => setF({ ...f, lastName: e.target.value })} /></div>
-        <div><label>Email</label><input value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></div>
-        <div><label>Phone</label><input value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} /></div>
+        <div><label>{t(`auth.firstName`)}</label><input value={f.firstName} onChange={(e) => setF({ ...f, firstName: e.target.value })} /></div>
+        <div><label>{t(`auth.lastName`)}</label><input value={f.lastName} onChange={(e) => setF({ ...f, lastName: e.target.value })} /></div>
+        <div><label>{t(`common.email`)}</label><input value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></div>
+        <div><label>{t(`common.phone`)}</label><input value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} /></div>
       </div>
-      <label>Allergies & alerts</label>
+      <label>{t(`admin.clients.allergiesAlerts`)}</label>
       <input value={f.allergies} onChange={(e) => setF({ ...f, allergies: e.target.value })} />
       <div className="err">{err}</div>
       <div className="actions">
-        <button className="btn" onClick={onClose}>Cancel</button>
-        <button className="btn btn-primary" onClick={save}>Add client</button>
+        <button className="btn" onClick={onClose}>{t(`common.cancel`)}</button>
+        <button className="btn btn-primary" onClick={save}>{t(`admin.clients.addClient`)}</button>
       </div>
     </Modal>
   );

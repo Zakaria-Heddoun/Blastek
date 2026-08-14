@@ -5,7 +5,10 @@
 // role cannot use. The server enforces the same rules — this is only the UI.
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Navigate, NavLink, Outlet } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useToast } from '../components/ui';
+import LanguageSwitcher from '../components/LanguageSwitcher';
+import { useAccountLocale } from '../lib/locale';
 import { gql } from '../lib/gql';
 import { F } from '../lib/fragments';
 import type { Category, Service, Settings, Staff } from '../lib/types';
@@ -29,13 +32,13 @@ const BOOTSTRAP = `{ ${F.settings} ${F.staff} ${F.categories} ${F.services} }`;
 
 // Minimum role each section requires, mirroring the server's middleware.
 const NAV = [
-  { to: '/dashboard/calendar', label: 'Calendar', min: 'staff' },
-  { to: '/dashboard/clients', label: 'Clients', min: 'receptionist' },
-  { to: '/dashboard/catalog', label: 'Catalog', min: 'manager' },
-  { to: '/dashboard/team', label: 'Team', min: 'manager' },
-  { to: '/dashboard/sales', label: 'Sales', min: 'manager' },
-  { to: '/dashboard/reports', label: 'Reports', min: 'manager' },
-  { to: '/dashboard/settings', label: 'Settings', min: 'manager' },
+  { to: '/dashboard/calendar', key: 'calendar', min: 'staff' },
+  { to: '/dashboard/clients', key: 'clients', min: 'receptionist' },
+  { to: '/dashboard/catalog', key: 'catalog', min: 'manager' },
+  { to: '/dashboard/team', key: 'team', min: 'manager' },
+  { to: '/dashboard/sales', key: 'sales', min: 'manager' },
+  { to: '/dashboard/reports', key: 'reports', min: 'manager' },
+  { to: '/dashboard/settings', key: 'settings', min: 'manager' },
 ] as const;
 
 const RANK = { staff: 0, receptionist: 1, manager: 2, owner: 3 } as const;
@@ -43,7 +46,11 @@ const RANK = { staff: 0, receptionist: 1, manager: 2, owner: 3 } as const;
 export default function AdminLayout() {
   const [data, setData] = useState<Bootstrap | null>(null);
   const [error, setError] = useState('');
+  const { t } = useTranslation();
   const { user, loading, logout, memberships, activeVenue, selectVenue } = useAuth();
+
+  // A member who chose Arabic on their phone gets Arabic here too.
+  useAccountLocale();
 
   const membership = memberships.find((m) => m.venue.slug === activeVenue) ?? memberships[0];
   const authorized = !loading && !!user && !!membership;
@@ -62,7 +69,7 @@ export default function AdminLayout() {
       setError('');
     } catch (e) {
       const msg = (e as Error).message;
-      if (loaded.current) toast(`Could not refresh: ${msg}`, true);
+      if (loaded.current) toast(msg, true);
       else setError(msg);
     }
   }, [toast]);
@@ -76,21 +83,21 @@ export default function AdminLayout() {
     refresh();
   }, [refresh, authorized, activeVenue]);
 
-  if (loading) return <div className="empty">Loading…</div>;
+  if (loading) return <div className="empty">{t('common.loading')}</div>;
   if (!user) return <Navigate to="/dashboard/login" replace />;
 
   if (!membership) {
     return (
       <div className="empty">
-        This account does not manage a venue yet.
+        {t('admin.noVenue')}
         <br />
-        <a href="/">Back to Blastek</a>
+        <a href="/">{t('admin.login.backToMarket')}</a>
       </div>
     );
   }
 
-  if (error) return <div className="empty">Could not reach the API: {error}</div>;
-  if (!data) return <div className="empty">Loading…</div>;
+  if (error) return <div className="empty">{error}</div>;
+  if (!data) return <div className="empty">{t('common.loading')}</div>;
 
   const rank = RANK[membership.role];
   const nav = NAV.filter((n) => rank >= RANK[n.min]);
@@ -104,7 +111,7 @@ export default function AdminLayout() {
           <div className="adm-venue">
             {memberships.length > 1 ? (
               <select
-                aria-label="Active venue"
+                aria-label={t('admin.activeVenue')}
                 value={membership.venue.slug}
                 onChange={(e) => selectVenue(e.target.value)}
               >
@@ -115,29 +122,30 @@ export default function AdminLayout() {
             ) : (
               <div className="adm-venue-name">{membership.venue.name}</div>
             )}
-            <div className="adm-venue-role">{membership.role}</div>
+            <div className="adm-venue-role">{t(`admin.team.roles.${membership.role}`)}</div>
           </div>
 
           <nav className="adm-nav">
             {nav.map((n, i) => (
               <NavLink key={n.to} to={n.to} className={({ isActive }) => (isActive ? 'active' : '')}>
                 <span className="n">0{i + 1}</span>
-                {n.label}
+                {t(`admin.nav.${n.key}`)}
               </NavLink>
             ))}
           </nav>
           <div className="spacer" />
+          <div className="adm-lang"><LanguageSwitcher variant="inline" /></div>
           <div className="adm-user">
             {user.firstName} {user.lastName}
             <br />
             {user.email}
           </div>
           <button className="adm-foot-btn" onClick={logout}>
-            Log out
+            {t('admin.nav.signOut')}
           </button>
           <a className="adm-foot-btn" href={`/v/${membership.venue.slug}`} target="_blank"
             rel="noreferrer">
-            Open booking page ↗
+            {t('admin.nav.viewShop')} ↗
           </a>
         </aside>
         <main className="adm-main">
