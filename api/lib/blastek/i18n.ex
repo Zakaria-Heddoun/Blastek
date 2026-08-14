@@ -211,7 +211,15 @@ defmodule Blastek.I18n do
   must not write a key nobody reads. Blank values are *removed* rather than
   stored, so clearing an Arabic name in the editor restores the fallback instead
   of pinning an empty string in front of it.
+
+  Values are also **bounded**. The base columns are `varchar` and Postgres
+  refuses anything longer; JSONB has no such limit, so without this a manager
+  could put a megabyte of text where a service name goes and every venue page
+  would carry it forever. Truncated rather than rejected, because the failure
+  this guards against is accidental far more often than deliberate.
   """
+  @max_length 2_000
+
   def sanitize(translations, allowed_fields) when is_map(translations) do
     allowed = Enum.map(allowed_fields, &to_string/1)
 
@@ -236,7 +244,7 @@ defmodule Blastek.I18n do
         to_string(field) in allowed,
         trimmed = present(value),
         into: %{},
-        do: {to_string(field), String.trim(trimmed)}
+        do: {to_string(field), trimmed |> String.trim() |> String.slice(0, @max_length)}
   end
 
   ## ---------- the editor's view ----------

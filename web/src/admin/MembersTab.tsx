@@ -126,7 +126,9 @@ export default function MembersTab({ staff }: { staff: Staff[] }) {
               </div>
 
               <select
-                aria-label={`Role for ${member.user?.firstName ?? 'member'}`}
+                aria-label={t('admin.team.roleForAria', {
+                  name: member.user?.firstName ?? t('admin.team.aMember'),
+                })}
                 value={member.role}
                 disabled={busy || lastOwner}
                 onChange={(e) =>

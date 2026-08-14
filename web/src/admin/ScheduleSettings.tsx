@@ -118,6 +118,8 @@ const TIME_OPTIONS = [...Array((1440 + 360) / 15 + 1)].map((_, i) => i * 15);
 export default function ScheduleSettings() {
   const { t } = useTranslation();
   const toast = useToast();
+  // Built once per render rather than once per cell — see `lib/format.ts`.
+  const weekdays = weekdaysShort();
 
   const [templates, setTemplates] = useState<HourTemplate[] | null>(null);
   const [week, setWeek] = useState<VenueDay[]>([]);
@@ -207,7 +209,7 @@ export default function ScheduleSettings() {
           <div className="week-now">
             {week.map((day) => (
               <div key={day.weekday} className={`week-now-day${day.open === null ? ' is-closed' : ''}`}>
-                <span className="fainttext">{weekdaysShort()[day.weekday]}</span>
+                <span className="fainttext">{weekdays[day.weekday]}</span>
                 <b>
                   {day.open === null
                     ? 'Closed'
@@ -265,11 +267,11 @@ export default function ScheduleSettings() {
                     checked={day.working}
                     onChange={(e) => setDay(day.weekday, { working: e.target.checked })}
                   />
-                  {weekdaysShort()[day.weekday]}
+                  {weekdays[day.weekday]}
                 </label>
 
                 <select
-                  aria-label={`${weekdaysShort()[day.weekday]} opens`}
+                  aria-label={t('common.opensAria', { day: weekdays[day.weekday] })}
                   disabled={!day.working}
                   value={day.startMin}
                   onChange={(e) => setDay(day.weekday, { startMin: Number(e.target.value) })}
@@ -282,7 +284,7 @@ export default function ScheduleSettings() {
                 <span className="fainttext">to</span>
 
                 <select
-                  aria-label={`${weekdaysShort()[day.weekday]} closes`}
+                  aria-label={t('common.closesAria', { day: weekdays[day.weekday] })}
                   disabled={!day.working}
                   value={day.endMin}
                   onChange={(e) => setDay(day.weekday, { endMin: Number(e.target.value) })}
@@ -534,5 +536,6 @@ function summarize(days: HourDay[], t: TFunction) {
     : `${fmtMinutes(Math.min(...working.map((d) => d.startMin)))}–` +
       `${fmtMinutes(Math.max(...working.map((d) => d.endMin)))}, varying by day`;
 
-  return `${working.map((d) => weekdaysShort()[d.weekday]).join(', ')} · ${times}`;
+  const weekdays = weekdaysShort();
+  return `${working.map((d) => weekdays[d.weekday]).join(', ')} · ${times}`;
 }

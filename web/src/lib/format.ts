@@ -90,13 +90,32 @@ const atNoon = (ds: string) => new Date(ds.slice(0, 10) + 'T12:00:00');
 // 2023-01-01 was a Sunday, which makes this table trivially checkable.
 const WEEKDAY_SAMPLES = [1, 2, 3, 4, 5, 6, 7].map((day) => new Date(2023, 0, day));
 
+/**
+ * Cached per locale and width.
+ *
+ * Constructing an `Intl.DateTimeFormat` is expensive, and these are read inside
+ * render loops — the schedule editor asks three times per weekday row, which
+ * without a cache is 147 formatter constructions every time it re-renders.
+ * The key includes the locale, so switching language still rebuilds them.
+ */
+const weekdayCache = new Map<string, string[]>();
+
+const weekdayNames = (width: 'short' | 'long') => {
+  const locale = intlLocale();
+  const key = `${locale}:${width}`;
+  const cached = weekdayCache.get(key);
+  if (cached) return cached;
+
+  const names = WEEKDAY_SAMPLES.map((d) => d.toLocaleDateString(locale, { weekday: width }));
+  weekdayCache.set(key, names);
+  return names;
+};
+
 /** Weekday names in the active language: `['dim.', 'lun.', …]`. */
-export const weekdaysShort = () =>
-  WEEKDAY_SAMPLES.map((d) => d.toLocaleDateString(intlLocale(), { weekday: 'short' }));
+export const weekdaysShort = () => weekdayNames('short');
 
 /** Weekday names in full: `['dimanche', 'lundi', …]`. */
-export const weekdaysFull = () =>
-  WEEKDAY_SAMPLES.map((d) => d.toLocaleDateString(intlLocale(), { weekday: 'long' }));
+export const weekdaysFull = () => weekdayNames('long');
 
 export const fmtDateShort = (ds: string) =>
   atNoon(ds).toLocaleDateString(intlLocale(), { weekday: 'short', day: 'numeric', month: 'short' });

@@ -33,8 +33,6 @@ const SKIP_FILES = [
   /[\\/]bungee[\\/]/,
   /\.test\.tsx?$/,
   /vite-env\.d\.ts$/,
-  // Pure geometry — every string in it is an SVG path.
-  /[\\/]lib[\\/]icons\.tsx$/,
 ];
 
 // Attributes a person reads. `alt` and `aria-label` are here because they are
@@ -72,6 +70,12 @@ function looksLikeCopy(text) {
   if (trimmed.includes('//') || /^\)|\($/.test(trimmed)) return false;
   // A CSS value, not a sentence.
   if (/^(linear-gradient|radial-gradient|rgba?|hsla?|url|calc|var|translate|matrix)\(/.test(trimmed)) {
+    return false;
+  }
+  // SVG path data — a command letter, then numbers. Ruled out by shape rather
+  // than by skipping `icons.tsx` wholesale, because that file also holds a real
+  // `aria-label`, and a whole-file exemption hid it.
+  if (/^[MmLlHhVvCcSsQqTtAaZz][\s\d.,-]/.test(trimmed) && !/[a-z]{3}/i.test(trimmed.replace(/[MmLlHhVvCcSsQqTtAaZz]/g, ''))) {
     return false;
   }
   return true;
@@ -122,14 +126,27 @@ function checkSource(file) {
   // 2. Literal text in an attribute a person reads. `ariaLabel` is the
   //    camelCase prop our own components take, as opposed to the DOM's
   //    `aria-label`; both are the same string to the same screen reader.
+  //
+  //    The last alternative covers `aria-label={`${day} opens`}`. A template
+  //    literal is the one attribute form that reads as code, so it is the one
+  //    that keeps its English longest — and these are screen-reader-only
+  //    strings, which nobody *sees* go wrong.
   for (const attr of TEXT_ATTRS) {
     const re = new RegExp(
-      `\\b${attr}\\s*=\\s*(?:"([^"]+)"|'([^']+)'|\\{\\s*['"\`]([^'"\`]+)['"\`]\\s*\\})`,
+      `\\b${attr}\\s*=\\s*(?:"([^"]+)"|'([^']+)'|\\{\\s*['"\`]([^'"\`]+)['"\`]\\s*\\}|\\{\`([^\`]+)\`\\})`,
       'g',
     );
     for (const match of source.matchAll(re)) {
-      const value = match[1] ?? match[2] ?? match[3];
-      if (looksLikeCopy(value)) report(match.index, attr, value);
+      const value = match[1] ?? match[2] ?? match[3] ?? match[4];
+      // Strip the interpolations; what is left is the copy around them.
+      const words = value.replace(/\$\{[^}]*\}/g, ' ').trim();
+
+      // These attributes are copy *by construction* — an `aria-label` is never
+      // an identifier or a class list — so the bar is lower than for a bare
+      // string literal: any three letters make it a phrase somebody reads.
+      // Without this, `aria-label={`${day} opens`}` passes as "opens", which
+      // the general rule discards as a lowercase token.
+      if (/\p{L}{3}/u.test(words) && !/^\s*$/.test(words)) report(match.index, attr, value);
     }
   }
 

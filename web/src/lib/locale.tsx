@@ -12,7 +12,7 @@
 import { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { gql } from './gql';
-import { isLocale, type Locale } from './i18n';
+import { isLocale, STORAGE_KEY, type Locale } from './i18n';
 import { useAuth } from './auth';
 
 export function useLocale() {
@@ -58,7 +58,7 @@ export function useAccountLocale() {
 
   useEffect(() => {
     if (!saved || !isLocale(saved)) return;
-    if (localStorage.getItem('blastek-locale')) return;
+    if (localStorage.getItem(STORAGE_KEY)) return;
     if (i18n.resolvedLanguage === saved) return;
 
     void i18n.changeLanguage(saved);
