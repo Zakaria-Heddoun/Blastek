@@ -113,7 +113,17 @@ defmodule BlastekWeb.RoleMatrixTest do
     {:update_member_role, ~s|mutation { updateMemberRole(id: "1", role: "staff") { id } }|,
      "owner"},
     {:remove_member, ~s|mutation { removeMember(id: "1") { id } }|, "owner"},
-    {:audit_log, "{ auditLog { id } }", "owner"}
+    {:audit_log, "{ auditLog { id } }", "owner"},
+
+    # --- reviews (E10) ---
+    #
+    # Replying publishes under the salon's name and flagging asks the platform
+    # to act on the salon's behalf, so both sit with a manager. A stylist reads
+    # reviews on the public page like anybody else; what they must not do is
+    # answer one as the venue.
+    {:venue_reviews, "{ venueReviews { totalCount } }", "staff"},
+    {:reply_to_review, ~s|mutation { replyToReview(id: "1", text: "Merci") { id } }|, "manager"},
+    {:flag_review, ~s|mutation { flagReview(id: "1", reason: "abusive") { id } }|, "manager"}
   ]
 
   # Fields gated on `RequireAdmin` rather than on a venue role: they cross
@@ -122,6 +132,8 @@ defmodule BlastekWeb.RoleMatrixTest do
   @admin_operations ~w(
     admin_venues
     approve_venue
+    flagged_reviews
+    moderate_review
     notification_log
     reject_venue
     venue_duplicates

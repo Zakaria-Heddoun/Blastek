@@ -138,3 +138,18 @@ export const statusLabel = (status: string) =>
 
 export const initials = (name: string) =>
   name.split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+
+/**
+ * Reading direction for a piece of user-written text (E10-T4 / F0.8).
+ *
+ * A review is stored with the language it was *written* in, which need not be
+ * the language of whoever is reading the page. An Arabic comment sitting in a
+ * French review list still has to render right-to-left, and a French one under
+ * an Arabic UI still has to render left-to-right — inheriting the page's
+ * direction gets both backwards half the time.
+ *
+ * Returns a value for the `dir` attribute, so the browser's own bidirectional
+ * algorithm does the work rather than us guessing at punctuation placement.
+ */
+export const dirOf = (locale?: string | null): 'rtl' | 'ltr' =>
+  (locale ?? '').toLowerCase().startsWith('ar') ? 'rtl' : 'ltr';

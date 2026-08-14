@@ -30,6 +30,11 @@ defmodule Blastek.Venues.Venue do
     # change far more often than the database should.
     field :onboarding, :map, default: %{}
     field :rejected_reason, :string, default: ""
+    # Denormalized from the venue's visible reviews (F0.8). Never cast from user
+    # input — `Blastek.Salon.Reviews.recompute/1` owns both, and a venue that
+    # could set its own rating is not a rating.
+    field :rating_avg, :float, default: 0.0
+    field :rating_count, :integer, default: 0
     has_many :members, Blastek.Venues.VenueMember
     timestamps(type: :naive_datetime)
   end

@@ -38,6 +38,14 @@ defmodule BlastekWeb.ActionController do
     end
   end
 
+  # `ActionToken` also signs `:review`, which is not a one-tap action — it opens
+  # a page with a form (see `ActionToken.review_url/1`). Without this clause a
+  # review token replayed against this route would be a FunctionClauseError and
+  # a 500; it is simply a link that does not work here.
+  defp apply_action(conn, _appointment, action) when action not in [:cancel, :confirm] do
+    json(conn, %{ok: false, error: "This link is no longer valid."})
+  end
+
   defp apply_action(conn, appointment, :cancel) do
     cond do
       appointment.status in ~w(cancelled no_show) ->

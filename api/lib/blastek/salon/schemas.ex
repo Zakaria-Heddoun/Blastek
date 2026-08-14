@@ -374,21 +374,70 @@ defmodule Blastek.Salon.SaleItem do
 end
 
 defmodule Blastek.Salon.Review do
+  @moduledoc """
+  A review of one visit (E10-T1 / F0.8).
+
+  `booking_ref` is what makes it verifiable and what makes it unique: the ref
+  identifies a visit, the unique index enforces one review per visit, and
+  `Blastek.Salon.Reviews` refuses to write a row whose ref does not resolve to
+  a completed appointment belonging to the client.
+
+  `locale` records the language the comment was written in, not the language of
+  whoever reads it. F0.8 asks for no translation in v1, so the only thing this
+  is used for is rendering the text with the right direction — an Arabic comment
+  under a French UI still has to read right-to-left.
+  """
   use Ecto.Schema
   import Ecto.Changeset
 
   schema "reviews" do
-    field :client_name, :string
     field :rating, :integer
     field :comment, :string, default: ""
     field :venue_id, :id
+    field :client_id, :id
+    field :booking_ref, :string
+    # visible | flagged | hidden. Flagged is still public — see
+    # `Blastek.Salon.Reviews`.
+    field :status, :string, default: "visible"
+    field :locale, :string, default: "fr"
+    field :reply, :string, default: ""
+    field :reply_at, :naive_datetime
+    field :hidden_reason, :string, default: ""
+    field :flagged_reason, :string, default: ""
+    belongs_to :client, Blastek.Salon.Client, define_field: false
     timestamps(type: :naive_datetime)
   end
 
+  @statuses ~w(visible flagged hidden)
+
+  # Long enough for somebody to say what went wrong, short enough that the
+  # column is not an essay-hosting service.
+  @max_comment 2_000
+
+  def statuses, do: @statuses
+
   def changeset(review, attrs) do
     review
-    |> cast(attrs, [:client_name, :rating, :comment, :venue_id])
-    |> validate_required([:client_name, :rating, :venue_id])
+    |> cast(attrs, [
+      :rating,
+      :comment,
+      :venue_id,
+      :client_id,
+      :booking_ref,
+      :status,
+      :locale,
+      :reply,
+      :reply_at,
+      :hidden_reason,
+      :flagged_reason
+    ])
+    |> validate_required([:rating, :venue_id])
     |> validate_inclusion(:rating, 1..5)
+    |> validate_inclusion(:status, @statuses)
+    |> validate_length(:comment, max: @max_comment)
+    |> validate_length(:reply, max: @max_comment)
+    |> update_change(:comment, &String.trim/1)
+    |> update_change(:reply, &String.trim/1)
+    |> unique_constraint(:booking_ref)
   end
 end

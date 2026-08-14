@@ -37,8 +37,9 @@ const VENUE = `query($slug: String!) {
     ${F.categories}
     ${F.services}
     ${F.staff}
-    reviews { id clientName rating comment createdAt }
+    reviews { id clientName rating comment createdAt reply replyAt locale }
     rating
+    reviewCount
     hours { weekday open close }
     stats { bookings professionals services }
   }

@@ -50,7 +50,17 @@ defmodule Blastek.Notifications.Templates do
     {:reminder_3h, :reminders},
     {:cancelled_by_customer, :transactional},
     {:cancelled_by_salon, :transactional},
-    {:rescheduled, :transactional}
+    {:rescheduled, :transactional},
+    # Asking for a review is not the consequence of anything the customer just
+    # did — it is us wanting something from them. That makes it opt-outable,
+    # under the same preference as reminders, and F0.10's rule that a person
+    # who has said "no messages" gets none is what decides this, not F0.8's
+    # wish for more reviews.
+    {:review_invite, :reminders},
+    {:review_reminder, :reminders},
+    # The consequence of a moderation decision about their own words, and the
+    # only notice they get that it happened.
+    {:review_hidden, :transactional}
   ]
 
   def locales, do: @locales
@@ -284,6 +294,41 @@ defmodule Blastek.Notifications.Templates do
 
   defp do_render(:rescheduled, _en, a),
     do: "Your appointment at #{a.venue} has moved to #{a.when} with #{a.staff}."
+
+  ## ---------- reviews ----------
+  #
+  # One question and one link. A message that asks for a rating, explains the
+  # scale and offers three options gets read as an advertisement; this gets read
+  # as a question, which is the only version that gets answered.
+
+  defp do_render(:review_invite, "fr", a),
+    do: "Merci de votre visite chez #{a.venue} ! Comment ça s'est passé ? #{a.review_url}"
+
+  defp do_render(:review_invite, "ar", a),
+    do: "شكرًا لزيارتك #{isolate(a.venue)}! كيف كانت التجربة؟ #{isolate(a.review_url)}"
+
+  defp do_render(:review_invite, _en, a),
+    do: "Thanks for visiting #{a.venue}! How did it go? #{a.review_url}"
+
+  defp do_render(:review_reminder, "fr", a),
+    do: "Un avis sur #{a.venue} ? Une minute suffit : #{a.review_url}"
+
+  defp do_render(:review_reminder, "ar", a),
+    do: "رأيك في #{isolate(a.venue)}؟ دقيقة واحدة تكفي: #{isolate(a.review_url)}"
+
+  defp do_render(:review_reminder, _en, a),
+    do: "A quick word about #{a.venue}? One minute: #{a.review_url}"
+
+  # The reason is a category, never the moderator's note — see
+  # `Blastek.Salon.Reviews.reason_label/2`.
+  defp do_render(:review_hidden, "fr", a),
+    do: "Votre avis a été retiré : #{a.reason}. Vous pouvez nous écrire si c'est une erreur."
+
+  defp do_render(:review_hidden, "ar", a),
+    do: "تمت إزالة تقييمك: #{isolate(a.reason)}. راسلنا إذا كان ذلك خطأً."
+
+  defp do_render(:review_hidden, _en, a),
+    do: "Your review was removed: #{a.reason}. Write to us if that is a mistake."
 
   ## ---------- fragments ----------
 

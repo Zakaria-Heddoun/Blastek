@@ -26,9 +26,10 @@ defmodule Blastek.Salon do
     Client,
     Appointment,
     Sale,
-    SaleItem,
-    Review
+    SaleItem
   }
+
+  alias Blastek.Salon.Reviews
 
   @appt_preloads [:client, :service, :staff]
 
@@ -1226,7 +1227,19 @@ defmodule Blastek.Salon do
 
       Repo.preload(sale, [:items, :client])
     end)
+    |> invite_reviews(appts)
   end
+
+  # After the transaction commits, not inside it. Enqueueing an Oban job in the
+  # same transaction would make the sale conditional on the message queue, and a
+  # checkout that fails because we could not schedule a review request two hours
+  # from now is a till that stops working for the wrong reason.
+  defp invite_reviews({:ok, _sale} = result, appts) do
+    Blastek.Notifications.ReviewInvites.schedule(appts)
+    result
+  end
+
+  defp invite_reviews(result, _appts), do: result
 
   def list_sales(venue_id, from_date, opts \\ []) do
     limit = opts[:limit] || 50
@@ -1346,12 +1359,14 @@ defmodule Blastek.Salon do
   3N queries for a results page, so the GraphQL layer batches ids through here.
   """
   def venue_cards_for(venue_ids) do
+    # Read from the denormalized columns rather than aggregating reviews: the
+    # numbers are maintained by `Salon.Reviews.recompute/1` on every write that
+    # could move them, and this is the read path for every listing page.
     ratings =
       Repo.all(
-        from r in Review,
-          where: r.venue_id in ^venue_ids,
-          group_by: r.venue_id,
-          select: {r.venue_id, {avg(r.rating), count(r.id)}}
+        from v in Venues.Venue,
+          where: v.id in ^venue_ids,
+          select: {v.id, {v.rating_avg, v.rating_count}}
       )
       |> Map.new()
 
@@ -1365,12 +1380,12 @@ defmodule Blastek.Salon do
       |> Map.new()
 
     Map.new(venue_ids, fn id ->
-      {avg, count} = Map.get(ratings, id, {nil, 0})
+      {avg, count} = Map.get(ratings, id, {0.0, 0})
 
       {id,
        %{
-         rating: if(avg, do: avg |> Decimal.to_float() |> Float.round(1), else: 0.0),
-         review_count: count,
+         rating: Float.round(avg || 0.0, 1),
+         review_count: count || 0,
          price_from_cents: Map.get(price_from, id)
        }}
     end)
@@ -1379,13 +1394,11 @@ defmodule Blastek.Salon do
   @doc "Public marketplace view of one venue."
   def venue_view(%Venues.Venue{} = venue) do
     venue_id = venue.id
-    reviews = Repo.all(from r in scope(Review, venue_id), order_by: [desc: r.inserted_at])
-
-    rating =
-      case reviews do
-        [] -> 0.0
-        _ -> Float.round(Enum.sum(Enum.map(reviews, & &1.rating)) / length(reviews), 1)
-      end
+    # Hidden reviews are excluded by `Reviews.list/2`, and the rating comes from
+    # the denormalized column, which counts the same set. Computing the mean
+    # from the page's first twenty would make a venue's headline rating depend
+    # on how many reviews the page happened to load.
+    reviews = Reviews.list(venue_id, limit: 50)
 
     %{
       id: venue.id,
@@ -1412,7 +1425,8 @@ defmodule Blastek.Salon do
       services: list_services(venue_id, active_only: true),
       staff: list_staff(venue_id, active_only: true),
       reviews: reviews,
-      rating: rating,
+      rating: Float.round(venue.rating_avg || 0.0, 1),
+      review_count: venue.rating_count || 0,
       hours: venue_week(venue_id),
       stats: %{
         bookings:

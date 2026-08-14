@@ -519,3 +519,71 @@
   border-top: 1px solid var(--line, #e4e8f0);
   font-size: 13px;
 }
+
+/* ---- reviews: replies, prompts and the star picker (E10 / F0.8) ---- */
+
+/* The reply is indented and marked so it reads as an answer to the review
+   above it rather than as a second, competing opinion. Logical properties
+   throughout, so it indents from the correct side in Arabic. */
+.mkt .review-reply {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-inline-start: 2px solid var(--line);
+  background: var(--bg-soft, rgba(0, 0, 0, .025));
+  border-radius: var(--r-sm, 8px);
+}
+
+.mkt .review-reply-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-size: 13px;
+}
+
+.mkt .review-prompts { display: grid; gap: 10px; margin-bottom: 8px; }
+
+.mkt .review-prompt {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  margin-bottom: 0;
+}
+
+.mkt .review-done { padding: 28px; text-align: center; }
+.mkt .review-done .btn { margin-top: 16px; }
+
+.review-form { display: grid; gap: 12px; }
+
+/* Big enough to hit with a thumb: this form is met on a phone, from a
+   message, and a 20px star is a missed tap and an abandoned review. */
+.star-picker { display: flex; gap: 4px; justify-content: center; }
+
+.star-btn {
+  background: none;
+  border: 0;
+  padding: 4px;
+  cursor: pointer;
+  color: var(--line);
+  transition: color .12s ease, transform .12s ease;
+}
+
+.star-btn:hover { transform: scale(1.08); }
+.star-btn.on { color: #e8a33d; }
+.star-btn.on .ic { fill: currentColor; }
+.star-btn:focus-visible { outline: 2px solid var(--accent, #111); outline-offset: 2px; }
+
+.star-caption {
+  text-align: center;
+  font-size: 14px;
+  min-height: 20px;
+  color: var(--muted);
+}
+
+.reason-list { display: grid; gap: 8px; }
+
+/* A form button that fills its container. Declared unscoped because the
+   review form is rendered both inside the marketplace shell and inside a
+   modal, and the two do not share an ancestor. */
+.btn.block { width: 100%; justify-content: center; }

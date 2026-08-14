@@ -24,6 +24,7 @@ defmodule BlastekWeb.Schema do
   alias Blastek.Repo
   alias Blastek.Salon
   alias Blastek.Salon.Blocks
+  alias Blastek.Salon.Reviews
   alias Blastek.Venues
   alias Blastek.Venues.Invitations
 
@@ -220,13 +221,73 @@ defmodule BlastekWeb.Schema do
 
   object :review do
     field :id, :id
-    field :client_name, :string
     field :rating, :integer
     field :comment, :string
+
+    @desc "First name and last initial. The full name is never published."
+    field :client_name, :string do
+      resolve(fn review, _, _ -> {:ok, Reviews.author_name(review)} end)
+    end
+
+    @desc "Language the comment was written in, so it can be rendered with the right direction."
+    field :locale, :string
+
+    @desc "The owner's public reply, empty when there is none."
+    field :reply, :string
+    field :reply_at, :naive_datetime
+
+    @desc "visible | flagged. Hidden reviews are never returned to the public."
+    field :status, :string
+
+    @desc "Whether the owner may still write or change their reply (48h after replying)."
+    field :reply_editable, :boolean do
+      resolve(fn review, _, _ -> {:ok, Reviews.reply_editable?(review)} end)
+    end
 
     field :created_at, :naive_datetime do
       resolve(fn parent, _, _ -> {:ok, parent.inserted_at} end)
     end
+  end
+
+  @desc "One page of a venue's reviews."
+  object :review_page do
+    field :items, non_null(list_of(non_null(:review)))
+    field :total_count, non_null(:integer)
+  end
+
+  @desc "A completed visit the signed-in customer has not reviewed yet."
+  object :reviewable_visit do
+    field :booking_ref, :string do
+      resolve(fn %{appointment: a}, _, _ -> {:ok, a.booking_ref} end)
+    end
+
+    field :date, :date do
+      resolve(fn %{appointment: a}, _, _ -> {:ok, a.date} end)
+    end
+
+    field :service_name, :string do
+      resolve(fn %{appointment: a}, _, _ -> {:ok, a.service && a.service.name} end)
+    end
+
+    field :venue_name, :string do
+      resolve(fn %{venue: venue}, _, _ -> {:ok, venue && venue.name} end)
+    end
+
+    field :venue_slug, :string do
+      resolve(fn %{venue: venue}, _, _ -> {:ok, venue && venue.slug} end)
+    end
+  end
+
+  @desc "What a signed review link resolves to, before anything is written."
+  object :review_invitation do
+    field :booking_ref, :string
+    field :venue_name, :string
+    field :venue_slug, :string
+    field :service_name, :string
+    field :date, :date
+
+    @desc "Null when the link is still good; otherwise why it cannot be used."
+    field :error, :string
   end
 
   @desc "One page of clients. `totalCount` is the size of the whole filtered set."
@@ -420,8 +481,25 @@ defmodule BlastekWeb.Schema do
     field :categories, list_of(:category)
     field :services, list_of(:service)
     field :staff, list_of(:staff)
+    @desc "The most recent public reviews, already loaded with the page."
     field :reviews, list_of(:review)
+
+    @desc "Reviews with paging, for \"show more\" beyond the first page."
+    field :review_page, :review_page do
+      arg(:limit, :integer, default_value: 20)
+      arg(:offset, :integer, default_value: 0)
+
+      resolve(fn venue, args, _ ->
+        {:ok,
+         %{
+           items: Reviews.list(venue.id, limit: args.limit, offset: args.offset),
+           total_count: Reviews.count(venue.id)
+         }}
+      end)
+    end
+
     field :rating, :float
+    field :review_count, :integer
     field :hours, list_of(:venue_hour)
     field :stats, :venue_stats
   end
@@ -1309,11 +1387,64 @@ defmodule BlastekWeb.Schema do
       end)
     end
 
+    @desc """
+    The active venue's own reviews, for the dashboard's Reviews tab.
+
+    Separate from `venue(slug:).reviews` because the audience is: this one
+    carries `replyEditable`, which is meaningless to a customer, and it is
+    scoped by membership rather than by slug so a manager cannot read another
+    salon's page through it by changing a string.
+    """
+    field :venue_reviews, :review_page do
+      arg(:limit, :integer, default_value: 20)
+      arg(:offset, :integer, default_value: 0)
+
+      middleware(RequireMember, "staff")
+
+      resolve(fn args, %{context: ctx} ->
+        {:ok,
+         %{
+           items: Reviews.list(ctx.venue_id, limit: args.limit, offset: args.offset),
+           total_count: Reviews.count(ctx.venue_id)
+         }}
+      end)
+    end
+
+    @desc "Visits the customer could review, for the \"how did it go?\" prompts."
+    field :my_reviewable_visits, list_of(:reviewable_visit) do
+      middleware(RequireAuth)
+
+      resolve(fn _, %{context: ctx} ->
+        {:ok, Reviews.reviewable(Accounts.client_ids(ctx.current_user))}
+      end)
+    end
+
+    @desc """
+    What a signed review link points at.
+
+    Unauthenticated on purpose: the token is the credential, and requiring a
+    session as well would defeat the one-tap link it arrived on. It returns
+    only what the customer already knows — which salon, which service, which
+    day — and an `error` when the link has been used or has expired, so the
+    page can say so instead of failing on submit.
+    """
+    field :review_invitation, :review_invitation do
+      arg(:token, non_null(:string))
+
+      resolve(fn %{token: token}, _ -> {:ok, review_invitation(token)} end)
+    end
+
     ## --- platform admin ---
 
     field :admin_venues, list_of(:venue_summary) do
       middleware(RequireAdmin)
       resolve(fn _, _ -> {:ok, Venues.list_venues()} end)
+    end
+
+    @desc "Reviews an owner has reported, awaiting a decision (F0.12)."
+    field :flagged_reviews, list_of(:review) do
+      middleware(RequireAdmin)
+      resolve(fn _, _ -> {:ok, Reviews.flagged_queue()} end)
     end
   end
 
@@ -2366,6 +2497,102 @@ defmodule BlastekWeb.Schema do
         end
       end)
     end
+
+    ## --- reviews (E10 / F0.8) ---
+
+    @desc """
+    Writes a review of a completed booking.
+
+    Neither the venue nor the rating's effect on it is a parameter: the booking
+    ref is resolved to the visit, the visit names the venue, and
+    `Blastek.Salon.Reviews` refuses anything that is not the caller's own
+    completed appointment within the last fortnight.
+    """
+    field :create_review, :review do
+      arg(:booking_ref, non_null(:string))
+      arg(:rating, non_null(:integer))
+      arg(:comment, :string)
+
+      middleware(RequireAuth)
+
+      resolve(fn args, %{context: ctx} ->
+        ctx.current_user
+        |> Accounts.client_ids()
+        |> create_review(args.booking_ref, args, ctx)
+      end)
+    end
+
+    @desc """
+    The same, from a signed link in a WhatsApp message.
+
+    No session required — see `reviewInvitation`. The token names one
+    appointment, the appointment names the client, and every eligibility rule
+    then applies exactly as it does for a signed-in customer. A token cannot
+    review a different booking than the one it was minted for.
+    """
+    field :create_review_from_link, :review do
+      arg(:token, non_null(:string))
+      arg(:rating, non_null(:integer))
+      arg(:comment, :string)
+
+      resolve(fn args, %{context: ctx} ->
+        case review_link_target(args.token) do
+          {:ok, appointment} ->
+            create_review([appointment.client_id], appointment.booking_ref, args, ctx)
+
+          {:error, message} ->
+            {:error, message}
+        end
+      end)
+    end
+
+    @desc "The venue's public reply. One per review, editable for 48 hours."
+    field :reply_to_review, :review do
+      arg(:id, non_null(:id))
+      arg(:text, non_null(:string))
+
+      middleware(RequireMember, "manager")
+
+      resolve(fn args, %{context: ctx} ->
+        Reviews.reply(ctx.venue_id, to_int(args.id), args.text)
+        |> review_result()
+      end)
+    end
+
+    @desc """
+    Reports a review for moderation.
+
+    The review stays up. Flagging queues it for a platform admin; it does not
+    remove it, because a remove-on-report button is a delete button with extra
+    steps.
+    """
+    field :flag_review, :review do
+      arg(:id, non_null(:id))
+      arg(:reason, :string)
+
+      middleware(RequireMember, "manager")
+
+      resolve(fn args, %{context: ctx} ->
+        Reviews.flag(ctx.venue_id, to_int(args.id), args[:reason])
+        |> review_result()
+      end)
+    end
+
+    @desc "A platform admin's verdict on a flagged review: \"hide\" or \"keep\" (F0.12)."
+    field :moderate_review, :review do
+      arg(:id, non_null(:id))
+      arg(:verdict, non_null(:string))
+
+      @desc "Reason category — the author is told this one, not a free-text note."
+      arg(:reason, :string)
+
+      middleware(RequireAdmin)
+
+      resolve(fn args, _ ->
+        Reviews.moderate(to_int(args.id), args.verdict, args[:reason])
+        |> review_result()
+      end)
+    end
   end
 
   ## ---------- subscriptions ----------
@@ -2398,6 +2625,117 @@ defmodule BlastekWeb.Schema do
       end)
     end
   end
+
+  ## ---------- reviews (E10 / F0.8) ----------
+
+  defp create_review([], _booking_ref, _args, _ctx), do: {:error, "That booking is not yours."}
+
+  defp create_review(client_ids, booking_ref, args, ctx) do
+    # Which of the caller's client records made this booking. A customer can
+    # have one per salon, and the review belongs to the one that visited.
+    client_ids
+    |> Enum.find_value(:error, fn client_id ->
+      case Reviews.eligibility(client_id, booking_ref) do
+        {:ok, _appointment} -> {:ok, client_id}
+        _ -> nil
+      end
+    end)
+    |> case do
+      {:ok, client_id} ->
+        Reviews.create(client_id, booking_ref, %{
+          rating: args.rating,
+          comment: args[:comment],
+          # The language the comment is *written* in, which is the language the
+          # customer's interface was in when they wrote it.
+          locale: ctx[:locale]
+        })
+        |> review_result()
+
+      :error ->
+        # Re-run against the first candidate purely to get the reason. Cheap,
+        # and the alternative is a single message for five different situations
+        # — "already reviewed" and "too late" need different answers.
+        client_ids |> hd() |> Reviews.eligibility(booking_ref) |> review_error()
+    end
+  end
+
+  defp review_result({:ok, review}), do: {:ok, Blastek.Repo.preload(review, :client)}
+  defp review_result({:error, %Ecto.Changeset{} = cs}), do: format_errors({:error, cs})
+  defp review_result({:error, reason}), do: review_error({:error, reason})
+
+  defp review_error({:error, :not_found}),
+    do: {:error, %{message: "We could not find that visit.", code: "not_found"}}
+
+  defp review_error({:error, :not_completed}),
+    do:
+      {:error, %{message: "You can review a visit once it has happened.", code: "not_completed"}}
+
+  defp review_error({:error, :too_old}),
+    do: {:error, %{message: "Reviews close 14 days after the visit.", code: "too_old"}}
+
+  defp review_error({:error, :already_reviewed}),
+    do: {:error, %{message: "You have already reviewed this visit.", code: "already_reviewed"}}
+
+  defp review_error({:error, :frozen}),
+    do: {:error, %{message: "Reviews for this venue are paused.", code: "frozen"}}
+
+  defp review_error({:error, :reply_locked}),
+    do: {:error, %{message: "A reply can only be changed within 48 hours.", code: "reply_locked"}}
+
+  defp review_error({:error, :already_hidden}),
+    do: {:error, %{message: "That review has already been removed.", code: "already_hidden"}}
+
+  defp review_error({:error, :unknown_verdict}),
+    do: {:error, %{message: "Unknown moderation verdict.", code: "unknown_verdict"}}
+
+  defp review_error(other), do: format_errors(other)
+
+  # A review token resolves to the appointment it was minted for. Deliberately
+  # indistinguishable failures — expired, forged and pointing at a deleted
+  # appointment all mean "this link does not work".
+  defp review_link_target(token) do
+    with {:ok, id, :review} <- Blastek.Notifications.ActionToken.verify(token),
+         %{client_id: client_id} = appointment when not is_nil(client_id) <-
+           Blastek.Repo.get(Blastek.Salon.Appointment, id) do
+      {:ok, appointment}
+    else
+      _ -> {:error, "This review link is no longer valid."}
+    end
+  end
+
+  # Everything the review page needs to render before anything is written, or
+  # the reason it cannot be. Never an error at the GraphQL level: a customer who
+  # taps a stale link should be told why, on a page, not shown a failed query.
+  defp review_invitation(token) do
+    case review_link_target(token) do
+      {:error, message} ->
+        %{error: message}
+
+      {:ok, appointment} ->
+        appointment = Blastek.Repo.preload(appointment, :service)
+        venue = Venues.get_venue(appointment.venue_id)
+
+        base = %{
+          booking_ref: appointment.booking_ref,
+          venue_name: venue && venue.name,
+          venue_slug: venue && venue.slug,
+          service_name: appointment.service && appointment.service.name,
+          date: appointment.date,
+          error: nil
+        }
+
+        case Reviews.eligibility(appointment.client_id, appointment.booking_ref) do
+          {:ok, _} -> base
+          {:error, reason} -> %{base | error: invitation_reason(reason)}
+        end
+    end
+  end
+
+  defp invitation_reason(:already_reviewed), do: "You have already reviewed this visit."
+  defp invitation_reason(:too_old), do: "Reviews close 14 days after the visit."
+  defp invitation_reason(:not_completed), do: "You can review a visit once it has happened."
+  defp invitation_reason(:frozen), do: "Reviews for this venue are paused."
+  defp invitation_reason(_), do: "This review link is no longer valid."
 
   # Live updates live in `BlastekWeb.LiveUpdates` — the schema is no longer the
   # only path an appointment changes by.

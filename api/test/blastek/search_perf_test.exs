@@ -150,6 +150,12 @@ defmodule Blastek.SearchPerfTest do
   # regression that did not happen.
   @fixture_timeout 120_000
 
+  # One review for every third venue. Kept as two functions so the `reviews`
+  # rows and the denormalized columns on `venues` cannot drift apart — they are
+  # the same fact written in two places, which is what denormalization is.
+  defp reviewed?(index), do: rem(index, 3) == 0
+  defp seeded_rating(index), do: rem(index, 5) + 1
+
   defp seed_directory do
     now = NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
 
@@ -171,6 +177,16 @@ defmodule Blastek.SearchPerfTest do
           lat: 33.5 + rem(n, 40) * 0.05,
           lng: -7.6 + rem(n, 40) * 0.05,
           settings: %{"women_only" => rem(n, 4) == 0},
+          # Written here rather than by a second pass over `venues`, because a
+          # second pass is what the honest version costs: an `UPDATE ... FROM`
+          # over the whole directory inside the sandbox transaction — where the
+          # planner has no statistics for tables created moments earlier — took
+          # the fixture from 3 seconds to over two minutes. The seeder already
+          # knows which venues get a review and what it scores; `Salon.Reviews`
+          # maintaining these columns in production is what the rest of the
+          # suite asserts.
+          rating_avg: if(reviewed?(n - 1), do: seeded_rating(n - 1) * 1.0, else: 0.0),
+          rating_count: if(reviewed?(n - 1), do: 1, else: 0),
           inserted_at: now,
           updated_at: now
         }
@@ -224,12 +240,16 @@ defmodule Blastek.SearchPerfTest do
     |> Enum.each(&Repo.insert_all("services", &1, timeout: @fixture_timeout))
 
     reviews =
-      for {venue_id, index} <- Enum.with_index(venue_ids), rem(index, 3) == 0 do
+      for {venue_id, index} <- Enum.with_index(venue_ids), reviewed?(index) do
         %{
           venue_id: venue_id,
-          client_name: "Client #{index}",
-          rating: rem(index, 5) + 1,
+          rating: seeded_rating(index),
           comment: "",
+          status: "visible",
+          locale: "fr",
+          reply: "",
+          hidden_reason: "",
+          flagged_reason: "",
           inserted_at: now,
           updated_at: now
         }

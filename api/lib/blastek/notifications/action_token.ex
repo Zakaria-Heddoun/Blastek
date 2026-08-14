@@ -25,7 +25,7 @@ defmodule Blastek.Notifications.ActionToken do
   @salt "notification action"
   @max_age 60 * 60 * 24 * 14
 
-  @actions ~w(confirm cancel)a
+  @actions ~w(confirm cancel review)a
 
   def actions, do: @actions
 
@@ -69,5 +69,25 @@ defmodule Blastek.Notifications.ActionToken do
       |> String.trim_trailing("/")
 
     "#{base}/a/#{action}/#{sign(appointment_id, action)}"
+  end
+
+  @doc """
+  The link a review invite carries (E10-T3 / F0.8).
+
+  Its own path because it is its own kind of thing: `/a/:action/:token` is a
+  one-tap link that acts and reports back, while this opens a page with a form
+  on it. Nothing is written until the customer submits a rating, so unlike its
+  siblings this URL is a plain GET that changes nothing — a link preview
+  fetching it costs a page render.
+
+  The token still authorizes exactly one review of one booking; the mutation
+  behind the form is what checks it.
+  """
+  def review_url(appointment_id) do
+    base =
+      Application.get_env(:blastek, :public_web_url, "http://localhost:5173")
+      |> String.trim_trailing("/")
+
+    "#{base}/review/#{sign(appointment_id, :review)}"
   end
 end

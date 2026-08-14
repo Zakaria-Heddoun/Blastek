@@ -28,7 +28,8 @@ defmodule Blastek.NotificationsTest do
     when: "samedi 2 août à 14:30",
     time: "14:30",
     phone: "+212522274880",
-    cancel_url: "https://blastek.ma/a/cancel/tok"
+    cancel_url: "https://blastek.ma/a/cancel/tok",
+    review_url: "https://blastek.ma/review/tok"
   }
 
   describe "templates" do
@@ -69,10 +70,17 @@ defmodule Blastek.NotificationsTest do
     end
 
     test "reminders are optional and everything else is not" do
-      assert Templates.category(:reminder_24h) == :reminders
-      assert Templates.category(:reminder_3h) == :reminders
+      # Asking for a review is us wanting something from the customer rather
+      # than the consequence of anything they did, so it lives under the same
+      # switch as reminders (E10 / F0.8). Being told a review was taken down is
+      # the consequence of a decision about their own words, so it does not.
+      optional = [:reminder_24h, :reminder_3h, :review_invite, :review_reminder]
 
-      for template <- Templates.names() -- [:reminder_24h, :reminder_3h] do
+      for template <- optional do
+        assert Templates.category(template) == :reminders
+      end
+
+      for template <- Templates.names() -- optional do
         assert Templates.category(template) == :transactional,
                "#{template} should not be something a person can switch off"
       end
