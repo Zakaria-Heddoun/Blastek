@@ -523,11 +523,18 @@ defmodule Blastek.Salon do
       # same treatment twice reserves twice the time.
       total = Enum.sum(Enum.map(service_ids, &by_id[&1].duration_min))
 
+      # Eligibility is checked for a named staff member too, not only for
+      # "anyone". Naming somebody used to skip the check entirely, so a crafted
+      # request could book a colourist for a massage — and F0.9 reaches the
+      # same hole by an ordinary route, since a stylist may have had a service
+      # taken off their list since the customer booked it.
+      eligible = eligible_staff(venue_id, service_ids)
+
       candidates =
         case staff_id do
-          nil -> eligible_staff(venue_id, service_ids)
-          "any" -> eligible_staff(venue_id, service_ids)
-          id -> scoped_staff_candidate(venue_id, id)
+          nil -> eligible
+          "any" -> eligible
+          id -> Enum.filter(eligible, &(&1.id == to_int_or_nil(id)))
         end
 
       {:ok, %{total_duration: total, slots: slots_for(venue_id, candidates, date, total, opts)}}
@@ -599,15 +606,16 @@ defmodule Blastek.Salon do
   end
 
   # A staff id from user input is only honored if it belongs to this venue.
-  defp scoped_staff_candidate(venue_id, id) do
-    case get_scoped(Repo, Staff, to_int(id), venue_id) do
-      nil -> []
-      staff -> [%{id: staff.id}]
+  # The forgiving form, for ids that arrive from a public query string: a typo
+  # should match no staff member, not raise out of the resolver as a 500.
+  defp to_int_or_nil(v) when is_integer(v), do: v
+
+  defp to_int_or_nil(v) do
+    case Integer.parse(to_string(v)) do
+      {n, ""} -> n
+      _ -> nil
     end
   end
-
-  defp to_int(v) when is_integer(v), do: v
-  defp to_int(v), do: String.to_integer(to_string(v))
 
   @doc """
   Whether a staff id belongs to this venue.

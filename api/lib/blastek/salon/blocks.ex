@@ -175,30 +175,39 @@ defmodule Blastek.Salon.Blocks do
   def conflicts(venue_id, attrs) do
     with {:ok, staff_id} <- fetch_int(attrs, :staff_id),
          {:ok, date} <- fetch_date(attrs, :date) do
-      dates = occurrence_dates(attrs, date)
-      start_min = attrs[:start_min] || attrs["start_min"]
-      end_min = attrs[:end_min] || attrs["end_min"]
+      weekly? = truthy(attrs[:weekly] || attrs["weekly"])
+      end_date = fetch_date(attrs, :end_date)
 
-      Enum.flat_map(dates, fn {from_date, to_date} ->
-        Blastek.Salon.appointments_in_window(venue_id, from_date, to_date, start_min, end_min,
-          staff_id: staff_id
-        )
-      end)
+      last =
+        cond do
+          weekly? -> Date.add(date, @weekly_horizon_weeks * 7)
+          match?({:ok, _}, end_date) -> elem(end_date, 1)
+          true -> date
+        end
+
+      # One query over the whole span, then the weekly rule applied in memory.
+      # A query per occurrence was eight round trips, re-run on every change to
+      # a form the owner is still typing into.
+      venue_id
+      |> Blastek.Salon.appointments_in_window(
+        date,
+        last,
+        attrs[:start_min] || attrs["start_min"],
+        attrs[:end_min] || attrs["end_min"],
+        staff_id: staff_id
+      )
+      |> filter_occurrences(weekly?, date)
     else
       _ -> []
     end
   end
 
-  # A weekly rule is a list of single days; everything else is one span.
-  defp occurrence_dates(attrs, date) do
-    if truthy(attrs[:weekly] || attrs["weekly"]) do
-      for week <- 0..(@weekly_horizon_weeks - 1) do
-        day = Date.add(date, week * 7)
-        {day, day}
-      end
-    else
-      [{date, attrs[:end_date] || attrs["end_date"] || date}]
-    end
+  # A weekly rule only touches its own weekday; a range touches every day in it.
+  defp filter_occurrences(appointments, false, _date), do: appointments
+
+  defp filter_occurrences(appointments, true, date) do
+    weekday = Date.day_of_week(date, :sunday)
+    Enum.filter(appointments, &(Date.day_of_week(&1.date, :sunday) == weekday))
   end
 
   defp truthy(true), do: true
@@ -207,12 +216,18 @@ defmodule Blastek.Salon.Blocks do
 
   defp fetch_int(attrs, key) do
     case attrs[key] || attrs[to_string(key)] do
-      value when is_integer(value) -> {:ok, value}
-      value when is_binary(value) -> Integer.parse(value) |> then(fn {n, _} -> {:ok, n} end)
-      _ -> :error
+      value when is_integer(value) ->
+        {:ok, value}
+
+      value when is_binary(value) ->
+        case Integer.parse(value) do
+          {n, ""} -> {:ok, n}
+          _ -> :error
+        end
+
+      _ ->
+        :error
     end
-  rescue
-    _ -> :error
   end
 
   defp fetch_date(attrs, key) do

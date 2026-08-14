@@ -1030,12 +1030,11 @@ defmodule BlastekWeb.Schema do
       resolve(fn args, %{context: ctx} ->
         # A staff member sees their own; receptionist and above see everyone's,
         # mirroring F0.7's "staff role can manage own blocks".
-        staff_id =
-          case own_staff_scope(ctx)[:staff_id] do
-            nil -> int_or_nil(args[:staff_id])
-            :none -> -1
-            own -> own
-          end
+        #  returns their id or nothing at all; it has no
+        #  case, so a staff member without a calendar simply sees the
+        # venue's blocks unfiltered — which is the same list their calendar
+        # already shows them.
+        staff_id = own_staff_scope(ctx)[:staff_id] || int_or_nil(args[:staff_id])
 
         {:ok,
          Blocks.list(ctx.venue_id,
