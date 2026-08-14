@@ -37,7 +37,10 @@
     "day": "يوم",
     "tip": "إكرامية",
     "you": "أنت",
-    "mapLabel": "خريطة"
+    "mapLabel": "خريطة",
+    "opensAria": "{{day}} — الفتح",
+    "closesAria": "{{day}} — الإغلاق",
+    "ratingAria": "{{rating}} من 5"
   },
   "lang": {
     "label": "اللغة",
@@ -386,7 +389,8 @@
     "hammamSpa": "حمام وسبا",
     "justMe": "أنا فقط",
     "submitForReview": "إرسال للمراجعة",
-    "yourSalonLabel": "صالونك"
+    "yourSalonLabel": "صالونك",
+    "progressAria": "الخطوة {{current}} من {{total}}"
   },
   "action": {
     "working": "لحظة من فضلك…",
@@ -555,7 +559,9 @@
       "invitationSent": "تم إرسال الدعوة",
       "invitationCreated": "تم إنشاء الدعوة",
       "addMemberTitle": "إضافة مهني",
-      "sendInvite": "إرسال الدعوة"
+      "sendInvite": "إرسال الدعوة",
+      "roleForAria": "صفة {{name}}",
+      "aMember": "هذا العضو"
     },
     "sales": {
       "title": "المبيعات",

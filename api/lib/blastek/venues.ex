@@ -34,8 +34,6 @@ defmodule Blastek.Venues.Venue do
     timestamps(type: :naive_datetime)
   end
 
-  def translatable_fields, do: @translatable
-
   def changeset(venue, attrs) do
     venue
     |> cast(attrs, [

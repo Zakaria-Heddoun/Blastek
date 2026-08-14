@@ -28,7 +28,13 @@ type Bootstrap = Omit<AppData, 'refresh'>;
 const AppCtx = createContext<AppData | null>(null);
 export const useAppData = () => useContext(AppCtx)!;
 
-const BOOTSTRAP = `{ ${F.settings} ${F.staff} ${F.categories} ${F.services} }`;
+// The dashboard is the one caller that edits copy, so it is the one caller
+// that asks for every locale.
+const BOOTSTRAP = `{
+  ${F.settings} ${F.staff}
+  categories { id name ${F.translations} sort }
+  services { id categoryId name description ${F.translations} durationMin priceCents active staffIds }
+}`;
 
 // Minimum role each section requires, mirroring the server's middleware.
 const NAV = [

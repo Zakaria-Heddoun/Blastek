@@ -158,7 +158,7 @@ export default function OnboardVenue() {
 
   return (
     <Shell>
-      <div className="wiz-progress" aria-label={`Step ${progress} of ${STEPS.length}`}>
+      <div className="wiz-progress" aria-label={t('onboard.progressAria', { current: progress, total: STEPS.length })}>
         {STEPS.map((s, i) => (
           <span key={s} className={i < progress ? 'done' : ''} />
         ))}

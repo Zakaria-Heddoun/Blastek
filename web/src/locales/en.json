@@ -37,7 +37,10 @@
     "day": "Day",
     "tip": "Tip",
     "you": "You",
-    "mapLabel": "Map"
+    "mapLabel": "Map",
+    "opensAria": "{{day}} opens",
+    "closesAria": "{{day}} closes",
+    "ratingAria": "{{rating}} out of 5"
   },
   "lang": {
     "label": "Language",
@@ -378,7 +381,8 @@
     "hammamSpa": "Hammam and spa",
     "justMe": "Just me",
     "submitForReview": "Submit for review",
-    "yourSalonLabel": "Your salon"
+    "yourSalonLabel": "Your salon",
+    "progressAria": "Step {{current}} of {{total}}"
   },
   "action": {
     "working": "One moment…",
@@ -543,7 +547,9 @@
       "invitationSent": "Invitation sent",
       "invitationCreated": "Invitation created",
       "addMemberTitle": "Add team member",
-      "sendInvite": "Send invitation"
+      "sendInvite": "Send invitation",
+      "roleForAria": "Role for {{name}}",
+      "aMember": "this member"
     },
     "sales": {
       "title": "Sales",

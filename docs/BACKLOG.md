@@ -653,6 +653,22 @@ three languages, RTL included).
 | `check-i18n.mjs` | Copy in object literals (`{ value: 'rating', label: 'Top rated' }`) and inside JSX expressions (`{searched ? 'Search results' : 'Book an appointment'}`) was invisible to a JSX-text scan. Both are now covered. | The same screenshot |
 | `role_matrix_test.exs` | The new `updateCategory` mutation had no row in the matrix — the E6 review's inventory check caught it on the first run. | The suite |
 
+#### Epic 7 review — principal-engineer pass
+
+526 tests green. Every finding was reproduced against the running stack before
+being fixed, and every new assertion was mutation-tested.
+
+| Where | Defect | Why it mattered |
+|---|---|---|
+| Five `aria-label={\`…\`}` sites | **Screen-reader labels still in English** — "opens", "closes", "Role for …", "out of 5", "Step n of m". The gate checks `attr="…"`, `attr='…'` and `attr={'…'}` but not the template-literal form, which is the one that reads as code. | The gate's own docstring says these are the strings that stay English for a year *because nobody sees them go wrong* — and it could not see them either. Now covered, with a lower bar for these attributes specifically: an `aria-label` is copy by construction, so any three letters count. |
+| `check-i18n.mjs` | `lib/icons.tsx` was skipped **wholesale** to silence SVG path data, which also hid the one real `aria-label` in it. | A whole-file exemption is a permanent blind spot. Replaced with a rule that recognises path data by shape, so the file is scanned again. |
+| `lib/fragments.ts` | `translations` was added to the **shared** service and category fragments, so every customer loading a venue page downloaded every other language's copy — for a page that renders `name` already resolved server-side. | Payload on the most-visited page, for data it never shows. The editor-only field is its own fragment now and only the dashboard asks for it. |
+| `lib/format.ts` | `weekdaysShort()` built seven `Date`s and seven `Intl` formatters **on every call**, and it is called inside render loops — three times per row in the schedule editor, so ~147 formatter constructions per render. | `Intl.DateTimeFormat` construction is the classic JS performance footgun. Cached per locale and width; the call sites that loop now hoist it too. |
+| `lib/locale.tsx` | Read `localStorage` with a hardcoded `'blastek-locale'` rather than the exported `STORAGE_KEY`. | Two copies of a key that must agree: change one and adopting the account's saved language silently stops working. |
+| `I18n.sanitize/2` | No length bound. Base columns are `varchar` and Postgres refuses over-long values; JSONB accepts anything. | A manager could put a megabyte where a service name goes and every venue page would carry it. Bounded at 2 000 characters, truncated rather than rejected. |
+| `Venues.Venue` | `translatable_fields/0` was never called — only `Category` and `Service` expose `translations`. | Dead public API that reads like a contract. Removed; the attribute it wrapped is still used by `cast_translations/2`. |
+| Tests | The 21 i18n tests were **all pure unit tests** of `I18n`. Nothing covered the header → plug → context → resolver path, which is where it actually breaks: each link can be perfect on its own while the customer still reads French. | Added `localized_content_test.exs` — 12 tests over the wire, including a signed-in reader's saved locale outranking their browser, and French landing in the base column rather than the JSONB (which is what F0.6's search index is built from). |
+
 **Not done, deliberately**: `venues.search_tsv` is still built from the base
 columns only, so an Arabic-only service name is readable but not *searchable*.
 Postgres has no Arabic stemmer configured here and `unaccent` does nothing for

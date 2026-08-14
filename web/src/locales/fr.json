@@ -37,7 +37,10 @@
     "day": "Jour",
     "tip": "Pourboire",
     "you": "Vous",
-    "mapLabel": "Carte"
+    "mapLabel": "Carte",
+    "opensAria": "{{day}} — ouverture",
+    "closesAria": "{{day}} — fermeture",
+    "ratingAria": "{{rating}} sur 5"
   },
   "lang": {
     "label": "Langue",
@@ -378,7 +381,8 @@
     "hammamSpa": "Hammam et spa",
     "justMe": "Juste moi",
     "submitForReview": "Envoyer pour validation",
-    "yourSalonLabel": "Votre salon"
+    "yourSalonLabel": "Votre salon",
+    "progressAria": "Étape {{current}} sur {{total}}"
   },
   "action": {
     "working": "Un instant…",
@@ -543,7 +547,9 @@
       "invitationSent": "Invitation envoyée",
       "invitationCreated": "Invitation créée",
       "addMemberTitle": "Ajouter un praticien",
-      "sendInvite": "Envoyer l’invitation"
+      "sendInvite": "Envoyer l’invitation",
+      "roleForAria": "Rôle de {{name}}",
+      "aMember": "ce membre"
     },
     "sales": {
       "title": "Ventes",

@@ -44,12 +44,27 @@ export function Sparkle({ size = 18 }: { size?: number }) {
   );
 }
 
-/** Filled stars read as a score at a glance; outlines read as a form control. */
-export function StarRow({ rating, size = 13 }: { rating: number; size?: number }) {
+/**
+ * Filled stars read as a score at a glance; outlines read as a form control.
+ *
+ * `label` rather than an invented sentence: this is a leaf with no `t` in
+ * scope, and a component that writes its own English is a component whose
+ * screen-reader text nobody notices is untranslated. The numeric fallback is
+ * language-neutral.
+ */
+export function StarRow({
+  rating,
+  size = 13,
+  label,
+}: {
+  rating: number;
+  size?: number;
+  label?: string;
+}) {
   const filled = Math.round(rating);
 
   return (
-    <span className="stars" role="img" aria-label={`${rating.toFixed(1)} out of 5`}>
+    <span className="stars" role="img" aria-label={label ?? `${rating.toFixed(1)}/5`}>
       {[0, 1, 2, 3, 4].map((i) => (
         <svg
           key={i}
