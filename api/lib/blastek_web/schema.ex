@@ -23,6 +23,7 @@ defmodule BlastekWeb.Schema do
   alias Blastek.Notifications
   alias Blastek.Repo
   alias Blastek.Salon
+  alias Blastek.Salon.Blocks
   alias Blastek.Venues
   alias Blastek.Venues.Invitations
 
@@ -121,6 +122,29 @@ defmodule BlastekWeb.Schema do
     field :service_ids, list_of(:id) do
       resolve(fn staff, _, _ -> {:ok, Enum.map(staff.services, & &1.id)} end)
     end
+  end
+
+  @desc """
+  Time one staff member is not available (E9-T1 / F0.7).
+
+  `time_off` is whole days and carries no minutes; `break` and `blocked` are
+  ranges. A `break` may repeat weekly, in which case `weekday` says which day
+  and `date` is when the rule started rather than the only day it applies to.
+  """
+  object :staff_block do
+    field :id, :id
+    field :staff_id, :id
+
+    @desc "time_off | break | blocked"
+    field :kind, :string
+
+    field :date, :date
+    field :end_date, :date
+    field :start_min, :integer
+    field :end_min, :integer
+    field :weekly, :boolean
+    field :weekday, :integer
+    field :note, :string
   end
 
   object :client do
@@ -986,6 +1010,39 @@ defmodule BlastekWeb.Schema do
           true ->
             {:ok, Salon.list_appointments(ctx.venue_id, f, t, own_staff_scope(ctx))}
         end
+      end)
+    end
+
+    @desc """
+    Time off, breaks and blocks in a date window (E9-T1 / F0.7).
+
+    Returned alongside the appointments rather than folded into them: the
+    calendar draws them differently, and an availability gap the salon cannot
+    explain is worse than one it can label "Sara — holiday".
+    """
+    field :staff_blocks, list_of(:staff_block) do
+      arg(:from, :date)
+      arg(:to, :date)
+      arg(:staff_id, :id)
+
+      middleware(RequireMember, "staff")
+
+      resolve(fn args, %{context: ctx} ->
+        # A staff member sees their own; receptionist and above see everyone's,
+        # mirroring F0.7's "staff role can manage own blocks".
+        staff_id =
+          case own_staff_scope(ctx)[:staff_id] do
+            nil -> int_or_nil(args[:staff_id])
+            :none -> -1
+            own -> own
+          end
+
+        {:ok,
+         Blocks.list(ctx.venue_id,
+           staff_id: staff_id,
+           from: args[:from],
+           to: args[:to]
+         )}
       end)
     end
 
@@ -2056,6 +2113,141 @@ defmodule BlastekWeb.Schema do
     end
 
     @desc """
+    Appointments a proposed block would sit on top of (E9-T3 / F0.7).
+
+    A query in mutation's clothing, and deliberately separate from
+    `createStaffBlock`: F0.7 says a block over existing appointments **prompts**
+    rather than acting, so the dashboard asks this first and shows the list. A
+    stylist taking Thursday off still has to telephone the three people booked
+    that afternoon, and the software's job is to tell them who.
+    """
+    field :staff_block_conflicts, list_of(:appointment) do
+      arg(:staff_id, non_null(:id))
+      arg(:kind, non_null(:string))
+      arg(:date, non_null(:date))
+      arg(:end_date, :date)
+      arg(:start_min, :integer)
+      arg(:end_min, :integer)
+      arg(:weekly, :boolean)
+
+      middleware(RequireMember, "staff")
+
+      resolve(fn args, %{context: ctx} ->
+        {:ok,
+         Blocks.conflicts(ctx.venue_id, %{
+           staff_id: to_int(args.staff_id),
+           kind: args.kind,
+           date: args.date,
+           end_date: args[:end_date],
+           start_min: args[:start_min],
+           end_min: args[:end_min],
+           weekly: args[:weekly] || false
+         })}
+      end)
+    end
+
+    @desc """
+    Blocks out time for a staff member (E9-T1 / F0.7).
+
+    Does not check for conflicts — ask `staffBlockConflicts` first and show
+    them. Creating over an appointment is allowed on purpose: sometimes the
+    salon really is closing and the calls come after.
+    """
+    field :create_staff_block, :staff_block do
+      arg(:staff_id, non_null(:id))
+
+      @desc "time_off | break | blocked"
+      arg(:kind, non_null(:string))
+
+      arg(:date, non_null(:date))
+      arg(:end_date, :date)
+      arg(:start_min, :integer)
+      arg(:end_min, :integer)
+      arg(:weekly, :boolean)
+      arg(:note, :string)
+
+      middleware(RequireMember, "staff")
+
+      resolve(fn args, %{context: ctx} ->
+        with :ok <- own_block?(ctx, to_int(args.staff_id)) do
+          Blocks.create(ctx.venue_id, %{
+            staff_id: to_int(args.staff_id),
+            kind: args.kind,
+            date: args.date,
+            end_date: args[:end_date],
+            start_min: args[:start_min],
+            end_min: args[:end_min],
+            weekly: args[:weekly] || false,
+            note: args[:note] || ""
+          })
+          |> format_errors()
+        end
+      end)
+    end
+
+    field :delete_staff_block, :boolean do
+      arg(:id, non_null(:id))
+
+      middleware(RequireMember, "staff")
+
+      resolve(fn %{id: id}, %{context: ctx} ->
+        block = Blocks.get(ctx.venue_id, to_int(id))
+
+        with %{staff_id: staff_id} <- block,
+             :ok <- own_block?(ctx, staff_id),
+             {:ok, _} <- Blocks.delete(ctx.venue_id, to_int(id)) do
+          {:ok, true}
+        else
+          nil -> {:error, "Not found."}
+          {:error, :not_found} -> {:error, "Not found."}
+          other -> other
+        end
+      end)
+    end
+
+    @desc """
+    Moves a whole booking to another slot (E9-T4 / F0.9).
+
+    Addressed by `bookingRef` rather than by appointment id, because a
+    multi-service booking is several rows and one arrival — moving one of them
+    would leave the customer with two appointments on different days.
+
+    `staffId` is optional and defaults to whoever is free: a customer moving to
+    a new day often cannot have the same person, and refusing the move for that
+    reason turns a reschedule into a cancellation.
+    """
+    field :reschedule_my_appointment, :booking_result do
+      arg(:booking_ref, non_null(:string))
+      arg(:date, non_null(:date))
+      arg(:start_min, non_null(:integer))
+      arg(:staff_id, :string)
+
+      middleware(RequireAuth)
+
+      resolve(fn args, %{context: %{current_user: user}} ->
+        case Accounts.client_ids(user) do
+          [] ->
+            {:error, "That booking is not yours."}
+
+          client_ids ->
+            venue_id = Salon.venue_id_for_booking(args.booking_ref, client_ids)
+
+            if venue_id do
+              Salon.reschedule_booking(venue_id, args.booking_ref, client_ids, %{
+                date: args.date,
+                start_min: args.start_min,
+                staff_id: args[:staff_id]
+              })
+              |> format_errors()
+              |> broadcast_booking()
+            else
+              {:error, "That booking is not yours."}
+            end
+        end
+      end)
+    end
+
+    @desc """
     Turns optional messages on or off for the signed-in account.
 
     Reminders and marketing only. A booking confirmation is not something a
@@ -2271,6 +2463,39 @@ defmodule BlastekWeb.Schema do
        do: [staff_id: staff_id]
 
   defp own_staff_scope(_), do: []
+
+  # F0.7: "staff role can manage own blocks; receptionist+ can manage anyone's."
+  # A stylist marking their own lunch break is routine; a stylist marking a
+  # colleague on holiday is not, and would be invisible to the colleague.
+  #
+  # A target that is not a staff member of this venue falls through to the
+  # domain, which rejects it as a bad argument. Answering "forbidden" for an id
+  # that does not exist would both tell an outsider which ids do, and turn a
+  # typo into a permissions message nobody can act on.
+  defp own_block?(context, target) do
+    case context do
+      %{membership: %{role: "staff"} = membership} ->
+        cond do
+          not Salon.staff_member?(context.venue_id, target) ->
+            :ok
+
+          membership.staff_id == target ->
+            :ok
+
+          is_nil(membership.staff_id) ->
+            # A `staff` membership with no calendar column owns no time to
+            # block. As in `own_client_scope/1`, the absence is refused rather
+            # than read as "no restriction".
+            {:error, %{message: "You do not have a calendar to block.", code: "forbidden"}}
+
+          true ->
+            {:error, %{message: "You can only manage your own time.", code: "forbidden"}}
+        end
+
+      _ ->
+        :ok
+    end
+  end
 
   # The same narrowing for the client list.
   #

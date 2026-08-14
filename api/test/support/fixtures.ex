@@ -43,6 +43,24 @@ defmodule Blastek.Fixtures do
     %{venue: venue, category: category, service: service, staff: staff, client: client}
   end
 
+  @doc """
+  A second stylist at an existing venue, on the same 09:00–18:00 week.
+
+  Needed wherever a test has to tell "this person is unavailable" apart from
+  "the salon is shut" — a distinction one staff member cannot express.
+  """
+  def staff_fixture(venue_id, name, service_ids) do
+    {:ok, staff} =
+      Salon.create_staff(
+        venue_id,
+        %{name: name, color: "#123456"},
+        for(wd <- 0..6, do: %{weekday: wd, working: true, start_min: 540, end_min: 1080}),
+        service_ids
+      )
+
+    staff
+  end
+
   @doc "A user account with no venue access."
   def user_fixture(email, attrs \\ %{}) do
     {:ok, user} =

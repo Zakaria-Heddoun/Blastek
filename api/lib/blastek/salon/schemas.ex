@@ -167,6 +167,112 @@ defmodule Blastek.Salon.Client do
   end
 end
 
+defmodule Blastek.Salon.Block do
+  @moduledoc """
+  Time one staff member is not available (E9-T1 / F0.7).
+
+  Three kinds in one table — see the migration for why. The validation here is
+  about the *shape* each kind requires: `time_off` takes whole days and so has
+  no minutes, everything else is a range and must have both.
+  """
+  use Ecto.Schema
+  import Ecto.Changeset
+
+  @kinds ~w(time_off break blocked)
+
+  schema "staff_blocks" do
+    field :venue_id, :id
+    field :staff_id, :id
+    field :kind, :string
+    field :date, :date
+    field :end_date, :date
+    field :start_min, :integer
+    field :end_min, :integer
+    field :weekly, :boolean, default: false
+    field :weekday, :integer
+    field :note, :string, default: ""
+    timestamps(type: :naive_datetime)
+  end
+
+  def kinds, do: @kinds
+
+  def changeset(block, attrs) do
+    block
+    |> cast(attrs, [
+      :venue_id,
+      :staff_id,
+      :kind,
+      :date,
+      :end_date,
+      :start_min,
+      :end_min,
+      :weekly,
+      :weekday,
+      :note
+    ])
+    |> validate_required([:venue_id, :staff_id, :kind, :date])
+    |> validate_inclusion(:kind, @kinds)
+    |> normalize_kind()
+    |> validate_range()
+    |> validate_number(:weekday, greater_than_or_equal_to: 0, less_than_or_equal_to: 6)
+    |> foreign_key_constraint(:staff_id, message: "does not exist")
+    |> check_constraint(:end_min,
+      name: :staff_blocks_minutes,
+      message: "must end after it starts"
+    )
+    |> check_constraint(:end_date,
+      name: :staff_blocks_dates,
+      message: "must not end before it starts"
+    )
+  end
+
+  # A whole-day absence has no clock times, and a repeat has to say which day.
+  # Deriving the weekday rather than trusting the caller keeps a weekly break
+  # from repeating on a day its own start date is not.
+  defp normalize_kind(changeset) do
+    case get_field(changeset, :kind) do
+      "time_off" ->
+        changeset
+        |> put_change(:start_min, nil)
+        |> put_change(:end_min, nil)
+        |> put_change(:weekly, false)
+        |> put_change(:weekday, nil)
+
+      _ ->
+        if get_field(changeset, :weekly) do
+          case get_field(changeset, :date) do
+            %Date{} = date -> put_change(changeset, :weekday, Date.day_of_week(date, :sunday) - 1)
+            _ -> changeset
+          end
+        else
+          put_change(changeset, :weekday, nil)
+        end
+    end
+  end
+
+  defp validate_range(changeset) do
+    if get_field(changeset, :kind) == "time_off" do
+      changeset
+    else
+      changeset
+      |> validate_required([:start_min, :end_min])
+      |> validate_number(:start_min, greater_than_or_equal_to: 0)
+      |> validate_end_after_start()
+    end
+  end
+
+  defp validate_end_after_start(changeset) do
+    start_min = get_field(changeset, :start_min)
+    end_min = get_field(changeset, :end_min)
+
+    if is_integer(start_min) and is_integer(end_min) and end_min <= start_min do
+      add_error(changeset, :end_min, "must end after it starts")
+    else
+      changeset
+    end
+  end
+end
+
 defmodule Blastek.Salon.Appointment do
   use Ecto.Schema
   import Ecto.Changeset
@@ -180,6 +286,8 @@ defmodule Blastek.Salon.Appointment do
     field :price_cents, :integer
     field :notes, :string, default: ""
     field :source, :string, default: "walk-in"
+    # How many times the customer has moved this booking online (E9-T4 / F0.9).
+    field :reschedule_count, :integer, default: 0
     field :venue_id, :id
     belongs_to :client, Blastek.Salon.Client
     belongs_to :staff, Blastek.Salon.Staff
@@ -199,7 +307,8 @@ defmodule Blastek.Salon.Appointment do
     :client_id,
     :staff_id,
     :service_id,
-    :venue_id
+    :venue_id,
+    :reschedule_count
   ]
   def changeset(appt, attrs) do
     appt
@@ -215,7 +324,6 @@ defmodule Blastek.Salon.Appointment do
       :venue_id
     ])
     |> validate_inclusion(:status, ~w(booked confirmed started completed cancelled no_show))
-    |> unique_constraint(:booking_ref, name: :appointments_booking_ref_index)
     |> exclusion_constraint(:start_min,
       name: :appointments_no_overlap,
       message: "That time was just taken — please pick another slot."
