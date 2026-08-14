@@ -230,7 +230,8 @@
     "aboutFallback": "{{tagline}}. Walk-ins welcome when the calendar allows — booking ahead guarantees your slot.",
     "locationOnRequest": "Location on request",
     "mapLabel": "Map showing {{name}}",
-    "photoAlt": "{{name}} photo {{index}}"
+    "photoAlt": "{{name}} photo {{index}}",
+    "ownerReply": "Reply from {{venue}}"
   },
   "flow": {
     "steps": {
@@ -429,7 +430,8 @@
       "reports": "Reports",
       "settings": "Settings",
       "signOut": "Sign out",
-      "viewShop": "View my page"
+      "viewShop": "View my page",
+      "reviews": "Reviews"
     },
     "login": {
       "title": "Professional area",
@@ -670,11 +672,59 @@
       "closureRemoved": "Closure removed",
       "checkBookings": "Check bookings",
       "closedAllWeek": "Closed all week"
+    },
+    "reviews": {
+      "none": "No reviews yet. They arrive after the first checkouts.",
+      "count_one": "{{count}} review",
+      "count_other": "{{count}} reviews",
+      "reply": "Reply",
+      "editReply": "Edit my reply",
+      "yourReply": "Your reply",
+      "replyTitle": "Reply to this review",
+      "replyLabel": "Your reply",
+      "replyPlaceholder": "Answer plainly, as you would at the counter.",
+      "replyHint": "Your reply is public and editable for 48 hours.",
+      "publishReply": "Publish reply",
+      "replySaved": "Reply published",
+      "report": "Report",
+      "reportTitle": "Report this review",
+      "reportLead": "The review stays visible until our team decides.",
+      "flagged": "Reported — our team will look at it.",
+      "underReview": "Under review",
+      "reasons": {
+        "abusive": "Abusive language",
+        "spam": "Spam or advertising",
+        "off_topic": "Not about the visit",
+        "personal_data": "Personal data"
+      }
     }
   },
   "errors": {
     "offline": "Could not reach the server.",
     "rateLimited": "Too many attempts — try again shortly.",
     "malformed": "The server returned a malformed response."
+  },
+  "review": {
+    "pageTitle": "Leave a review",
+    "ratingLabel": "Your rating",
+    "pickStars": "Tap a star",
+    "stars": {
+      "1": "Poor",
+      "2": "Below par",
+      "3": "Fine",
+      "4": "Very good",
+      "5": "Excellent"
+    },
+    "commentLabel": "Your comment",
+    "commentPlaceholder": "What went well? (optional)",
+    "submit": "Publish my review",
+    "howWasIt": "How was your visit to {{venue}}?",
+    "thanksTitle": "Thanks for your review",
+    "thanksBody": "It is live on the salon’s page. The salon can reply to it.",
+    "cannotTitle": "This review is no longer possible",
+    "linkInvalid": "This link is no longer valid.",
+    "backToVenue": "View the salon",
+    "promptsTitle": "Tell us how it went",
+    "leaveOne": "Leave a review"
   }
 }

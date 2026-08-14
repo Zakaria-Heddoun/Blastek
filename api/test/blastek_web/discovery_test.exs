@@ -147,7 +147,6 @@ defmodule BlastekWeb.DiscoveryTest do
       for rating <- [5, 4] do
         Blastek.Repo.insert!(%Blastek.Salon.Review{
           venue_id: anfa.venue.id,
-          client_name: "R",
           rating: rating,
           comment: ""
         })
@@ -156,10 +155,17 @@ defmodule BlastekWeb.DiscoveryTest do
       # Another venue's reviews must not bleed into this average.
       Blastek.Repo.insert!(%Blastek.Salon.Review{
         venue_id: corner.venue.id,
-        client_name: "R",
         rating: 1,
         comment: ""
       })
+
+      # The card reads `venues.rating_avg`, which `Salon.Reviews` maintains on
+      # every write that goes through it (E10-T1 / F0.8). These rows were
+      # inserted underneath it, so the recompute is explicit here — that is the
+      # contract, not a workaround: a review written any other way than through
+      # the context does not move the rating.
+      Blastek.Salon.Reviews.recompute(anfa.venue.id)
+      Blastek.Salon.Reviews.recompute(corner.venue.id)
 
       {:ok, %{data: %{"venues" => venues}}} = run("{ venues { slug rating reviewCount } }")
       card = Enum.find(venues, &(&1["slug"] == anfa.venue.slug))
@@ -449,11 +455,10 @@ defmodule BlastekWeb.DiscoveryTest do
   end
 
   defp review!(venue_id, rating) do
-    Repo.insert!(%Blastek.Salon.Review{
-      venue_id: venue_id,
-      client_name: "R",
-      rating: rating,
-      comment: ""
-    })
+    review = Repo.insert!(%Blastek.Salon.Review{venue_id: venue_id, rating: rating, comment: ""})
+    # Sorting reads the denormalized column, so a review written under the
+    # context has to be accounted for the same way the context would.
+    Blastek.Salon.Reviews.recompute(venue_id)
+    review
   end
 end

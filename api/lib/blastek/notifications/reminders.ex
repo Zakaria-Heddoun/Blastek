@@ -111,6 +111,15 @@ defmodule Blastek.Notifications.Reminders do
           reminder?(template) and past?(appointment) ->
             {:skip, :already_started}
 
+          # A review invite asks about a visit that has happened, so it is
+          # conditional on the opposite things: has the customer already
+          # answered, and is the venue still in a position to be reviewed.
+          review?(template) ->
+            case Blastek.Notifications.ReviewInvites.still_wanted(appointment) do
+              :ok -> {:ok, Blastek.Notifications.ReviewInvites.assigns(appointment)}
+              {:skip, reason} -> {:skip, reason}
+            end
+
           true ->
             # Rendered from the appointment as it stands now, not as it stood
             # when the job was created — a rescheduled appointment must not
@@ -194,6 +203,8 @@ defmodule Blastek.Notifications.Reminders do
   end
 
   defp reminder?(template), do: template in [:reminder_24h, :reminder_3h]
+
+  defp review?(template), do: template in Blastek.Notifications.ReviewInvites.templates()
 
   defp past?(%Appointment{date: date, start_min: start_min}) do
     NaiveDateTime.compare(Format.starts_at(date, start_min), Clock.now()) != :gt

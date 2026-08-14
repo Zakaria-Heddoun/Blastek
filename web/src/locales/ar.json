@@ -238,7 +238,8 @@
     "aboutFallback": "{{tagline}}. نستقبل دون موعد حسب التوفر — والحجز يضمن لك وقتك.",
     "locationOnRequest": "العنوان عند الطلب",
     "mapLabel": "خريطة تُظهر {{name}}",
-    "photoAlt": "صورة {{index}} لـ {{name}}"
+    "photoAlt": "صورة {{index}} لـ {{name}}",
+    "ownerReply": "رد {{venue}}"
   },
   "flow": {
     "steps": {
@@ -437,7 +438,8 @@
       "reports": "التقارير",
       "settings": "الإعدادات",
       "signOut": "تسجيل الخروج",
-      "viewShop": "عرض صفحتي"
+      "viewShop": "عرض صفحتي",
+      "reviews": "التقييمات"
     },
     "login": {
       "title": "فضاء المهنيين",
@@ -686,11 +688,63 @@
       "closureRemoved": "تم حذف الإغلاق",
       "checkBookings": "التحقق من الحجوزات",
       "closedAllWeek": "مغلق طوال الأسبوع"
+    },
+    "reviews": {
+      "none": "لا توجد تقييمات بعد. تصل بعد أول عمليات الأداء.",
+      "count_zero": "{{count}} تقييم",
+      "count_one": "تقييم واحد",
+      "count_two": "تقييمان",
+      "count_few": "{{count}} تقييمات",
+      "count_many": "{{count}} تقييمًا",
+      "count_other": "{{count}} تقييم",
+      "reply": "الرد",
+      "editReply": "تعديل ردي",
+      "yourReply": "ردك",
+      "replyTitle": "الرد على هذا التقييم",
+      "replyLabel": "ردك",
+      "replyPlaceholder": "رد ببساطة، كما تفعل في الصالون.",
+      "replyHint": "ردك علني ويمكن تعديله خلال 48 ساعة.",
+      "publishReply": "نشر الرد",
+      "replySaved": "تم نشر الرد",
+      "report": "إبلاغ",
+      "reportTitle": "الإبلاغ عن هذا التقييم",
+      "reportLead": "يبقى التقييم ظاهرًا إلى حين قرار فريقنا.",
+      "flagged": "تم الإبلاغ — سيراجعه فريقنا.",
+      "underReview": "قيد المراجعة",
+      "reasons": {
+        "abusive": "لغة مسيئة",
+        "spam": "رسائل مزعجة أو إعلانات",
+        "off_topic": "لا علاقة له بالزيارة",
+        "personal_data": "بيانات شخصية"
+      }
     }
   },
   "errors": {
     "offline": "تعذّر الاتصال بالخادم.",
     "rateLimited": "محاولات كثيرة — أعد المحاولة بعد قليل.",
     "malformed": "أرجع الخادم استجابة غير مفهومة."
+  },
+  "review": {
+    "pageTitle": "اترك تقييمًا",
+    "ratingLabel": "تقييمك",
+    "pickStars": "اختر نجمة",
+    "stars": {
+      "1": "مخيّب",
+      "2": "متوسط",
+      "3": "لا بأس",
+      "4": "جيد جدًا",
+      "5": "ممتاز"
+    },
+    "commentLabel": "تعليقك",
+    "commentPlaceholder": "ما الذي أعجبك؟ (اختياري)",
+    "submit": "نشر التقييم",
+    "howWasIt": "كيف كانت زيارتك إلى {{venue}}؟",
+    "thanksTitle": "شكرًا على تقييمك",
+    "thanksBody": "تقييمك ظاهر على صفحة الصالون، ويمكن للصالون الرد عليه.",
+    "cannotTitle": "لم يعد بالإمكان ترك تقييم",
+    "linkInvalid": "هذا الرابط لم يعد صالحًا.",
+    "backToVenue": "عرض الصالون",
+    "promptsTitle": "شاركنا رأيك",
+    "leaveOne": "اترك تقييمًا"
   }
 }

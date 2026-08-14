@@ -21,8 +21,7 @@ alias Blastek.Salon.{
   Client,
   Appointment,
   Sale,
-  SaleItem,
-  Review
+  SaleItem
 }
 
 if Repo.aggregate(Venues.Venue, :count) > 0 do
@@ -222,20 +221,18 @@ else
       end
     end
 
-    config.reviews
-    |> Enum.with_index()
-    |> Enum.each(fn {{name, rating, comment}, i} ->
-      at = NaiveDateTime.add(now, -(3 + i * 9) * 86_400, :second)
-
-      Repo.insert!(%Review{
-        client_name: name,
-        rating: rating,
-        comment: comment,
-        venue_id: vid,
-        inserted_at: at,
-        updated_at: at
-      })
-    end)
+    # Reviews are no longer seeded (E10 / F0.8).
+    #
+    # `config.reviews` still carries the copy, because a venue that has not yet
+    # gone live may want a populated-looking page during onboarding, and
+    # `Salon.Reviews.purge_seeded/1` exists precisely to delete those the moment
+    # it does. But these venues are seeded *active* — a customer can read them
+    # today — and F0.8's whole premise is that a rating reflects real visits.
+    # Inventing fourteen of them would put the lie on the first page anybody
+    # sees, and would inflate `venues.rating_avg` with it.
+    #
+    # The demo gets reviews the same way production does: check a visit out, and
+    # the invite goes at T+2h.
 
     venue
   end

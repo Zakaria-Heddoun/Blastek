@@ -856,13 +856,63 @@ the eligibility list the booking flow already builds — worth doing when
 somebody asks for it rather than guessing they will.
 
 ### E10 · Reviews — F0.8
-| ID | Task | Est | Labels |
-|---|---|---|---|
-| E10-T1 | Reviews rebuild migration (venue/client/booking link, status, reply) + rating denorm | S | api |
-| E10-T2 | Eligibility + create/reply/flag/moderate mutations | M | api |
-| E10-T3 | Review-invite job post-checkout (T+2h, one reminder) + signed review page | S | api,web |
-| E10-T4 | Web: venue reviews section w/ replies; Account review prompts; dashboard Reviews tab | M | web |
-| E10-T5 | Purge seeded fake reviews at venue activation | XS | api |
+| ID | Task | Est | Labels | Status |
+|---|---|---|---|---|
+| E10-T1 | Reviews rebuild migration (venue/client/booking link, status, reply) + rating denorm | S | api | ✅ |
+| E10-T2 | Eligibility + create/reply/flag/moderate mutations | M | api | ✅ |
+| E10-T3 | Review-invite job post-checkout (T+2h, one reminder) + signed review page | S | api,web | ✅ |
+| E10-T4 | Web: venue reviews section w/ replies; Account review prompts; dashboard Reviews tab | M | web | ✅ |
+| E10-T5 | Purge seeded fake reviews at venue activation | XS | api | ✅ |
+
+**Verified in the browser**: a visit checked out on the dashboard scheduled both
+messages (T+2h and T+24h); the signed link opened in a browser with no session
+and no cookie, took five stars and a comment, and the same link then said
+"You have already reviewed this visit" instead of offering the form again; the
+review appeared on the public page as *Leila B.* with the venue rating at 5.0;
+the owner replied from the Reviews tab and the reply appeared under the review;
+reporting it left it on the page and in the rating, marked "Under review" only
+in the dashboard; the account page offered an unreviewed visit and stopped
+offering it once reviewed; the review page renders right-to-left in Arabic.
+
+**The decisions worth knowing about**
+
+*Flagging does not conceal.* An owner reporting a review queues it for a
+platform admin and nothing else — it stays public and keeps counting. The
+alternative (hide on report, restore if cleared) is a delete button with extra
+steps, available to exactly the party with the motive to use it.
+
+*The rating is recomputed, never incremented.* An increment has to be right on
+create, hide, unhide, moderate and delete; being wrong once leaves a number
+that never self-corrects. `Reviews.recompute/1` is one indexed aggregate and is
+idempotent, so it converges after a crash instead of drifting.
+
+*The 14-day window is counted in the salon's days*, via `Clock.today/0` — the
+same rule E6's review established for reminders and cancellation windows.
+
+*Author names are published as a first name and a last initial.* A review is a
+public document; "Sara Benali came here on Tuesday" is more than the customer
+agreed to say.
+
+*A hidden review's author is told the reason category*, never the moderator's
+note — which may name the customer or quote the owner's complaint about them.
+
+**Defects found and fixed while building this**
+
+| # | Found | Fix |
+|---|---|---|
+| 1 | The seed file still wrote `reviews.client_name`, so the API container **failed to boot** after the migration. Caught only by restarting the stack — every gate had passed. | Seeding of fake reviews removed entirely, with the reasoning recorded in `seeds.exs`. |
+| 2 | Rating sort in discovery re-averaged every review of every candidate venue on each sorted search, **and counted hidden ones** — so a moderated review went on influencing rank after it stopped being readable. | Sorts on `venues.rating_avg`, which counts the public set only. |
+| 3 | `ActionToken` gained a `:review` action, which `ActionController.act/2` had no clause for — a review token replayed against `/a/review/:token` would have been a FunctionClauseError and a 500. | Explicit clause; it is a link that does not work there, not a crash. |
+| 4 | `Blastek.ClockTest` asserted `diff(:minute) in [0, 60]` on two clock reads taken a moment apart. Under load the pair straddles a second boundary and 3 599 s truncates to 59. A latent flake from E6, hit twice today. | Rounds seconds instead of truncating minutes. The claim is about the timezone, not the microseconds between two reads. |
+| 5 | The perf fixture's first version set the denormalized columns with an `UPDATE … FROM` over the whole directory *inside the sandbox transaction*, where the planner has no statistics for tables created moments earlier: setup went from 3 s to over 120 s and the gate failed. | The seeder writes `rating_avg`/`rating_count` into the venue rows it is already inserting. |
+
+**Not done, deliberately**: the *admin* moderation queue screen. F0.8's frontend
+list names it and marks it "(F0.12)", and that is where it belongs — E10 owes
+the API behind it, which is here: `flaggedReviews` and `moderateReview`, both
+`RequireAdmin`, both tested over the wire including the refusal for a venue
+owner. The seeded demo reviews are gone rather than migrated: fourteen invented
+ratings on venues customers can read today is the exact thing F0.8 exists to
+prevent, and the demo now gets reviews the way production does.
 
 ### E11 · Admin panel — F0.12
 | ID | Task | Est | Labels |

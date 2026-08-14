@@ -555,3 +555,44 @@
   margin-bottom: 10px;
   font-size: 12px;
 }
+
+/* ---- Reviews tab (E10-T4 / F0.8) ---- */
+
+.adm-rating { display: flex; align-items: center; gap: 8px; }
+.adm-rating b { font-size: 20px; }
+.adm-rating .stars { color: #e8a33d; display: inline-flex; }
+
+.adm-reviews { display: grid; gap: 12px; }
+
+.adm-review .who {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.adm-review .who b { display: block; font-size: 14px; }
+
+.adm-review-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+/* Same treatment as the public page, so an owner previewing their reply sees
+   what the customer will see. */
+.adm-review .review-reply {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-inline-start: 2px solid var(--line);
+  border-radius: 8px;
+}
+
+.adm-review .review-reply-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-size: 13px;
+}

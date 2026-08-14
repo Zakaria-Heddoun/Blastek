@@ -42,6 +42,7 @@ defmodule Blastek.Venues.Onboarding do
   alias Blastek.Audit
   alias Blastek.Notifications
   alias Blastek.Repo
+  alias Blastek.Salon.Reviews
   alias Blastek.Venues
   alias Blastek.Venues.ServiceTemplate
   alias Blastek.Venues.Venue
@@ -143,6 +144,23 @@ defmodule Blastek.Venues.Onboarding do
         subject_type: "venue",
         subject_id: venue.id
       })
+
+      # E10-T5 / F0.8. Seeded reviews exist so an empty listing looks like
+      # something during onboarding; the moment the venue is live they are
+      # invented praise shown to real customers. Going live is the right moment
+      # because it is the first at which anybody outside the salon can read
+      # them.
+      purged = Reviews.purge_seeded(venue.id)
+
+      if purged > 0 do
+        Audit.record("venue.seeded_reviews_purged", %{
+          venue_id: venue.id,
+          actor: actor,
+          subject_type: "venue",
+          subject_id: venue.id,
+          metadata: %{count: purged}
+        })
+      end
 
       notify_owner(updated, :approved, "")
       {:ok, updated}

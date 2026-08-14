@@ -26,7 +26,13 @@ defmodule Blastek.ClockTest do
     test "and it really differs from the server clock in this environment" do
       # If this ever stops being true the suite has stopped exercising the bug,
       # not fixed it — so the test says so rather than passing quietly.
-      skew = NaiveDateTime.diff(Clock.now(), NaiveDateTime.local_now(), :minute)
+      #
+      # Rounded, not truncated. The two clocks are read a moment apart, and
+      # under load that moment can cross a second boundary: `diff(:minute)`
+      # then truncates 3 599 seconds to 59 and fails a correct offset. The
+      # claim is about which timezone the server is in, not about the
+      # microseconds between two reads.
+      skew = round(NaiveDateTime.diff(Clock.now(), NaiveDateTime.local_now(), :second) / 60)
 
       assert skew in [0, 60],
              "Casablanca is UTC+1, or UTC+0 in Ramadan; got #{skew} minutes from server time"

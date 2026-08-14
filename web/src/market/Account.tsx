@@ -12,6 +12,7 @@ import MarketTopbar from './MarketTopbar';
 import AccountSecurity from './AccountSecurity';
 import AccountNotifications from './AccountNotifications';
 import RescheduleModal from './RescheduleModal';
+import ReviewPrompts from './ReviewPrompts';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 import { useAccountLocale } from '../lib/locale';
 import { fmtDateLong, fmtMAD, fmtTime, todayStr } from '../lib/format';
@@ -109,6 +110,8 @@ export default function Account() {
           {user.email ? ` · ${user.email}` : ''}
           {user.phone ? ` · ${user.phone}` : ''}
         </div>
+
+        <ReviewPrompts />
 
         <h2 className="section-title">{t(`account.upcoming`)}</h2>
         {appts === null ? <div className="empty">{t(`common.loading`)}</div>

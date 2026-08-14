@@ -44,6 +44,7 @@ const NAV = [
   { to: '/dashboard/team', key: 'team', min: 'manager' },
   { to: '/dashboard/sales', key: 'sales', min: 'manager' },
   { to: '/dashboard/reports', key: 'reports', min: 'manager' },
+  { to: '/dashboard/reviews', key: 'reviews', min: 'staff' },
   { to: '/dashboard/settings', key: 'settings', min: 'manager' },
 ] as const;
 

@@ -243,16 +243,12 @@ defmodule Blastek.Discovery do
       ]
   end
 
+  # The denormalized column, not a correlated subquery over `reviews`. The
+  # subquery re-averaged every review of every candidate venue on each sorted
+  # search, and it counted hidden ones — so a moderated review went on
+  # influencing where its venue ranked long after it stopped being readable.
   defp apply_sort(query, "rating", _q, _near) do
-    from v in query,
-      order_by: [
-        desc:
-          fragment(
-            "(select coalesce(avg(r.rating), 0) from reviews r where r.venue_id = ?)",
-            v.id
-          ),
-        asc: v.name
-      ]
+    from v in query, order_by: [desc: v.rating_avg, asc: v.name]
   end
 
   defp apply_sort(query, "price", _q, _near) do

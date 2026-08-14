@@ -100,6 +100,19 @@ export interface Review {
   rating: number;
   comment: string;
   createdAt?: string;
+  /** The venue's public answer, empty when there is none. */
+  reply?: string;
+  replyAt?: string | null;
+  /** visible | flagged. Hidden reviews never reach the client. */
+  status?: string;
+  /**
+   * The language the comment was *written* in, which is not necessarily the
+   * one the page is being read in — an Arabic comment under a French UI still
+   * has to render right-to-left. See `dirOf` in `format.ts`.
+   */
+  locale?: string;
+  /** Dashboard only: whether the owner may still change their reply. */
+  replyEditable?: boolean;
 }
 
 export interface VenueHour {
@@ -204,6 +217,7 @@ export interface Venue {
   staff: Staff[];
   reviews: Review[];
   rating: number;
+  reviewCount: number;
   hours: VenueHour[];
   stats: { bookings: number; professionals: number; services: number };
 }

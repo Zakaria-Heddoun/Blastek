@@ -13,7 +13,7 @@ import { useToast } from '../components/ui';
 import VenueMap from '../components/VenueMap';
 import type { Photo } from '../lib/types';
 import {
-  fmtDateShort, fmtDur, fmtMAD, fmtTime, initials, weekdaysFull,
+  dirOf, fmtDateShort, fmtDur, fmtMAD, fmtTime, initials, weekdaysFull,
 } from '../lib/format';
 
 // Shown only until a venue uploads its own photos. Deliberately generic stock:
@@ -152,11 +152,11 @@ export default function VenuePage() {
           <div>
             <h1>{name}</h1>
             <div className="venue-sub">
-              {v.reviews.length > 0 && (
+              {v.reviewCount > 0 && (
                 <>
                   <b>{v.rating.toFixed(1)}</b>
                   <StarRow rating={v.rating} size={13} />
-                  <span className="fainttext">({v.reviews.length})</span>
+                  <span className="fainttext">({v.reviewCount})</span>
                   <span className="dot-sep" aria-hidden="true">·</span>
                 </>
               )}
@@ -249,7 +249,7 @@ export default function VenuePage() {
           </div>
 
           <h2 className="section-title">{t('venue.reviews')}</h2>
-          {v.reviews.length === 0 ? (
+          {v.reviewCount === 0 ? (
             <div className="empty">{t('venue.noReviews')}</div>
           ) : (
             <>
@@ -258,7 +258,7 @@ export default function VenuePage() {
                 <div>
                   <StarRow rating={v.rating} size={16} />
                   <div className="fainttext">
-                    {t('venue.basedOn', { count: v.reviews.length })}
+                    {t('venue.basedOn', { count: v.reviewCount })}
                   </div>
                 </div>
               </div>
@@ -276,15 +276,31 @@ export default function VenuePage() {
                       </div>
                       <StarRow rating={r.rating} size={12} />
                     </div>
-                    <div className="mutetext">{r.comment}</div>
+
+                    {/* `dir` per comment, not per page: the review carries the
+                        language it was written in, and an Arabic comment in a
+                        French list still reads right-to-left. */}
+                    {r.comment && (
+                      <div className="mutetext" dir={dirOf(r.locale)}>{r.comment}</div>
+                    )}
+
+                    {r.reply && (
+                      <div className="review-reply" dir={dirOf(r.locale)}>
+                        <div className="review-reply-head">
+                          <Icon name="reply" size={13} />
+                          <b>{t('venue.ownerReply', { venue: v.settings.businessName })}</b>
+                        </div>
+                        <div className="mutetext">{r.reply}</div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
 
-              {v.reviews.length > 6 && !showAllReviews && (
+              {v.reviewCount > 6 && !showAllReviews && (
                 <button className="btn" style={{ marginTop: 14 }}
                   onClick={() => setShowAllReviews(true)}>
-                  {t('venue.seeAllReviews', { count: v.reviews.length })}
+                  {t('venue.seeAllReviews', { count: v.reviewCount })}
                 </button>
               )}
             </>
@@ -365,10 +381,10 @@ export default function VenuePage() {
         <div>
           <div className="card summary-card">
             <b style={{ fontSize: 16 }}>{name}</b>
-            {v.reviews.length > 0 && (
+            {v.reviewCount > 0 && (
               <div className="fainttext" style={{ marginBottom: 4 }}>
                 <span className="stars"><Icon name="star" size={12} /></span> {v.rating.toFixed(1)}{' '}
-                ({v.reviews.length})
+                ({v.reviewCount})
               </div>
             )}
             <div className={`fainttext ${status.open ? 'open-now' : 'closed-now'}`}>{status.label}</div>

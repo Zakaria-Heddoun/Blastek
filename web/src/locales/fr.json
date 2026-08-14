@@ -230,7 +230,8 @@
     "aboutFallback": "{{tagline}}. Sans rendez-vous selon les disponibilités — réserver garantit votre créneau.",
     "locationOnRequest": "Adresse communiquée sur demande",
     "mapLabel": "Carte indiquant {{name}}",
-    "photoAlt": "{{name}} photo {{index}}"
+    "photoAlt": "{{name}} photo {{index}}",
+    "ownerReply": "Réponse de {{venue}}"
   },
   "flow": {
     "steps": {
@@ -429,7 +430,8 @@
       "reports": "Rapports",
       "settings": "Réglages",
       "signOut": "Se déconnecter",
-      "viewShop": "Voir ma page"
+      "viewShop": "Voir ma page",
+      "reviews": "Avis"
     },
     "login": {
       "title": "Espace professionnel",
@@ -670,11 +672,59 @@
       "closureRemoved": "Fermeture retirée",
       "checkBookings": "Vérifier les réservations",
       "closedAllWeek": "Fermé toute la semaine"
+    },
+    "reviews": {
+      "none": "Pas encore d’avis. Ils arrivent après les premiers passages en caisse.",
+      "count_one": "{{count}} avis",
+      "count_other": "{{count}} avis",
+      "reply": "Répondre",
+      "editReply": "Modifier ma réponse",
+      "yourReply": "Votre réponse",
+      "replyTitle": "Répondre à cet avis",
+      "replyLabel": "Votre réponse",
+      "replyPlaceholder": "Répondez simplement, comme au comptoir.",
+      "replyHint": "Votre réponse est publique et modifiable pendant 48 h.",
+      "publishReply": "Publier la réponse",
+      "replySaved": "Réponse publiée",
+      "report": "Signaler",
+      "reportTitle": "Signaler cet avis",
+      "reportLead": "L’avis reste visible jusqu’à la décision de notre équipe.",
+      "flagged": "Avis signalé — notre équipe va l’examiner.",
+      "underReview": "En cours d’examen",
+      "reasons": {
+        "abusive": "Propos injurieux",
+        "spam": "Spam ou publicité",
+        "off_topic": "Sans rapport avec la visite",
+        "personal_data": "Données personnelles"
+      }
     }
   },
   "errors": {
     "offline": "Impossible de joindre le serveur.",
     "rateLimited": "Trop de tentatives — réessayez dans un instant.",
     "malformed": "Le serveur a renvoyé une réponse illisible."
+  },
+  "review": {
+    "pageTitle": "Laisser un avis",
+    "ratingLabel": "Votre note",
+    "pickStars": "Touchez une étoile",
+    "stars": {
+      "1": "Décevant",
+      "2": "Moyen",
+      "3": "Correct",
+      "4": "Très bien",
+      "5": "Excellent"
+    },
+    "commentLabel": "Votre commentaire",
+    "commentPlaceholder": "Qu’est-ce qui s’est bien passé ? (facultatif)",
+    "submit": "Publier mon avis",
+    "howWasIt": "Comment s’est passée votre visite chez {{venue}} ?",
+    "thanksTitle": "Merci pour votre avis",
+    "thanksBody": "Il est visible sur la page du salon. Le salon peut y répondre.",
+    "cannotTitle": "Cet avis n’est plus possible",
+    "linkInvalid": "Ce lien n’est plus valable.",
+    "backToVenue": "Voir le salon",
+    "promptsTitle": "Donnez votre avis",
+    "leaveOne": "Laisser un avis"
   }
 }

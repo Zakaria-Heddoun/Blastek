@@ -22,6 +22,10 @@ const PATHS: Record<string, string> = {
   sun: 'M12 2v2 M12 20v2 M4.93 4.93l1.41 1.41 M17.66 17.66l1.41 1.41 M2 12h2 M20 12h2 M4.93 19.07l1.41-1.41 M17.66 6.34l1.41-1.41 M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0z',
   moon: 'M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z',
   globe: 'M12 21a9 9 0 1 1 0-18 9 9 0 0 1 0 18z M3.6 9h16.8 M3.6 15h16.8 M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18z',
+  // Marks a venue's answer under a review, so the two are read as a
+  // conversation rather than as two opinions of equal standing.
+  reply: 'M15 10 20 15 15 20 M4 4v7a4 4 0 0 0 4 4h12',
+  flag: 'M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z M4 22v-7',
 };
 
 export function Icon({ name, size = 20 }: { name: string; size?: number }) {

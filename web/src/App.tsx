@@ -10,6 +10,7 @@ import TeamPage from './admin/TeamPage';
 import SalesPage from './admin/SalesPage';
 import ReportsPage from './admin/ReportsPage';
 import SettingsPage from './admin/SettingsPage';
+import ReviewsPage from './admin/ReviewsPage';
 import MarketLayout from './market/MarketLayout';
 import Home from './market/Home';
 import VenueList from './market/VenueList';
@@ -20,6 +21,7 @@ import ForgotPassword from './market/ForgotPassword';
 import JoinVenue from './market/JoinVenue';
 import OnboardVenue from './market/OnboardVenue';
 import AppointmentAction from './market/AppointmentAction';
+import ReviewPage from './market/ReviewPage';
 import Account from './market/Account';
 import BungeePage from './bungee/BungeePage';
 
@@ -42,6 +44,7 @@ export default function App() {
             <Route path="team" element={<TeamPage />} />
             <Route path="sales" element={<SalesPage />} />
             <Route path="reports" element={<ReportsPage />} />
+            <Route path="reviews" element={<ReviewsPage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>
           {/* Homepage — Blastek marketplace on the Bungee-style design.
@@ -62,6 +65,7 @@ export default function App() {
           {/* One-tap confirm/cancel from a WhatsApp reminder (E6-T8). No login:
               the signed token in the URL is the whole credential. */}
           <Route path="/a/:action/:token" element={<AppointmentAction />} />
+          <Route path="/review/:token" element={<ReviewPage />} />
           {/* Marketplace: the directory, then one venue addressed by slug. */}
           <Route path="/venues" element={<VenueList />} />
           <Route path="/v/:slug" element={<MarketLayout />}>
