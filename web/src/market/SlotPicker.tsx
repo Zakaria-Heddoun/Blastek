@@ -46,6 +46,15 @@ export default function SlotPicker({
   const weekdays = weekdaysShort();
   const strip = [...Array(days)].map((_, i) => addDays(todayStr(), i));
 
+  // The effect keys on the *contents* of `serviceIds`, not the array. A caller
+  // that builds the list inline — `group.map(a => a.service.id)` — hands over a
+  // new array on every one of its own renders, so a reference dependency
+  // refetched the whole grid each time the parent re-rendered: one wasted round
+  // trip and a blank grid at the moment somebody is choosing a time. Fixing it
+  // here rather than asking each caller to memoize, because forgetting is
+  // silent and this is the component that knows it matters.
+  const serviceKey = serviceIds.join(',');
+
   useEffect(() => {
     if (serviceIds.length === 0) return;
 
@@ -64,7 +73,8 @@ export default function SlotPicker({
       .catch(() => { if (live) setSlots([]); });
 
     return () => { live = false; };
-  }, [venueSlug, serviceIds, staffId, date]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [venueSlug, serviceKey, staffId, date]);
 
   return (
     <>

@@ -254,6 +254,41 @@ defmodule Blastek.BlocksTest do
     end
   end
 
+  describe "deleting a block" do
+    test "gives the time back to availability", ctx do
+      {:ok, block} =
+        Blocks.create(ctx.v.venue.id, %{
+          staff_id: ctx.v.staff.id,
+          kind: "break",
+          date: ctx.date,
+          start_min: 720,
+          end_min: 840
+        })
+
+      refute 720 in slots(ctx.v, ctx.date)
+
+      assert {:ok, _} = Blocks.delete(ctx.v.venue.id, block.id)
+      assert 720 in slots(ctx.v, ctx.date)
+    end
+
+    test "another venue cannot delete it", ctx do
+      {:ok, block} =
+        Blocks.create(ctx.v.venue.id, %{
+          staff_id: ctx.v.staff.id,
+          kind: "break",
+          date: ctx.date,
+          start_min: 720,
+          end_min: 840
+        })
+
+      stranger = venue_fixture("Nosy #{System.unique_integer([:positive])}")
+
+      assert {:error, :not_found} = Blocks.delete(stranger.venue.id, block.id)
+      # And it is still doing its job.
+      refute 720 in slots(ctx.v, ctx.date)
+    end
+  end
+
   describe "validation" do
     test "a range that ends before it starts is refused", ctx do
       assert {:error, changeset} =
@@ -304,6 +339,51 @@ defmodule Blastek.BlocksTest do
         )
 
       refute theirs == []
+    end
+  end
+
+  describe "a named staff member is still checked for eligibility" do
+    test "availability offers nothing for somebody who does not perform the service", ctx do
+      # A second stylist who performs *nothing*. Naming a staff member used to
+      # skip the eligibility filter entirely, so availability answered for the
+      # whole shift and `book/2` accepted it — a colourist booked for a massage
+      # by anyone willing to post a staff id.
+      other = staff_fixture(ctx.v.venue.id, "Unqualified", [])
+
+      {:ok, %{slots: theirs}} =
+        Salon.availability(ctx.v.venue.id, [ctx.v.service.id], to_string(other.id), ctx.date)
+
+      assert theirs == []
+    end
+
+    test "and booking them is refused rather than accepted", ctx do
+      other = staff_fixture(ctx.v.venue.id, "Unqualified Two", [])
+
+      assert {:error, _} =
+               Salon.book(ctx.v.venue.id, %{
+                 client_id: ctx.v.client.id,
+                 service_ids: [ctx.v.service.id],
+                 staff_id: to_string(other.id),
+                 date: ctx.date,
+                 start_min: 540
+               })
+    end
+
+    test "while the qualified colleague is unaffected", ctx do
+      {:ok, %{slots: mine}} =
+        Salon.availability(
+          ctx.v.venue.id,
+          [ctx.v.service.id],
+          to_string(ctx.v.staff.id),
+          ctx.date
+        )
+
+      refute mine == []
+    end
+
+    test "a staff id that is not a number matches nobody rather than raising", ctx do
+      assert {:ok, %{slots: []}} =
+               Salon.availability(ctx.v.venue.id, [ctx.v.service.id], "not-an-id", ctx.date)
     end
   end
 

@@ -826,10 +826,34 @@ the time-off list and a customer reschedule all driven in the browser).
 | `AdminLayout` | The E7 language switcher used the three-button strip in a 240px sidebar; the row overflowed and two of the three languages simply left the screen. Silent, because overflow is. | Looking at a calendar screenshot taken for something else |
 | `DataCase.setup_sandbox/1` | The search performance gate died three times on the sandbox's own 120-second ownership timeout rather than on a slow query — the `@moduletag timeout:` raised in E8 governs ExUnit, not the sandbox. A loaded machine failed a performance assertion, which is exactly the confusion that gate's docstring says it exists to avoid. | The third flake |
 
+#### Epic 9 review — principal-engineer pass
+
+563 tests green. Each finding reproduced against the running stack before the
+fix; every new assertion mutation-tested.
+
+| Where | Defect | Why it mattered |
+|---|---|---|
+| `Salon.availability/5` | **Naming a staff member skipped the eligibility check entirely.** `"any"` filtered to staff who perform every requested service; a specific id went through `scoped_staff_candidate/2`, which only checked the venue. Measured against the demo data: 17 slots offered for a stylist who does not perform the treatment, and `book/2` accepted the booking. | A colourist booked for a massage by anyone willing to post a staff id — the marketplace UI only ever offers eligible staff, so it needed a crafted request, which is exactly the class of rule that has to live on the server. F0.9 also reaches it by an ordinary route: a stylist may have had a service taken off their list since the customer booked it, which is the "re-run eligibility" edge case the spec names. Pre-existing since the availability engine; found because E9 was the first feature to send a specific id down a path nobody had questioned. |
+| `Blocks.conflicts/2` | A weekly rule ran **one query per occurrence** — eight round trips — and the block form re-runs the check on every change while the owner is still typing. | Now one query over the span with the weekday applied in memory. |
+| `SlotPicker` | The availability effect depended on the `serviceIds` **array by reference**. `RescheduleModal` builds it inline, so every parent re-render refetched the grid: selecting a slot cost a wasted round trip and blanked the grid at the exact moment somebody was choosing a time. Measured at 1 request per selection, now 0. | Keyed on the contents instead. Fixed inside the component rather than by asking callers to memoize, because forgetting is silent. |
+| `Salon.to_int/1` | `String.to_integer/1` on a staff id that arrives from a public query string — a typo raised out of the resolver as a 500 rather than matching nobody. | A forgiving parse for the public path; the strict one is gone with its last caller. |
+| `staffBlocks` resolver | A `:none` branch that `own_staff_scope/1` never returns — copied from `own_client_scope/1`, which does. | Dead branch that reads like a rule. |
+| Tests | `deleteStaffBlock` had authorization coverage from the role matrix but no behavioural test: nothing asserted that deleting a block gives the time back, or that another venue cannot delete it. | Both added. |
+
+**A note on the perf gate**: it failed once more during this review, and the
+cause was a Vite dev server and a browser still running on the same machine —
+not the code. Re-run on a quiet machine it passes in 12 seconds at 29 ms
+against a 300 ms budget. The `ownership_timeout` fix from E9 did its job; what
+is left is the gate correctly reporting that a laptop running three other
+things is slow.
+
 **Not done, deliberately**: F0.7's drag-to-create on the calendar. The
 click-to-create menu covers the same intent and drag needs pointer capture,
 scroll-during-drag and a touch story of its own — a feature, not a detail of
-this one.
+this one. And F0.9's "staff re-pickable" on the reschedule screen: the modal
+asks for whoever is free, which is the safer default, and a picker there needs
+the eligibility list the booking flow already builds — worth doing when
+somebody asks for it rather than guessing they will.
 
 ### E10 · Reviews — F0.8
 | ID | Task | Est | Labels |
