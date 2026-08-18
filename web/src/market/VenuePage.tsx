@@ -11,7 +11,8 @@ import { IMG } from './assets';
 import { Icon, StarRow } from '../lib/icons';
 import { useToast } from '../components/ui';
 import VenueMap from '../components/VenueMap';
-import type { Photo } from '../lib/types';
+import type { Photo, Review } from '../lib/types';
+import { gql } from '../lib/gql';
 import {
   dirOf, fmtDateShort, fmtDur, fmtMAD, fmtTime, initials, weekdaysFull,
 } from '../lib/format';
@@ -68,6 +69,14 @@ function openState(
   return { open: true, label: t('venue.openUntil', { time: fmtTime(today.close, true) }) };
 }
 
+const MORE_REVIEWS = `query($slug: String!, $limit: Int, $offset: Int) {
+  venue(slug: $slug) {
+    reviewPage(limit: $limit, offset: $offset) {
+      items { id clientName rating comment createdAt reply replyAt locale }
+    }
+  }
+}`;
+
 export default function VenuePage() {
   const { venue: v, slug, booking } = useVenue();
   const { t } = useTranslation();
@@ -77,6 +86,8 @@ export default function VenuePage() {
   const focusCat = params.get('cat');
   const focusSvc = params.get('svc');
   const [showAllReviews, setShowAllReviews] = useState(false);
+  const [extraReviews, setExtraReviews] = useState<Review[] | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const name = v.settings.businessName;
   const address = v.settings.businessAddress;
@@ -129,7 +140,32 @@ export default function VenuePage() {
     }
   };
 
-  const reviews = showAllReviews ? v.reviews : v.reviews.slice(0, 6);
+  // Reviews beyond the first page are fetched, not just revealed. The venue
+  // query carries 50; a salon with more than that had a "See all 120 reviews"
+  // button that showed 50 and stopped, which is a button that lies about what
+  // it does. `reviewPage` is the query behind the rest.
+  const loaded = extraReviews ? [...v.reviews, ...extraReviews] : v.reviews;
+  const reviews = showAllReviews ? loaded : loaded.slice(0, 6);
+
+  const showAll = async () => {
+    setShowAllReviews(true);
+    if (v.reviewCount <= v.reviews.length || extraReviews) return;
+
+    setLoadingMore(true);
+    try {
+      const d = await gql<{ venue: { reviewPage: { items: Review[] } } }>(MORE_REVIEWS, {
+        slug,
+        offset: v.reviews.length,
+        limit: v.reviewCount - v.reviews.length,
+      });
+      setExtraReviews(d.venue.reviewPage.items);
+    } catch {
+      // The first fifty are already on the page; failing to fetch the tail
+      // leaves a shorter list, not a broken one.
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   return (
     <>
@@ -298,11 +334,12 @@ export default function VenuePage() {
               </div>
 
               {v.reviewCount > 6 && !showAllReviews && (
-                <button className="btn" style={{ marginTop: 14 }}
-                  onClick={() => setShowAllReviews(true)}>
+                <button className="btn" style={{ marginTop: 14 }} onClick={showAll}>
                   {t('venue.seeAllReviews', { count: v.reviewCount })}
                 </button>
               )}
+
+              {loadingMore && <div className="empty">{t('common.loading')}</div>}
             </>
           )}
 

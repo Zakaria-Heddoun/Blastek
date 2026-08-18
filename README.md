@@ -37,7 +37,7 @@ Then open:
 - **Marketplace** → http://localhost:5173/ — landing, search + venue directory
   (`/venues`), venue page (`/v/:slug`) and booking flow (this is the root app,
   same as fresha.com being the consumer-facing site)
-- **Admin dashboard** → http://localhost:5173/dashboard — calendar, clients, catalog, team, sales, reports, settings
+- **Admin dashboard** → http://localhost:5173/dashboard — calendar, clients, catalog, team, sales, reports, reviews, settings
   (Fresha's equivalent of partners.fresha.com)
 - **GraphQL playground** → http://localhost:4000/api/graphiql — explore the API directly
 - **MinIO console** → http://localhost:9001 (`blastek` / `blastek-dev-secret`) — venue photos land in the `blastek-media` bucket
@@ -67,6 +67,55 @@ To reseed:
 ```
 docker compose exec api mix ecto.reset
 ```
+
+### Working from a second machine
+
+Clone, `docker compose up -d`, `npm install` in `web/`. That is the whole
+procedure — there is nothing to copy off the first machine.
+
+**The database does not travel, and does not need to.** It lives in the
+`pgdata` Docker volume, never in git. `mix ecto.setup` runs on every API boot:
+it creates the database if absent, applies every migration, and seeds the two
+demo venues if the venue table is empty. A second machine therefore comes up
+with the *same* starting data as the first did, not a copy of whatever the first
+one has drifted into — a fresh seed rather than a stale dump.
+
+If you want the first machine's actual rows (a booking you made, a review you
+wrote), move them deliberately:
+
+```
+# on the first machine
+docker compose exec -T db pg_dump -U postgres blastek_dev > blastek.sql
+
+# on the second, after `docker compose up -d` has finished booting once
+docker compose exec -T db psql -U postgres -c "DROP DATABASE blastek_dev"
+docker compose exec -T db psql -U postgres -c "CREATE DATABASE blastek_dev"
+docker compose exec -T db psql -U postgres -d blastek_dev < blastek.sql
+```
+
+**Photos do not travel either.** Gallery images shipped with the app are stock
+files under [web/src/market/assets](web/src/market/assets) and come with the
+clone. *Uploaded* venue photos are objects in the `miniodata` volume, and a
+second machine starts with an empty bucket — venues with no photo rows fall
+back to the placeholder gallery, which is what every seeded venue does anyway.
+To carry uploads over, mirror the bucket:
+
+```
+docker compose exec minio mc alias set l http://localhost:9000 blastek blastek-dev-secret
+docker compose exec minio mc mirror l/blastek-media /data-export
+```
+
+**Docker images are pulled, not copied** — `postgres:16-alpine`,
+`elixir:1.18-alpine`, `minio`. The first `docker compose up` pulls them and
+then spends 2–3 minutes compiling Elixir dependencies into the `api_deps` and
+`api_build` volumes; subsequent boots are seconds.
+
+**Nothing is gitignored that the app needs.** Every credential in dev is a
+literal in [docker-compose.yml](docker-compose.yml) — deliberately, because they
+are local-only MinIO and Postgres passwords. There is no `.env` to reproduce.
+The real secrets (WhatsApp, SMS, S3) are read from the environment at boot and
+are all optional in dev; unset, the app falls back to `DevLogger` and the
+filesystem, which is what CI runs on.
 
 ### Media storage
 

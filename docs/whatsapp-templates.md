@@ -25,10 +25,23 @@ That has three consequences worth stating plainly:
 
 ## Category
 
-All of these are **UTILITY**, not MARKETING. Every one is the direct
-consequence of something the recipient did: they booked, they cancelled, they
-asked for a code. Submitting a reminder as MARKETING invites both a rejection
-and a per-message price rise.
+Most of these are **UTILITY**, not MARKETING. Each is the direct consequence of
+something the recipient did: they booked, they cancelled, they asked for a
+code. Submitting a reminder as MARKETING invites both a rejection and a
+per-message price rise.
+
+**The two review templates are the exception, and they are the ones to think
+about before submitting.** A review request is not the consequence of anything
+the customer did — it is us asking them for something. Meta has rejected
+review solicitations submitted as UTILITY, and the honest reading of their
+policy puts these under MARKETING.
+
+Submit them as MARKETING. It costs more per message and it requires marketing
+opt-in, which is why `Blastek.Notifications.Templates` already files them under
+the `:reminders` preference rather than as transactional: a customer who has
+switched messages off gets no review request, and that was decided in the code
+before it was decided here. If Meta approves them as UTILITY, nothing in the
+application needs to change — the preference is ours, not theirs.
 
 ## Status
 
@@ -191,6 +204,53 @@ Button: *Cancel*
 **ar** — تم نقل موعدك في {{1}} إلى {{2}} مع {{3}}.
 
 **en** — Your appointment at {{1}} has moved to {{2}} with {{3}}.
+
+---
+
+### `blastek_review_invite` — two hours after the visit
+
+Carries a **URL button** (Leave a review) for the same reason the reminders do:
+a bare URL in a template body is not tappable on every client, and this link is
+the entire point of the message.
+
+Sent once, at T+2h. See `Blastek.Notifications.ReviewInvites`.
+
+| # | Parameter | Example |
+|---|---|---|
+| 1 | Venue name | Le Salon Anfa |
+| Button URL suffix | Signed review token | `review/SFMyNTY…` |
+
+**fr** — Merci de votre visite chez {{1}} ! Comment ça s'est passé ?
+Bouton : *Donner mon avis*
+
+**ar** — شكرًا لزيارتك {{1}}! كيف كانت التجربة؟
+الزر: *اترك تقييمًا*
+
+**en** — Thanks for visiting {{1}}! How did it go?
+Button: *Leave a review*
+
+---
+
+### `blastek_review_reminder` — the one and only follow-up
+
+Sent at T+24h, and **only if the customer has not answered** — the job re-reads
+that as it fires, so a review left at T+3h cancels this. There is no third
+message; F0.8 caps it here, and a salon that nags is a salon customers mute,
+which also loses them the reminders that stop no-shows.
+
+| # | Parameter | Example |
+|---|---|---|
+| 1 | Venue name | Le Salon Anfa |
+| Button URL suffix | Signed review token | `review/SFMyNTY…` |
+
+**fr** — Un avis sur {{1}} ? Une minute suffit.
+Bouton : *Donner mon avis*
+
+**ar** — رأيك في {{1}}؟ دقيقة واحدة تكفي.
+الزر: *اترك تقييمًا*
+
+**en** — A quick word about {{1}}? One minute.
+Button: *Leave a review*
 
 ---
 
