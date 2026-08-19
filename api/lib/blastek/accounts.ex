@@ -159,13 +159,19 @@ defmodule Blastek.Accounts do
   end
 
   @doc """
-  Signs a user up and gives them a venue they own — the "create a business
-  account" path. The venue is created in one transaction with its owner
-  membership so a half-registered business can never exist.
+  Gives an account a venue it owns — the "create a business account" path.
+
+  If the email is new, the user is created first. If it already belongs to a
+  customer, the supplied password must authenticate that same user and the
+  venue membership is added to it. Customer and professional access are two
+  capabilities of one identity, never two competing accounts with one email.
+
+  The venue is created in one transaction with its owner membership so a
+  half-registered business can never exist.
   """
   def sign_up_with_venue(attrs, business_name) do
     Repo.transaction(fn ->
-      with {:ok, user} <- sign_up(attrs),
+      with {:ok, user} <- account_for_business(attrs),
            {:ok, venue} <-
              Venues.create_venue_with_owner(
                %{name: business_name, status: "active", city: attrs[:city] || ""},
@@ -177,6 +183,13 @@ defmodule Blastek.Accounts do
         {:error, reason} -> Repo.rollback(reason)
       end
     end)
+  end
+
+  defp account_for_business(attrs) do
+    case get_by_email(attrs[:email]) do
+      nil -> sign_up(attrs)
+      %User{} -> authenticate(attrs[:email], attrs[:password])
+    end
   end
 
   def authenticate(email, password) do

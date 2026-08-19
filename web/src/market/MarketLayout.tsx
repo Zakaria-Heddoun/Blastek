@@ -5,6 +5,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Outlet, useLocation, useParams } from 'react-router-dom';
 import { gql } from '../lib/gql';
+import { loadBookingDraft } from '../lib/bookingDraft';
 import { F } from '../lib/fragments';
 import type { Venue } from '../lib/types';
 import MarketTopbar from './MarketTopbar';
@@ -64,11 +65,24 @@ export default function MarketLayout() {
   useEffect(() => {
     setVenue(null);
     setError('');
-    // Switching venues invalidates any half-built booking.
-    setServices([]);
-    setStaffId('any');
+    const draft = loadBookingDraft(slug);
+    setServices(draft?.services ?? []);
+    setStaffId(draft?.staffId ?? 'any');
+    setDate(draft?.date ?? '');
     gql<{ venue: Venue }>(VENUE, { slug })
-      .then((d) => setVenue(d.venue))
+      .then((d) => {
+        // A catalog or team member may have changed while the customer was in
+        // auth. Restore only ids the current venue still contains.
+        const serviceIds = new Set(d.venue.services.map((service) => service.id));
+        const staffIds = new Set(d.venue.staff.map((staff) => staff.id));
+        setServices((draft?.services ?? []).filter((id) => serviceIds.has(id)));
+        setStaffId(
+          draft?.staffId === 'any' || (draft?.staffId && staffIds.has(draft.staffId))
+            ? draft.staffId
+            : 'any',
+        );
+        setVenue(d.venue);
+      })
       .catch((e) => setError(e.message));
   }, [slug]);
 

@@ -67,6 +67,12 @@ defmodule Blastek.Storage do
     "venues/#{venue_id}/#{kind}/#{random}#{extension}"
   end
 
+  @doc "Builds an unguessable key for media owned by one user."
+  def build_user_key(user_id, kind, extension) do
+    random = :crypto.strong_rand_bytes(16) |> Base.url_encode64(padding: false)
+    "users/#{user_id}/#{kind}/#{random}#{extension}"
+  end
+
   @doc "Derives the variant's key from the original's, keeping them adjacent."
   def variant_key(key, variant) do
     extension = Path.extname(key)

@@ -3,11 +3,12 @@ defmodule Blastek.Media.Attachment do
   use Ecto.Schema
   import Ecto.Changeset
 
-  @kinds ~w(cover gallery)
+  @kinds ~w(cover gallery avatar)
   @statuses ~w(pending ready failed)
 
   schema "attachments" do
     field :venue_id, :id
+    field :user_id, :id
     field :kind, :string, default: "gallery"
     field :key, :string
     field :content_type, :string, default: ""
@@ -28,6 +29,7 @@ defmodule Blastek.Media.Attachment do
     attachment
     |> cast(attrs, [
       :venue_id,
+      :user_id,
       :kind,
       :key,
       :content_type,
@@ -39,9 +41,22 @@ defmodule Blastek.Media.Attachment do
       :sort,
       :alt
     ])
-    |> validate_required([:venue_id, :key, :kind, :status])
+    |> validate_required([:key, :kind, :status])
+    |> validate_owner()
     |> validate_inclusion(:kind, @kinds)
     |> validate_inclusion(:status, @statuses)
     |> unique_constraint(:key)
+    |> check_constraint(:venue_id, name: :attachments_exactly_one_owner)
+  end
+
+  defp validate_owner(changeset) do
+    venue_id = get_field(changeset, :venue_id)
+    user_id = get_field(changeset, :user_id)
+
+    if is_nil(venue_id) == is_nil(user_id) do
+      add_error(changeset, :venue_id, "must have exactly one owner")
+    else
+      changeset
+    end
   end
 end

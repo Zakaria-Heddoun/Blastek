@@ -318,6 +318,32 @@
     "newPasswordLabel": "Nouveau mot de passe"
   },
   "account": {
+    "tabs": {
+      "profile": "Informations",
+      "appointments": "Rendez-vous",
+      "notifications": "Notifications",
+      "security": "Appareils et sécurité"
+    },
+    "tabLead": {
+      "profile": "Gardez vos informations personnelles et vos coordonnées à jour.",
+      "appointments": "Consultez et gérez vos rendez-vous à venir et passés.",
+      "notifications": "Choisissez les messages facultatifs que vous recevez.",
+      "security": "Vérifiez les appareils connectés et protégez votre compte."
+    },
+    "accountNavigation": "Rubriques du compte",
+    "profilePhoto": "Photo de profil",
+    "avatarHint": "JPEG, PNG ou WebP, jusqu'à 10 Mo.",
+    "changePhoto": "Changer la photo",
+    "avatarTooLarge": "La photo doit faire moins de 10 Mo.",
+    "avatarUploadFailed": "La photo n'a pas pu être envoyée.",
+    "avatarSaved": "Photo de profil mise à jour",
+    "avatarRemoved": "Photo de profil supprimée",
+    "firstName": "Prénom",
+    "lastName": "Nom",
+    "phoneVerifiedHint": "Tout changement de numéro doit être vérifié avec un nouveau code.",
+    "noPhone": "Aucun numéro de téléphone",
+    "saveProfile": "Enregistrer les informations",
+    "profileSaved": "Informations mises à jour",
     "appointments": "Mes rendez-vous",
     "upcoming": "À venir",
     "past": "Passés",
@@ -338,6 +364,19 @@
     "nothingYet": "Rien pour le moment.",
     "noUpcomingWithLink": "Aucun rendez-vous à venir — <1>réservez-en un</1>.",
     "devices": "Appareils",
+    "devicesLead_one": "Connecté sur {{count}} appareil. Déconnectez tout appareil que vous ne reconnaissez pas.",
+    "devicesLead_other": "Connecté sur {{count}} appareils. Déconnectez tout appareil que vous ne reconnaissez pas.",
+    "unknownAddress": "Adresse inconnue",
+    "lastUsed": "dernière utilisation {{when}}",
+    "never": "jamais",
+    "justNow": "à l'instant",
+    "minutesAgo_one": "il y a {{count}} minute",
+    "minutesAgo_other": "il y a {{count}} minutes",
+    "hoursAgo_one": "il y a {{count}} heure",
+    "hoursAgo_other": "il y a {{count}} heures",
+    "daysAgo_one": "il y a {{count}} jour",
+    "daysAgo_other": "il y a {{count}} jours",
+    "passwordMinimum": "8 caractères minimum",
     "passwordSection": "Mot de passe",
     "signOutAll": "Déconnecter tous les autres appareils",
     "deviceSignedOut": "Appareil déconnecté",
@@ -354,6 +393,35 @@
     "cannotReschedule": "Ce rendez-vous ne peut plus être déplacé en ligne — appelez le salon.",
     "pickAnotherDay": "Aucun créneau ce jour-là — essayez une autre date."
   },
+  "customerOnboard": {
+    "pageTitle": "Blastek — À votre image",
+    "skip": "Passer pour l'instant",
+    "steps": {
+      "taste": "Vos préférences",
+      "city": "Votre ville",
+      "notifications": "Rester informé"
+    },
+    "visual": {
+      "taste": "Une meilleure sélection commence par ce que vous aimez vraiment.",
+      "city": "Découvrez les spécialistes indépendants et les salons appréciés près de vous.",
+      "notifications": "Un rappel utile au bon moment. Rien de superflu."
+    },
+    "tasteTitle": "Bienvenue, {{name}}. Qu'est-ce qui vous plaît ?",
+    "tasteLead": "Choisissez un point de départ. Il guidera vos premières découvertes.",
+    "categories": {
+      "hair": "Coiffure",
+      "barber": "Barbier",
+      "nails": "Ongles",
+      "spa": "Massage et spa"
+    },
+    "cityTitle": "Où cherchez-vous ?",
+    "cityLead": "Choisissez votre ville habituelle. Vous pourrez chercher ailleurs à tout moment.",
+    "cityPlaceholder": "Saisissez une ville",
+    "notificationsTitle": "Gardez les messages utiles.",
+    "notificationsLead": "Choisissez ce que vous recevez. Les confirmations de réservation restent toujours actives.",
+    "confirmationNote": "Les codes de sécurité et confirmations de réservation sont toujours envoyés.",
+    "discover": "Découvrir les salons"
+  },
   "onboard": {
     "businessName": "Nom du salon",
     "city": "Ville",
@@ -364,6 +432,10 @@
     "eyebrow": "( Espace professionnel )",
     "businessStepTitle": "Votre salon.",
     "businessStepSub": "L’essentiel — tout reste modifiable ensuite.",
+    "accountAttached": "Compte professionnel",
+    "signInAgainEmail": "Vous vous connecterez avec cet e-mail et votre mot de passe actuel.",
+    "signInAgainPhone": "Vous vous connecterez avec un code envoyé à ce numéro.",
+    "manageLogin": "Gérer la connexion",
     "cityPlaceholder": "Casablanca",
     "typeStepTitle": "Que faites-vous ?",
     "typeStepSub": "Cela choisit un menu de départ que vous pourrez modifier.",
@@ -385,8 +457,46 @@
     "toDashboard": "Ouvrir mon tableau de bord",
     "womensHair": "Coiffure femme",
     "mensHair": "Coiffure homme",
+    "barbershop": "Barbier",
+    "nails": "Onglerie",
     "hammamSpa": "Hammam et spa",
     "justMe": "Juste moi",
+    "teamTwoThree": "2–3 personnes",
+    "teamFourSix": "4–6 personnes",
+    "teamSevenPlus": "7 personnes ou plus",
+    "readyMadeServices_one": "{{count}} prestation prête à l'emploi",
+    "readyMadeServices_other": "{{count}} prestations prêtes à l'emploi",
+    "adding": "Ajout…",
+    "addServices_one": "Ajouter {{count}} prestation",
+    "addServices_other": "Ajouter {{count}} prestations",
+    "sending": "Envoi…",
+    "reviewBody": "Envoyez {{name}} pour validation. Votre tableau de bord fonctionne déjà : vous pouvez prendre des réservations par téléphone, compléter votre catalogue et inviter votre équipe pendant la validation de la page publique.",
+    "takeToDashboard": "ouvrir mon tableau de bord",
+    "sentBody": "{{name}} est entre les mains de notre équipe. Nous répondons généralement sous un jour ouvré et vous recevrez un message dans tous les cas.",
+    "stepLabels": {
+      "basics": "Salon",
+      "category": "Type",
+      "services": "Prestations",
+      "team": "Équipe",
+      "hours": "Horaires",
+      "review": "Validation"
+    },
+    "visual": {
+      "basics": "Donnez une adresse à votre savoir-faire.",
+      "category": "Commencez par le bon métier.",
+      "services": "Transformez votre expertise en menu réservable.",
+      "team": "Valorisez les personnes que vos clients retrouvent.",
+      "hours": "Créez une semaine qui vous ressemble.",
+      "review": "Vous êtes presque prêt à être découvert."
+    },
+    "visualLead": {
+      "basics": "Votre identité publique commence par un nom, une ville et un numéro direct.",
+      "category": "Un catalogue de départ ciblé réduit la saisie et accélère le lancement.",
+      "services": "Gardez ce qui vous convient. Chaque prestation, durée et prix reste modifiable.",
+      "team": "Définissez l'équipe maintenant, puis invitez chacun depuis le tableau de bord.",
+      "hours": "Commencez simplement, puis ajustez chaque journée dans les Réglages.",
+      "review": "Votre tableau de bord privé fonctionne déjà pendant la validation de la page publique."
+    },
     "submitForReview": "Envoyer pour validation",
     "yourSalonLabel": "Votre salon",
     "progressAria": "Étape {{current}} sur {{total}}"
@@ -446,7 +556,11 @@
       "signUpSub": "Créez le compte de votre salon.",
       "signInLead": "Agenda, clients et ventes au même endroit.",
       "signUpLead": "Créez un compte professionnel pour prendre des réservations en ligne.",
-      "salonName": "Nom du salon"
+      "salonName": "Nom du salon",
+      "addBusinessTitle": "Créez votre profil professionnel.",
+      "addBusinessLead": "Gardez votre compte client et ajoutez-y un salon uniquement quand vous êtes prêt.",
+      "signedInAccount": "Compte connecté",
+      "useAnotherAccount": "Utiliser un autre compte"
     },
     "calendar": {
       "title": "Agenda",
@@ -702,7 +816,13 @@
   "errors": {
     "offline": "Impossible de joindre le serveur.",
     "rateLimited": "Trop de tentatives — réessayez dans un instant.",
-    "malformed": "Le serveur a renvoyé une réponse illisible."
+    "malformed": "Le serveur a renvoyé une réponse illisible.",
+    "notFoundTitle": "Page introuvable",
+    "notFoundBody": "L’adresse est peut-être incorrecte ou cette page a été déplacée.",
+    "backHome": "Retour à Blastek",
+    "pageFailedTitle": "Impossible d’ouvrir cette page",
+    "pageFailedBody": "Rechargez la page pour réessayer.",
+    "reloadPage": "Recharger la page"
   },
   "review": {
     "pageTitle": "Laisser un avis",

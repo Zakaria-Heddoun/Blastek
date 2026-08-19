@@ -15,6 +15,7 @@ export interface User {
   firstName: string;
   lastName: string;
   phone: string;
+  avatarUrl: string | null;
   /** The number has been proven by a one-time code. */
   phoneVerified: boolean;
   /** False for an account created by phone that has not been named yet. */
@@ -59,7 +60,7 @@ interface AuthCtx {
 const Ctx = createContext<AuthCtx>(null!);
 export const useAuth = () => useContext(Ctx);
 
-const USER_FIELDS = `id email role firstName lastName phone
+const USER_FIELDS = `id email role firstName lastName phone avatarUrl
   phoneVerified profileComplete hasPassword locale
   notificationPrefs { reminders marketing }
   venues { id role venue { id slug name city status } }`;

@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { gql } from '../lib/gql';
+import { useAuth } from '../lib/auth';
 import type { VenueSummary } from '../lib/types';
 import { IMG } from './assets';
 import LanguageSwitcher from '../components/LanguageSwitcher';
@@ -15,16 +16,6 @@ import './home.css';
 import './market.css';
 
 const BG = '/bungee'; // reuse the pixel-mosaic category icons from the Bungee assets
-
-// Only the number and the destination are structural; the label is copy and
-// comes from `home.nav` in the same order.
-const NAV = [
-  ['_01', '#top'],
-  ['_02', '/venues'],
-  ['_03', '/dashboard'],
-  ['_04', '/login'],
-  ['_05', '#contact'],
-] as const;
 
 const CAROUSEL = [
   IMG.hair1, IMG.salon1, IMG.barber1, IMG.nails1, IMG.spa1, IMG.hair2,
@@ -135,8 +126,21 @@ const reveal = {
 
 function Nav() {
   const { t } = useTranslation();
+  const { user, memberships } = useAuth();
   const [open, setOpen] = useState(false);
   const labels = t('home.nav', { returnObjects: true }) as string[];
+  const links = [
+    ['_01', '#top', labels[0]],
+    ['_02', '/venues', labels[1]],
+    [
+      '_03',
+      memberships.length > 0 ? '/dashboard' : '/for-business',
+      memberships.length > 0 ? t('nav.myDashboard') : labels[2],
+    ],
+    ['_04', user ? '/account' : '/login', user ? t('nav.account') : labels[3]],
+    ['_05', '#contact', labels[4]],
+  ] as const;
+
   return (
     <>
       <nav className="nav">
@@ -154,16 +158,16 @@ function Nav() {
       </nav>
       <div className={`menu-overlay${open ? ' show' : ''}`}>
         <div className="menu-links">
-          {NAV.map(([num, href], i) =>
+          {links.map(([num, href, label]) =>
             href.startsWith('#') ? (
               <a key={num} href={href} onClick={() => setOpen(false)}>
                 <sup>{num}</sup>
-                {labels[i]}
+                {label}
               </a>
             ) : (
               <Link key={num} to={href} onClick={() => setOpen(false)}>
                 <sup>{num}</sup>
-                {labels[i]}
+                {label}
               </Link>
             ),
           )}
@@ -510,6 +514,7 @@ function Newsletter() {
 
 function Footer() {
   const { t } = useTranslation();
+  const { user, memberships } = useAuth();
 
   return (
     <footer className="footer" id="contact">
@@ -537,8 +542,16 @@ function Footer() {
           <div className="foot-nav">
             <ul>
               <li><Link to="/venues">{t('nav.bookNow')}</Link></li>
-              <li><Link to="/for-business">{t('nav.forProfessionals')}</Link></li>
-              <li><Link to="/login">{t('nav.login')}</Link></li>
+              <li>
+                <Link to={memberships.length > 0 ? '/dashboard' : '/for-business'}>
+                  {memberships.length > 0 ? t('nav.myDashboard') : t('nav.forProfessionals')}
+                </Link>
+              </li>
+              <li>
+                <Link to={user ? '/account' : '/login'}>
+                  {user ? t('nav.account') : t('nav.login')}
+                </Link>
+              </li>
               <li><a href="#top">{t('home.backToTop')}</a></li>
             </ul>
           </div>
@@ -577,4 +590,3 @@ export default function Home() {
     </div>
   );
 }
-

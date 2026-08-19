@@ -13,6 +13,7 @@ import { gql } from '../lib/gql';
 import { F } from '../lib/fragments';
 import type { Category, Service, Settings, Staff } from '../lib/types';
 import { useAuth } from '../lib/auth';
+import { Icon } from '../lib/icons';
 import './admin.css';
 
 export interface AppData {
@@ -55,6 +56,7 @@ export default function AdminLayout() {
   const [error, setError] = useState('');
   const { t } = useTranslation();
   const { user, loading, logout, memberships, activeVenue, selectVenue } = useAuth();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // A member who chose Arabic on their phone gets Arabic here too.
   useAccountLocale();
@@ -112,8 +114,19 @@ export default function AdminLayout() {
   return (
     <AppCtx.Provider value={{ ...data, refresh }}>
       <div className="adm app">
-        <aside className="adm-side">
-          <div className="adm-brand">blastek</div>
+        <aside className={`adm-side${mobileNavOpen ? ' mobile-open' : ''}`}>
+          <div className="adm-brand-row">
+            <div className="adm-brand">blastek</div>
+            <button
+              type="button"
+              className="adm-menu-toggle"
+              aria-label={mobileNavOpen ? t('home.closeMenu') : t('home.openMenu')}
+              aria-expanded={mobileNavOpen}
+              onClick={() => setMobileNavOpen((open) => !open)}
+            >
+              <Icon name={mobileNavOpen ? 'close' : 'menu'} size={21} />
+            </button>
+          </div>
 
           <div className="adm-venue">
             {memberships.length > 1 ? (
@@ -134,7 +147,7 @@ export default function AdminLayout() {
 
           <nav className="adm-nav">
             {nav.map((n, i) => (
-              <NavLink key={n.to} to={n.to} className={({ isActive }) => (isActive ? 'active' : '')}>
+              <NavLink key={n.to} to={n.to} onClick={() => setMobileNavOpen(false)} className={({ isActive }) => (isActive ? 'active' : '')}>
                 <span className="n">0{i + 1}</span>
                 {t(`admin.nav.${n.key}`)}
               </NavLink>

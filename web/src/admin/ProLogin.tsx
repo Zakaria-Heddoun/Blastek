@@ -5,13 +5,14 @@
 // that manages at least one venue, and signing up creates that venue.
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import AuthShell, { AuthField, useAuthForm } from '../market/AuthShell';
+import '../market/onboarding.css';
 
 export default function ProLogin() {
   const { t } = useTranslation();
-  const { login, signUp, logout } = useAuth();
+  const { user: signedInUser, loading, login, signUp, logout } = useAuth();
   const navigate = useNavigate();
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const isLogin = mode === 'login';
@@ -38,15 +39,68 @@ export default function ProLogin() {
           businessName: f.businessName.trim(),
         });
 
-    if (user.venues.length === 0) {
-      // login/signUp already stored the token — drop it so a rejected sign-in
-      // doesn't leave the client silently logged in behind the error message.
-      logout();
-      throw new Error(t('admin.login.notAVenue'));
+    if (!isLogin) {
+      // Account creation is the explicit boundary before onboarding. The
+      // signup mutation may already have created the pending venue; the wizard
+      // resumes it instead of creating a duplicate.
+      navigate('/for-business/onboarding', { state: { start: true } });
+      return;
     }
 
-    navigate('/dashboard/calendar');
+    // Returning owners go straight to work. A customer who signed in here is
+    // shown the professional entry choice; setup does not begin automatically.
+    navigate(user.venues.length > 0 ? '/dashboard/calendar' : '/for-business', { replace: true });
   });
+
+  if (loading) return <main className="app-state" role="status">{t('common.loading')}</main>;
+  if (signedInUser?.venues.length) {
+    return (
+      <Navigate
+        to="/dashboard/calendar"
+        replace
+      />
+    );
+  }
+
+  // A signed-in customer can add a professional profile to this same account,
+  // but only after pressing the create button below. Merely visiting the
+  // professional entry page must never launch setup.
+  if (signedInUser) {
+    if (mode === 'signup') {
+      return <Navigate to="/for-business/onboarding" state={{ start: true }} replace />;
+    }
+
+    return (
+      <AuthShell
+        media={{ eyebrow: t('admin.login.title'), heading: t('admin.login.mediaHeading') }}
+        eyebrow={t('admin.login.title')}
+        title={t('admin.login.addBusinessTitle')}
+        sub={t('admin.login.addBusinessLead')}
+        form={form}
+        fields={null}
+        body={
+          <div className="pro-entry-account">
+            <div>
+              <span>{t('admin.login.signedInAccount')}</span>
+              <strong>{signedInUser.email || signedInUser.phone}</strong>
+            </div>
+            <button
+              type="button"
+              className="auth-submit"
+              onClick={() => navigate('/for-business/onboarding', { state: { start: true } })}
+            >
+              {t('admin.login.createBusiness')}
+            </button>
+          </div>
+        }
+        submitLabel=""
+        toggle={<>{t('admin.login.useAnotherAccount')}</>}
+        onToggle={async () => {
+          await logout();
+        }}
+      />
+    );
+  }
 
   return (
     <AuthShell
@@ -73,7 +127,7 @@ export default function ProLogin() {
               </div>
             </>
           )}
-          <AuthField label="Email" name="email" type="email" form={form} />
+          <AuthField label={t('common.email')} name="email" type="email" form={form} />
           <AuthField label={t(`common.password`)} name="password" type="password" form={form} />
         </>
       }

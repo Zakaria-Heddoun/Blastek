@@ -259,5 +259,15 @@ defmodule Blastek.SearchPerfTest do
 
     # One statement builds every document — the same one the app uses.
     Discovery.reindex_all(timeout: @fixture_timeout)
+
+    # Bulk inserts inside the sandbox transaction are invisible to autovacuum,
+    # so PostgreSQL otherwise plans the benchmark using the empty-table stats
+    # from before this fixture existed. Refreshing them is part of making the
+    # measured query representative; fixture construction is not timed.
+    Repo.query!(
+      "ANALYZE venues, services, service_categories, venue_search_documents",
+      [],
+      timeout: @fixture_timeout
+    )
   end
 end

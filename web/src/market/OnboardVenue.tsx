@@ -9,16 +9,19 @@
 //   * a starter catalog instead of a blank menu, since typing thirty services
 //     on a phone is how people abandon this.
 import { useCallback, useEffect, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { gql, setActiveVenue } from '../lib/gql';
 import { useAuth } from '../lib/auth';
+import type { User } from '../lib/auth';
 import { Icon } from '../lib/icons';
 import type { OnboardingState, VenueSummary } from '../lib/types';
-import PhoneAuth from './PhoneAuth';
+import { IMG } from './assets';
 import '../bungee/bungee.css';
 import './home.css';
 import './auth.css';
+import './onboarding.css';
 
 interface Catalog {
   catalog: string;
@@ -64,8 +67,8 @@ const SUBMIT = `mutation { submitVenue { id status } }`;
 const CATALOG_LABELS: Record<string, string> = {
   coiffure_femme: 'onboard.womensHair',
   coiffure_homme: 'onboard.mensHair',
-  barbier: 'Barbershop',
-  onglerie: 'Nails',
+  barbier: 'onboard.barbershop',
+  onglerie: 'onboard.nails',
   hammam_spa: 'onboard.hammamSpa',
 };
 
@@ -76,6 +79,7 @@ export default function OnboardVenue() {
   const { t } = useTranslation();
   const { user, loading, refreshMe } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [venue, setVenue] = useState<VenueSummary | null>(null);
   const [state, setState] = useState<OnboardingState | null>(null);
@@ -127,28 +131,23 @@ export default function OnboardVenue() {
     await gql(UPDATE_STEP, { step: name, data: JSON.stringify(data) });
   };
 
-  if (loading) return <Shell><p className="auth-sub">{t(`action.working`)}</p></Shell>;
+  if (loading) return <Shell step="basics"><p className="auth-sub">{t(`action.working`)}</p></Shell>;
 
-  // Signing in first: a venue has to belong to somebody, and phone sign-in is
-  // one code rather than a password to invent.
-  if (!user) {
-    return (
-      <Shell>
-        <h1 className="auth-title">{t(`onboard.heroTitle`)}</h1>
-        <p className="auth-sub">
-          {t(`onboard.heroSub`)}
-        </p>
-        <PhoneAuth onDone={() => undefined} />
-      </Shell>
-    );
-  }
+  // Account creation and returning-owner sign-in live on /for-business. The
+  // wizard is only entered from its explicit create action, or resumed for an
+  // account that already owns a pending venue.
+  if (!user) return <Navigate to="/for-business" replace />;
+
+  const startRequested = Boolean((location.state as { start?: boolean } | null)?.start);
+  const resumable = user.venues.some((membership) => membership.venue.status === 'pending');
+  if (!startRequested && !resumable) return <Navigate to="/for-business" replace />;
 
   // Already sent for review — whether a moment ago or last week. Inviting an
   // owner to submit a second time, or dropping them on a dashboard that says
   // nothing about it, both read as the form having been lost.
   if (state?.submitted) {
     return (
-      <Shell>
+      <Shell step="review" progress={STEPS.length} venueName={venue?.name}>
         <SubmittedStep venue={venue} onDashboard={() => navigate('/dashboard/calendar')} />
       </Shell>
     );
@@ -157,7 +156,7 @@ export default function OnboardVenue() {
   const progress = STEPS.indexOf(step) + 1;
 
   return (
-    <Shell>
+    <Shell step={step} progress={progress} venueName={venue?.name}>
       <div className="wiz-progress" aria-label={t('onboard.progressAria', { current: progress, total: STEPS.length })}>
         {STEPS.map((s, i) => (
           <span key={s} className={i < progress ? 'done' : ''} />
@@ -176,10 +175,20 @@ export default function OnboardVenue() {
 
       <div className="auth-err">{error}</div>
 
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={step}
+          className="pro-onboard-step"
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+          transition={{ duration: 0.25, ease: 'easeOut' }}
+        >
       {step === 'basics' && (
         <BasicsStep
           busy={busy}
           existing={venue}
+          account={user}
           onNext={(values) =>
             run(async () => {
               if (!venue) {
@@ -263,6 +272,8 @@ export default function OnboardVenue() {
           onSkip={() => navigate('/dashboard/calendar')}
         />
       )}
+        </motion.div>
+      </AnimatePresence>
     </Shell>
   );
 }
@@ -272,22 +283,63 @@ function nextAfter(step: Step): Step {
   return STEPS[Math.min(i + 1, STEPS.length - 1)];
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+const STEP_IMAGES: Record<Step, string> = {
+  basics: IMG.salon1,
+  category: IMG.barber3,
+  services: IMG.hair2,
+  team: IMG.hair1,
+  hours: IMG.spa2,
+  review: IMG.salon1,
+};
+
+function Shell({ children, step = 'basics', progress = 1, venueName }: {
+  children: React.ReactNode;
+  step?: Step;
+  progress?: number;
+  venueName?: string;
+}) {
   const { t } = useTranslation();
   return (
-    <div className="bungee blastek-home auth-shell wiz-shell">
-      {/* i18n-exempt: the brand name is the same word in every language. */}
-      <Link to="/" className="auth-back" aria-label="Blastek">
-        <span className="brand-word">blastek</span>
-      </Link>
-      <div className="auth-grid">
-        <div className="auth-form-col">
-          <div className="auth-form wiz-form">
+    <div className="bungee blastek-home pro-onboard wiz-shell">
+      <aside className="pro-onboard-visual">
+        <AnimatePresence mode="wait">
+          <motion.img
+            key={STEP_IMAGES[step]}
+            src={STEP_IMAGES[step]}
+            alt=""
+            initial={{ opacity: 0, scale: 1.035 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.42 }}
+          />
+        </AnimatePresence>
+        {/* i18n-exempt: brand name, unchanged in every language. */}
+        <Link to="/" className="pro-onboard-brand" aria-label="Blastek">
+          <span className="brand-word">blastek</span>
+        </Link>
+        <div className="pro-onboard-visual-copy">
+          <span className="mono">{String(progress).padStart(2, '0')} / {String(STEPS.length).padStart(2, '0')}</span>
+          <h2>{venueName || t(`onboard.visual.${step}`)}</h2>
+          <p>{t(`onboard.visualLead.${step}`)}</p>
+        </div>
+      </aside>
+
+      <main className="pro-onboard-workspace">
+        <nav className="pro-onboard-rail" aria-label={t('onboard.progressAria', { current: progress, total: STEPS.length })}>
+          {STEPS.map((item, index) => (
+            <span key={item} className={index < progress ? 'active' : ''} aria-current={item === step ? 'step' : undefined}>
+              <i>{String(index + 1).padStart(2, '0')}</i>
+              <b>{t(`onboard.stepLabels.${item}`)}</b>
+            </span>
+          ))}
+        </nav>
+        <div className="pro-onboard-form-col">
+          <div className="auth-form wiz-form pro-onboard-form">
             <span className="mono">{t(`onboard.eyebrow`)}</span>
             {children}
           </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }
@@ -295,10 +347,12 @@ function Shell({ children }: { children: React.ReactNode }) {
 function BasicsStep({
   busy,
   existing,
+  account,
   onNext,
 }: {
   busy: boolean;
   existing: VenueSummary | null;
+  account: User;
   onNext: (values: { name: string; city: string; phone: string }) => void;
 }) {
   const { t } = useTranslation();
@@ -306,10 +360,34 @@ function BasicsStep({
   const [city, setCity] = useState(existing?.city ?? '');
   const [phone, setPhone] = useState(existing?.phone ?? '');
 
+  // Email signup may create the pending venue just before this route mounts.
+  // Its GraphQL lookup can finish after the first render, so hydrate any blank
+  // fields when that existing venue arrives without overwriting typed input.
+  useEffect(() => {
+    if (!existing) return;
+    setName((value) => value || existing.name || '');
+    setCity((value) => value || existing.city || '');
+    setPhone((value) => value || existing.phone || '');
+  }, [existing]);
+
   return (
     <>
       <h1 className="auth-title">{t(`onboard.businessStepTitle`)}</h1>
       <p className="auth-sub">{t(`onboard.businessStepSub`)}</p>
+
+      <div className="pro-account-context">
+        <span className="pro-account-context-icon"><Icon name="user" size={20} /></span>
+        <span>
+          <small>{t('onboard.accountAttached')}</small>
+          <strong>{account.email || account.phone}</strong>
+          <em>
+            {account.email
+              ? t('onboard.signInAgainEmail')
+              : t('onboard.signInAgainPhone')}
+          </em>
+        </span>
+        <Link to="/account?tab=security">{t('onboard.manageLogin')}</Link>
+      </div>
 
       <div className="auth-fields">
         <div className="auth-field">
@@ -330,7 +408,7 @@ function BasicsStep({
 
       <button className="auth-submit" disabled={busy || !name.trim()}
         onClick={() => onNext({ name: name.trim(), city: city.trim(), phone: phone.trim() })}>
-        {busy ? 'Saving…' : 'Continue'}
+        {busy ? t('common.saving') : t('common.continue')}
       </button>
     </>
   );
@@ -359,14 +437,14 @@ function CategoryStep({ busy, onNext }: { busy: boolean; onNext: (catalog: strin
             className={`wiz-choice${chosen === c.catalog ? ' active' : ''}`}
             onClick={() => setChosen(c.catalog)}
           >
-            <b>{CATALOG_LABELS[c.catalog] ?? c.catalog}</b>
-            <span className="fainttext">{c.serviceCount} ready-made services</span>
+            <b>{CATALOG_LABELS[c.catalog] ? t(CATALOG_LABELS[c.catalog]) : c.catalog}</b>
+            <span className="fainttext">{t('onboard.readyMadeServices', { count: c.serviceCount })}</span>
           </button>
         ))}
       </div>
 
       <button className="auth-submit" disabled={busy || !chosen} onClick={() => onNext(chosen)}>
-        {busy ? 'Saving…' : 'Continue'}
+        {busy ? t('common.saving') : t('common.continue')}
       </button>
     </>
   );
@@ -409,7 +487,7 @@ function ServicesStep({
       <div className="wiz-services">
         {templates.map((t) => (
           <label key={t.id} className={chosen.includes(t.id) ? 'active' : ''}>
-            <input type="checkbox" checked={chosen.includes(t.id)} onChange={() => toggle(t.id)} />
+            <input type="checkbox" className="toggle-switch" checked={chosen.includes(t.id)} onChange={() => toggle(t.id)} />
             <span>
               <b>{t.name}</b>
               <span className="fainttext">
@@ -421,7 +499,7 @@ function ServicesStep({
       </div>
 
       <button className="auth-submit" disabled={busy} onClick={() => onNext(chosen)}>
-        {busy ? 'Adding…' : `Add ${chosen.length} service${chosen.length === 1 ? '' : 's'}`}
+        {busy ? t('onboard.adding') : t('onboard.addServices', { count: chosen.length })}
       </button>
     </>
   );
@@ -429,7 +507,7 @@ function ServicesStep({
 
 function TeamStep({ busy, onNext }: { busy: boolean; onNext: (size: string) => void }) {
   const { t } = useTranslation();
-  const sizes = [t('onboard.justMe'), '2–3', '4–6', '7 or more'];
+  const sizes = [t('onboard.justMe'), t('onboard.teamTwoThree'), t('onboard.teamFourSix'), t('onboard.teamSevenPlus')];
 
   return (
     <>
@@ -477,7 +555,7 @@ function HoursStep({
       </div>
 
       <button className="auth-submit" disabled={busy} onClick={() => onNext({ opens, closes })}>
-        {busy ? 'Saving…' : 'Continue'}
+        {busy ? t('common.saving') : t('common.continue')}
       </button>
     </>
   );
@@ -499,17 +577,15 @@ function ReviewStep({
     <>
       <h1 className="auth-title">{t(`onboard.readyTitle`)}</h1>
       <p className="auth-sub">
-        Send {venue?.name ?? 'your salon'} for review and we will check it over. Your dashboard
-        already works — take bookings by phone, build your catalog, invite your team. Only the
-        public page waits for approval.
+        {t('onboard.reviewBody', { name: venue?.name ?? t('onboard.yourSalonLabel') })}
       </p>
 
       <button className="auth-submit" disabled={busy} onClick={onSubmit}>
-        {busy ? 'Sending…' : t('onboard.submitForReview')}
+        {busy ? t('onboard.sending') : t('onboard.submitForReview')}
       </button>
 
       <button className="auth-toggle" onClick={onSkip}>
-        {t(`onboard.notYet`)} <b>take me to the dashboard</b>
+        {t(`onboard.notYet`)} <b>{t('onboard.takeToDashboard')}</b>
       </button>
     </>
   );
@@ -531,8 +607,7 @@ function SubmittedStep({
 
       <h1 className="auth-title">{t(`onboard.sentTitle`)}</h1>
       <p className="auth-sub">
-        {venue?.name ?? t('onboard.yourSalonLabel')} is with our team. We usually come back within a working day,
-        and you will get a message either way.
+        {t('onboard.sentBody', { name: venue?.name ?? t('onboard.yourSalonLabel') })}
       </p>
       <p className="auth-sub">
         {t(`onboard.pendingBody`)}

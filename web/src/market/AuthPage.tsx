@@ -6,7 +6,7 @@
 // and password. Phone is the default because it is how most Moroccan customers
 // will arrive — there is no password to invent or forget.
 import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../lib/auth';
 import AuthShell, { AuthField, safeNext, useAuthForm } from './AuthShell';
@@ -14,11 +14,18 @@ import PhoneAuth from './PhoneAuth';
 
 export default function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
   const { t } = useTranslation();
-  const { login, signUp } = useAuth();
+  const { user, loading, login, signUp } = useAuth();
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const next = safeNext(params.get('next'));
-  const nextQ = next !== '/' ? `?next=${encodeURIComponent(next)}` : '';
+  // Customer auth has a real destination of its own. Explicit `next` still
+  // wins for interrupted booking flows.
+  const hasExplicitNext = params.has('next');
+  const next = hasExplicitNext ? safeNext(params.get('next')) : '/account';
+  const signupDestination = hasExplicitNext ? next : '/welcome';
+  // Only carry a destination across the login/signup toggle when it came from
+  // the caller. The normal login default (/account) must not make a brand-new
+  // signup look like an interrupted flow and bypass the welcome experience.
+  const nextQ = hasExplicitNext ? `?next=${encodeURIComponent(next)}` : '';
   const isLogin = mode === 'login';
 
   const [method, setMethod] = useState<'phone' | 'email'>('phone');
@@ -31,11 +38,12 @@ export default function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
   const form = useAuthForm(async (f) => {
     if (isLogin) {
       await login(f.email, f.password);
+      navigate(next);
     } else {
       const { businessName: _ignored, ...customer } = f;
       await signUp(customer);
+      navigate(signupDestination);
     }
-    navigate(next);
   });
 
   const methodToggle = (
@@ -57,6 +65,11 @@ export default function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
     </div>
   );
 
+  // A signed-in person has nothing useful to do on login or signup. Keeping
+  // the form active also lets them accidentally replace the current session.
+  if (loading) return <main className="app-state" role="status">{t('common.loading')}</main>;
+  if (user) return <Navigate to={next} replace />;
+
   return (
     <AuthShell
       media={{ eyebrow: 'Blastek®', heading: <>{t('auth.mediaHeading')}</> }}
@@ -72,7 +85,11 @@ export default function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
       form={form}
       // The phone flow owns its own steps, buttons and errors, so AuthShell
       // renders it whole instead of wrapping it in the shared submit chrome.
-      body={method === 'phone' ? <PhoneAuth onDone={() => navigate(next)} /> : undefined}
+      body={method === 'phone' ? (
+        <PhoneAuth
+          onDone={(newAccount) => navigate(newAccount && !hasExplicitNext ? '/welcome' : next)}
+        />
+      ) : undefined}
       above={methodToggle}
       fields={
         <>

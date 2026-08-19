@@ -13,7 +13,7 @@ import {
 import { Icon } from '../lib/icons';
 import {
   addDays, fmtDateLong, fmtDateShort, fmtDur, fmtMAD, fmtTime,
-  centsToMad, madToCents, mondayOf, todayStr, weekdaysShort,
+  centsToMad, madToCents, mondayOf, statusLabel, todayStr, weekdaysShort,
 } from '../lib/format';
 
 const DAY_START = 480, DAY_END = 1200;
@@ -171,7 +171,13 @@ export default function CalendarPage() {
           </div>
         </div>
         <div className="cal-wrap">
-          <div className="cal-grid" style={{ gridTemplateColumns: `56px repeat(${cols.length}, 1fr)` }}>
+          <div
+            className="cal-grid"
+            style={{
+              gridTemplateColumns: `56px repeat(${cols.length}, 1fr)`,
+              minWidth: view === 'week' ? 980 : Math.max(720, 56 + cols.length * 190),
+            }}
+          >
             <div className="cal-head" />
             {cols.map((c) => (
               <div key={c.key} className={`cal-head ${c.clickable ? 'clickable' : ''}`}
@@ -250,20 +256,36 @@ export default function CalendarPage() {
                         <div className="offhours" style={{ top: (h.endMin - DAY_START) * PX_MIN, height: (DAY_END - h.endMin) * PX_MIN }} />}
                     </>
                   )}
-                  {c.appts.filter((a) => a.status !== 'cancelled').map((a) => (
-                    <div key={a.id} className={`appt ${a.status}`}
-                      style={{
-                        top: (a.startMin - DAY_START) * PX_MIN,
-                        height: Math.max((a.endMin - a.startMin) * PX_MIN - 2, 18),
-                        borderLeftColor: a.staff.color,
-                      }}
-                      onClick={(e) => { e.stopPropagation(); setDetail(a); }}>
-                      <div className="t">{fmtTime(a.startMin)} · {a.status === 'no_show' ? 'No-show' : a.status}
-                        {a.source === 'online' ? ` ${t('common.online')}` : ''}</div>
-                      <div className="c">{clientName(a)}</div>
-                      <div>{a.service.name}</div>
-                    </div>
-                  ))}
+                  {c.appts.filter((a) => a.status !== 'cancelled').map((a) => {
+                    const duration = a.endMin - a.startMin;
+                    const density = duration <= 30 ? 'micro' : duration < 60 ? 'compact' : '';
+                    const summary = `${fmtTime(a.startMin)} · ${clientName(a)} · ${a.service.name} · ${statusLabel(a.status)}`;
+
+                    return (
+                      <div
+                        key={a.id}
+                        className={`appt ${a.status}${density ? ` ${density}` : ''}`}
+                        title={summary}
+                        aria-label={summary}
+                        style={{
+                          top: (a.startMin - DAY_START) * PX_MIN,
+                          height: Math.max(duration * PX_MIN - 2, 18),
+                          borderInlineStartColor: a.staff.color,
+                        }}
+                        onClick={(e) => { e.stopPropagation(); setDetail(a); }}
+                      >
+                        <div className="appt-top">
+                          <span className="appt-time">{fmtTime(a.startMin)}</span>
+                          <span className="appt-status">{statusLabel(a.status)}</span>
+                          {a.source === 'online' && (
+                            <span className="appt-online" title={t('common.online')} aria-label={t('common.online')} />
+                          )}
+                        </div>
+                        <div className="appt-client">{clientName(a)}</div>
+                        <div className="appt-service">{a.service.name}</div>
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })}
@@ -602,5 +624,4 @@ function closedBands(closures: Closure[], date: string) {
     }))
     .filter((band) => band.to > band.from);
 }
-
 

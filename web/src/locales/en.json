@@ -318,6 +318,32 @@
     "newPasswordLabel": "New password"
   },
   "account": {
+    "tabs": {
+      "profile": "Information",
+      "appointments": "Appointments",
+      "notifications": "Notifications",
+      "security": "Devices & security"
+    },
+    "tabLead": {
+      "profile": "Keep your personal and contact information up to date.",
+      "appointments": "See and manage your upcoming and past visits.",
+      "notifications": "Choose which optional messages you receive.",
+      "security": "Review signed-in devices and protect your account."
+    },
+    "accountNavigation": "Account sections",
+    "profilePhoto": "Profile photo",
+    "avatarHint": "JPEG, PNG or WebP, up to 10 MB.",
+    "changePhoto": "Change photo",
+    "avatarTooLarge": "The photo must be smaller than 10 MB.",
+    "avatarUploadFailed": "The photo could not be uploaded.",
+    "avatarSaved": "Profile photo updated",
+    "avatarRemoved": "Profile photo removed",
+    "firstName": "First name",
+    "lastName": "Last name",
+    "phoneVerifiedHint": "Phone number changes require verification with a new code.",
+    "noPhone": "No phone number",
+    "saveProfile": "Save information",
+    "profileSaved": "Information updated",
     "appointments": "My appointments",
     "upcoming": "Upcoming",
     "past": "Past",
@@ -338,6 +364,19 @@
     "nothingYet": "Nothing here yet.",
     "noUpcomingWithLink": "No upcoming appointments — <1>book one</1>.",
     "devices": "Devices",
+    "devicesLead_one": "Signed in on {{count}} device. Sign out anything you do not recognise.",
+    "devicesLead_other": "Signed in on {{count}} devices. Sign out anything you do not recognise.",
+    "unknownAddress": "Unknown address",
+    "lastUsed": "last used {{when}}",
+    "never": "never",
+    "justNow": "just now",
+    "minutesAgo_one": "{{count}} minute ago",
+    "minutesAgo_other": "{{count}} minutes ago",
+    "hoursAgo_one": "{{count}} hour ago",
+    "hoursAgo_other": "{{count}} hours ago",
+    "daysAgo_one": "{{count}} day ago",
+    "daysAgo_other": "{{count}} days ago",
+    "passwordMinimum": "8 characters minimum",
     "passwordSection": "Password",
     "signOutAll": "Sign out all other devices",
     "deviceSignedOut": "Device signed out",
@@ -354,6 +393,35 @@
     "cannotReschedule": "This appointment can no longer be moved online — please call the salon.",
     "pickAnotherDay": "No times that day — try another date."
   },
+  "customerOnboard": {
+    "pageTitle": "Blastek — Make it yours",
+    "skip": "Skip for now",
+    "steps": {
+      "taste": "Your favourites",
+      "city": "Your city",
+      "notifications": "Stay in the loop"
+    },
+    "visual": {
+      "taste": "A better shortlist starts with what you actually enjoy.",
+      "city": "Discover independent specialists and favourite salons nearby.",
+      "notifications": "A gentle reminder at the right time. Nothing noisy."
+    },
+    "tasteTitle": "Welcome, {{name}}. What are you into?",
+    "tasteLead": "Pick a starting point. We will use it to shape your first discoveries.",
+    "categories": {
+      "hair": "Hair",
+      "barber": "Barbering",
+      "nails": "Nails",
+      "spa": "Massage & spa"
+    },
+    "cityTitle": "Where should we look?",
+    "cityLead": "Choose your usual city. You can search anywhere whenever you like.",
+    "cityPlaceholder": "Enter a city",
+    "notificationsTitle": "Keep the useful messages.",
+    "notificationsLead": "Choose what reaches you. Booking confirmations always stay on.",
+    "confirmationNote": "Security codes and booking confirmations are always delivered.",
+    "discover": "Discover salons"
+  },
   "onboard": {
     "businessName": "Salon name",
     "city": "City",
@@ -364,6 +432,10 @@
     "eyebrow": "( For professionals )",
     "businessStepTitle": "Your salon.",
     "businessStepSub": "Just the basics — everything is editable later.",
+    "accountAttached": "Business account",
+    "signInAgainEmail": "You will sign in with this email and your existing password.",
+    "signInAgainPhone": "You will sign in with a code sent to this number.",
+    "manageLogin": "Manage login",
     "cityPlaceholder": "Casablanca",
     "typeStepTitle": "What do you do?",
     "typeStepSub": "This picks a starter menu you can edit.",
@@ -385,8 +457,46 @@
     "toDashboard": "Go to my dashboard",
     "womensHair": "Women’s hair",
     "mensHair": "Men’s hair",
+    "barbershop": "Barbershop",
+    "nails": "Nails",
     "hammamSpa": "Hammam and spa",
     "justMe": "Just me",
+    "teamTwoThree": "2–3 people",
+    "teamFourSix": "4–6 people",
+    "teamSevenPlus": "7 or more",
+    "readyMadeServices_one": "{{count}} ready-made service",
+    "readyMadeServices_other": "{{count}} ready-made services",
+    "adding": "Adding…",
+    "addServices_one": "Add {{count}} service",
+    "addServices_other": "Add {{count}} services",
+    "sending": "Sending…",
+    "reviewBody": "Send {{name}} for review and we will check it over. Your dashboard already works, so you can take bookings by phone, build your catalog and invite your team while the public page waits for approval.",
+    "takeToDashboard": "take me to the dashboard",
+    "sentBody": "{{name}} is with our team. We usually come back within a working day, and you will get a message either way.",
+    "stepLabels": {
+      "basics": "Salon",
+      "category": "Type",
+      "services": "Services",
+      "team": "Team",
+      "hours": "Hours",
+      "review": "Review"
+    },
+    "visual": {
+      "basics": "Give your work a place.",
+      "category": "Start with the right craft.",
+      "services": "Turn expertise into a bookable menu.",
+      "team": "Build around the people clients return to.",
+      "hours": "Shape a week that works for you.",
+      "review": "You are nearly ready to be discovered."
+    },
+    "visualLead": {
+      "basics": "Your public identity begins with a name, city and a direct number.",
+      "category": "A focused starter catalog means less typing and a faster launch.",
+      "services": "Keep what fits today. Every service, duration and price stays editable.",
+      "team": "Set the shape now and invite each person properly from the dashboard.",
+      "hours": "Start with a simple rhythm, then fine-tune each day in Settings.",
+      "review": "Your private dashboard is already active while the public page is checked."
+    },
     "submitForReview": "Submit for review",
     "yourSalonLabel": "Your salon",
     "progressAria": "Step {{current}} of {{total}}"
@@ -446,7 +556,11 @@
       "signUpSub": "Set up your salon account.",
       "signInLead": "Manage your calendar, clients and sales in one place.",
       "signUpLead": "Create a business account to start taking online bookings.",
-      "salonName": "Salon name"
+      "salonName": "Salon name",
+      "addBusinessTitle": "Create your professional profile.",
+      "addBusinessLead": "Keep your customer account and add a salon to it only when you are ready.",
+      "signedInAccount": "Signed-in account",
+      "useAnotherAccount": "Use another account"
     },
     "calendar": {
       "title": "Calendar",
@@ -702,7 +816,13 @@
   "errors": {
     "offline": "Could not reach the server.",
     "rateLimited": "Too many attempts — try again shortly.",
-    "malformed": "The server returned a malformed response."
+    "malformed": "The server returned a malformed response.",
+    "notFoundTitle": "Page not found",
+    "notFoundBody": "The address may be incorrect, or this page may have moved.",
+    "backHome": "Back to Blastek",
+    "pageFailedTitle": "This page could not open",
+    "pageFailedBody": "Reload the page to try again.",
+    "reloadPage": "Reload page"
   },
   "review": {
     "pageTitle": "Leave a review",

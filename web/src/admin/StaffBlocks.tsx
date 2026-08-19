@@ -257,6 +257,7 @@ export function BlockModal({
           <label className="check-inline">
             <input
               type="checkbox"
+              className="toggle-switch"
               checked={f.weekly}
               onChange={(e) => setF({ ...f, weekly: e.target.checked })}
             />

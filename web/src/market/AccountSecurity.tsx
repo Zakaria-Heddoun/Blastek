@@ -85,8 +85,7 @@ export default function AccountSecurity() {
     <>
       <h2 className="section-title">{t(`account.devices`)}</h2>
       <p className="mutetext" style={{ marginTop: 0 }}>
-        Signed in on {sessions?.length ?? 0} device{sessions?.length === 1 ? '' : 's'}. Do not
-        recognise one? Sign it out — it stops working immediately.
+        {t('account.devicesLead', { count: sessions?.length ?? 0 })}
       </p>
 
       {sessions === null && <div className="empty">{t(`common.loading`)}</div>}
@@ -97,7 +96,8 @@ export default function AccountSecurity() {
             <b>{session.device}</b>
             {session.current && <span className="sess-current">{t(`account.thisDevice`)}</span>}
             <div className="fainttext">
-              {session.ip || 'unknown address'} · last used {relative(session.lastUsedAt)}
+              {session.ip || t('account.unknownAddress')} ·{' '}
+              {t('account.lastUsed', { when: relative(session.lastUsedAt, t) })}
             </div>
           </div>
           {!session.current && (
@@ -137,7 +137,8 @@ export default function AccountSecurity() {
 
         <div className="auth-field">
           <label htmlFor="next-password">
-            {user?.hasPassword ? t('auth.newPasswordLabel') : 'Password'} — min 8 characters
+            {user?.hasPassword ? t('auth.newPasswordLabel') : t('common.password')}
+            {' · '}{t('account.passwordMinimum')}
           </label>
           <input
             id="next-password"
@@ -162,12 +163,12 @@ export default function AccountSecurity() {
 
 // "3 hours ago" beats a timestamp for recognising your own session — the
 // question being answered is "was that me, just now?".
-function relative(iso: string) {
-  if (!iso) return 'never';
+function relative(iso: string, t: (key: string, options?: Record<string, unknown>) => string) {
+  if (!iso) return t('account.never');
   const seconds = Math.floor((Date.now() - new Date(`${iso}Z`).getTime()) / 1000);
 
-  if (seconds < 90) return 'just now';
-  if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`;
-  if (seconds < 86_400) return `${Math.floor(seconds / 3600)} h ago`;
-  return `${Math.floor(seconds / 86_400)} d ago`;
+  if (seconds < 90) return t('account.justNow');
+  if (seconds < 3600) return t('account.minutesAgo', { count: Math.floor(seconds / 60) });
+  if (seconds < 86_400) return t('account.hoursAgo', { count: Math.floor(seconds / 3600) });
+  return t('account.daysAgo', { count: Math.floor(seconds / 86_400) });
 }

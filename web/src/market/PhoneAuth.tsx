@@ -15,7 +15,7 @@ export default function PhoneAuth({
   onDone,
   initialStep = 'phone',
 }: {
-  onDone: () => void;
+  onDone: (newAccount?: boolean) => void;
   /**
    * Where to start.
    *
@@ -78,14 +78,14 @@ export default function PhoneAuth({
       const user = await verifyOtp(phone, code);
       // A number nobody has used before has just become an account — ask who
       // they are before handing them the app.
-      if (user.profileComplete) onDone();
+      if (user.profileComplete) onDone(false);
       else setStep('name');
     });
 
   const save = () =>
     attempt(async () => {
       await completeProfile(firstName.trim(), lastName.trim() || undefined);
-      onDone();
+      onDone(true);
     });
 
   const onKey = (run: () => void) => (e: React.KeyboardEvent) => {

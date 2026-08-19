@@ -91,6 +91,43 @@ input, select, textarea {
   font: inherit; color: var(--fg); background: var(--card);
   border: 1px solid var(--border-strong); border-radius: var(--r-md); padding: 8px 10px;
 }
+
+/* One switch language everywhere: the native checkbox remains in the DOM for
+   keyboard and screen-reader behavior, while its visual follows the familiar
+   iOS track/thumb pattern. */
+input.toggle-switch {
+  appearance: none;
+  direction: ltr;
+  position: relative;
+  flex: 0 0 auto;
+  width: 44px;
+  min-width: 44px;
+  height: 26px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: #c7cbd1;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .08);
+  cursor: pointer;
+  transition: background-color 160ms ease;
+}
+input.toggle-switch::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .28);
+  transition: transform 160ms cubic-bezier(.2, .8, .2, 1);
+}
+input.toggle-switch:checked { background: #34c759; }
+input.toggle-switch:checked::before { transform: translateX(18px); }
+input.toggle-switch:disabled { opacity: .45; cursor: not-allowed; }
+input.toggle-switch:focus-visible { outline: 2px solid var(--brand-gold-warm); outline-offset: 3px; }
 body.dark input, body.dark select, body.dark textarea {
   background: var(--surface-2); border-color: var(--border-strong);
 }
@@ -231,8 +268,40 @@ td.num, th.num { text-align: end; }
   transition: box-shadow var(--dur-fast) var(--ease-out);
 }
 .appt:hover { box-shadow: var(--shadow-md); z-index: 3; }
-.appt .t { color: var(--fg-3); font-size: 11px; }
-.appt .c { font-weight: 600; }
+.appt .appt-top {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--fg-3);
+  font-size: 10px;
+  line-height: 13px;
+  white-space: nowrap;
+}
+.appt .appt-time { color: var(--fg-2); font-family: var(--font-mono); font-weight: 600; }
+.appt .appt-status { overflow: hidden; text-overflow: ellipsis; }
+.appt .appt-online {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 50%;
+  background: #2f80ed;
+}
+.appt .appt-client,
+.appt .appt-service { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.appt .appt-client { font-size: 12px; font-weight: 650; line-height: 15px; }
+.appt .appt-service { color: var(--fg-2); font-size: 11px; line-height: 14px; }
+.appt.compact .appt-service { display: none; }
+.appt.micro {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-block: 2px;
+}
+.appt.micro .appt-top { flex: none; }
+.appt.micro .appt-status,
+.appt.micro .appt-service { display: none; }
+.appt.micro .appt-client { min-width: 0; }
 .appt.completed { opacity: .55; }
 .appt.no_show { opacity: .5; }
 .appt.no_show .c { text-decoration: line-through; }
@@ -457,7 +526,8 @@ body.dark .bar-slot:hover .bar { background: var(--brand-gold); }
   padding: var(--space-6);
 }
 .auth-card { width: 100%; max-width: 400px; padding: var(--space-8); }
-.topbar-avatar { width: 32px; height: 32px; font-size: 12px; cursor: pointer; }
+.topbar-avatar { width: 32px; height: 32px; font-size: 12px; cursor: pointer; overflow: hidden; }
+.topbar-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .topbar-avatar:hover { outline: 2px solid var(--brand-gold); outline-offset: 1px; }
 
 /* status badges tuned for dark surfaces */
@@ -693,4 +763,28 @@ body.light input[type="date"] { color-scheme: light; }
   gap: 8px;
   margin-top: 12px;
 }
-.check-inline input { width: auto; }
+.check-inline input:not(.toggle-switch) { width: auto; }
+
+/* Route-level loading, crash recovery, and unknown URLs. Kept outside either
+   product skin because these states can appear before that skin is downloaded. */
+.app-state {
+  min-height: 100dvh;
+  padding: 48px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  text-align: center;
+  color: var(--fg);
+  background: var(--bg);
+}
+.app-state h1,
+.app-state p { margin: 0; }
+.app-state h1 { font-size: clamp(28px, 5vw, 48px); }
+.app-state p { max-width: 520px; color: var(--fg-3); }
+.app-state-code {
+  font-family: var(--mono, monospace);
+  font-size: 13px;
+  color: var(--fg-3);
+}

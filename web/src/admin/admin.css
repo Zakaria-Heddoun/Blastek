@@ -75,6 +75,8 @@
   color: var(--ink);
   padding: 2px 8px 24px;
 }
+.adm .adm-brand-row { display: flex; align-items: center; justify-content: space-between; }
+.adm .adm-menu-toggle { display: none; }
 .adm .adm-nav { display: flex; flex-direction: column; gap: 2px; }
 .adm .adm-nav a {
   display: flex;
@@ -349,7 +351,7 @@
 /* A checkbox row is a checkbox beside its label, not a stacked field — and it
    must not inherit the 40px-tall bordered box the text inputs get. */
 .adm .identity-form label.set-toggle { display: flex; align-items: flex-start; gap: 10px; }
-.adm .identity-form label.set-toggle input { height: auto; width: auto; padding: 0; }
+.adm .identity-form label.set-toggle input:not(.toggle-switch) { height: auto; width: auto; padding: 0; }
 
 .adm .identity-form input:not([type="checkbox"]),
 .adm .identity-form select {
@@ -431,7 +433,7 @@
 
 .adm .closure-form { display: grid; gap: 12px; max-width: 460px; }
 .adm .closure-form label { display: grid; gap: 5px; font-size: 13px; color: var(--fg-2); }
-.adm .closure-form input,
+.adm .closure-form input:not(.toggle-switch),
 .adm .closure-form select {
   height: 40px;
   padding: 0 12px;
@@ -441,8 +443,8 @@
   color: var(--fg);
   font: inherit;
 }
-.adm .closure-check { display: flex; flex-direction: row; align-items: center; gap: 8px; }
-.adm .closure-check input { height: auto; }
+.adm .closure-form label.closure-check { display: flex; flex-direction: row; align-items: center; gap: 10px; }
+.adm .closure-check input:not(.toggle-switch) { height: auto; }
 .adm .closure-window { display: flex; align-items: center; gap: 8px; }
 
 .adm .closure-conflicts {
@@ -595,4 +597,71 @@
   gap: 6px;
   margin-bottom: 4px;
   font-size: 13px;
+}
+
+/* The dashboard becomes a top-bar application on phones. The full navigation
+   opens over the page; when closed it leaves the entire viewport width to
+   dense tools such as the calendar. */
+@media (max-width: 760px) {
+  .adm.app { display: flex; flex-direction: column; height: 100svh; }
+  .adm .adm-side {
+    position: relative;
+    z-index: 40;
+    width: 100%;
+    height: 64px;
+    min-height: 64px;
+    padding: 11px 14px;
+    border-inline-end: 0;
+    border-bottom: 1px solid var(--line);
+    overflow: hidden;
+  }
+  .adm .adm-brand-row { min-height: 41px; }
+  .adm .adm-brand { padding: 0; font-size: 23px; }
+  .adm .adm-menu-toggle {
+    display: grid;
+    width: 40px;
+    height: 40px;
+    place-items: center;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: #fff;
+  }
+  .adm .adm-side:not(.mobile-open) .adm-venue {
+    position: absolute;
+    top: 17px;
+    inset-inline-start: 120px;
+    inset-inline-end: 62px;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .adm .adm-side:not(.mobile-open) .adm-venue-role,
+  .adm .adm-side:not(.mobile-open) .adm-nav,
+  .adm .adm-side:not(.mobile-open) .spacer,
+  .adm .adm-side:not(.mobile-open) .adm-lang,
+  .adm .adm-side:not(.mobile-open) .adm-user,
+  .adm .adm-side:not(.mobile-open) .adm-foot-btn { display: none; }
+  .adm .adm-side.mobile-open {
+    position: fixed;
+    inset: 0;
+    height: 100svh;
+    padding: 14px;
+    overflow-y: auto;
+  }
+  .adm .adm-side.mobile-open .adm-venue { margin-top: 16px; padding: 0 8px 16px; }
+  .adm .adm-side.mobile-open .adm-nav { display: flex; }
+  .adm .adm-main {
+    width: 100%;
+    height: calc(100svh - 64px);
+    min-height: 0;
+    padding: 16px 12px;
+  }
+  .adm .page-head { margin-bottom: 14px; }
+  .adm .page-head h1 { font-size: 26px; }
+  .adm .page-head .btn-primary { margin-inline-start: auto; }
+  .adm .card { border-radius: 8px; }
+  .adm .cal-toolbar { padding: 12px !important; }
+  .adm .cal-date { min-width: min(100%, 190px); font-size: 14px; }
+  .adm .cal-wrap { max-height: calc(100svh - 225px); }
 }

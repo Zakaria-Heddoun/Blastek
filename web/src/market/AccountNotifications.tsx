@@ -43,10 +43,7 @@ export default function AccountNotifications() {
   if (!user) return null;
 
   return (
-    <>
-      <h2 className="section-title">{t(`account.notificationsTitle`)}</h2>
-
-      <div className="card pad acct-prefs">
+    <div className="card pad acct-prefs">
         <Toggle
           label={t(`account.remindersLabel`)}
           hint={t(`account.remindersHint`)}
@@ -64,8 +61,7 @@ export default function AccountNotifications() {
         />
 
         <p className="fainttext acct-prefs-note">{t(`account.notificationsBody`)}</p>
-      </div>
-    </>
+    </div>
   );
 }
 
@@ -84,16 +80,17 @@ function Toggle({
 }) {
   return (
     <label className="acct-toggle">
-      <input
-        type="checkbox"
-        checked={checked}
-        disabled={busy}
-        onChange={(e) => onChange(e.target.checked)}
-      />
       <span>
         <b>{label}</b>
         <span className="fainttext">{hint}</span>
       </span>
+      <input
+        type="checkbox"
+        className="toggle-switch"
+        checked={checked}
+        disabled={busy}
+        onChange={(e) => onChange(e.target.checked)}
+      />
     </label>
   );
 }

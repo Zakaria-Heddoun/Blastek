@@ -166,7 +166,7 @@ function StaffModal({ staff: st, onClose, onDone }:
       <div className="checkgrid">
         {services.filter((s) => s.active).map((sv) => (
           <label key={sv.id}>
-            <input type="checkbox" checked={serviceIds.includes(sv.id)}
+            <input type="checkbox" className="toggle-switch" checked={serviceIds.includes(sv.id)}
               onChange={(e) => setServiceIds(e.target.checked
                 ? [...serviceIds, sv.id] : serviceIds.filter((x) => x !== sv.id))} />
             {sv.name}
@@ -189,7 +189,7 @@ function FragmentRow({ h, setHour }:
     <>
       <span className="wd">{weekdaysShort()[h.weekday]}</span>
       <label>
-        <input type="checkbox" checked={h.working}
+        <input type="checkbox" className="toggle-switch" checked={h.working}
           onChange={(e) => setHour(h.weekday, { working: e.target.checked })} /> works
       </label>
       <select value={h.startMin} onChange={(e) => setHour(h.weekday, { startMin: Number(e.target.value) })}>

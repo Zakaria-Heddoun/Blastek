@@ -1,7 +1,7 @@
 // Customer account: upcoming and past appointments, with online cancellation.
 // One account books at many venues, so every row names the venue it belongs to.
 import { useCallback, useEffect, useState } from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { Trans, useTranslation } from 'react-i18next';
 import { gql } from '../lib/gql';
 import type { Appointment } from '../lib/types';
@@ -11,9 +11,9 @@ import { StatusBadge, useToast } from '../components/ui';
 import MarketTopbar from './MarketTopbar';
 import AccountSecurity from './AccountSecurity';
 import AccountNotifications from './AccountNotifications';
+import AccountProfile from './AccountProfile';
 import RescheduleModal from './RescheduleModal';
 import ReviewPrompts from './ReviewPrompts';
-import LanguageSwitcher from '../components/LanguageSwitcher';
 import { useAccountLocale } from '../lib/locale';
 import { fmtDateLong, fmtMAD, fmtTime, todayStr } from '../lib/format';
 import './market.css';
@@ -24,25 +24,44 @@ const MY = `{ myAppointments {
   venue { id slug name city }
 } }`;
 
+type AccountTab = 'profile' | 'appointments' | 'notifications' | 'security';
+const TABS: { id: AccountTab; icon: string }[] = [
+  { id: 'profile', icon: 'user' },
+  { id: 'appointments', icon: 'calendar' },
+  { id: 'notifications', icon: 'bell' },
+  { id: 'security', icon: 'shield' },
+];
+
 export default function Account() {
   const { t } = useTranslation();
   const { user, loading, logout } = useAuth();
   const toast = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get('tab');
+  const tab: AccountTab = TABS.some(({ id }) => id === requestedTab)
+    ? requestedTab as AccountTab
+    : 'profile';
 
   // Adopt the language saved on the account, if this browser has no choice yet.
   useAccountLocale();
   const [appts, setAppts] = useState<Appointment[] | null>(null);
+  const [loadError, setLoadError] = useState('');
   const [moving, setMoving] = useState<Appointment | null>(null);
 
   const load = useCallback(async () => {
-    const d = await gql<{ myAppointments: Appointment[] }>(MY);
-    setAppts(d.myAppointments);
+    setLoadError('');
+    try {
+      const d = await gql<{ myAppointments: Appointment[] }>(MY);
+      setAppts(d.myAppointments);
+    } catch (error) {
+      setLoadError((error as Error).message);
+    }
   }, []);
 
   useEffect(() => {
-    document.title = `Blastek — ${t('nav.myAppointments')}`;
-    if (user) load();
-  }, [user, load, t]);
+    document.title = `Blastek — ${t(`account.tabs.${tab}`)}`;
+    if (user && tab === 'appointments' && appts === null) load();
+  }, [user, load, t, tab, appts]);
 
   if (loading) return <div className="empty">{t(`common.loading`)}</div>;
   if (!user) return <Navigate to="/login?next=/account" replace />;
@@ -61,8 +80,8 @@ export default function Account() {
   };
 
   const row = (a: Appointment, cancellable: boolean) => (
-    <div key={a.id} className="card pad" style={{ marginBottom: 10, display: 'flex', gap: 14, alignItems: 'center' }}>
-      <div className="grow" style={{ flex: 1 }}>
+    <div key={a.id} className="card pad account-appt-row">
+      <div className="grow account-appt-detail">
         <b>{a.service.name}</b>
         {a.venue && (
           <div className="mutetext" style={{ fontSize: 13 }}>
@@ -75,17 +94,19 @@ export default function Account() {
           {a.bookingRef ? ` · ${a.bookingRef}` : ''}
         </div>
       </div>
-      <StatusBadge status={a.status} />
-      <span className="price">{fmtMAD(a.priceCents)}</span>
+      <div className="account-appt-meta">
+        <StatusBadge status={a.status} />
+        <span className="price">{fmtMAD(a.priceCents)}</span>
+      </div>
       {cancellable && (
-        <>
+        <div className="account-appt-actions">
           <button className="btn btn-sm" onClick={() => setMoving(a)}>
             {t(`account.reschedule`)}
           </button>
           <button className="btn btn-sm" onClick={() => cancel(a.id)}>
             {t(`account.cancelAppointment`)}
           </button>
-        </>
+        </div>
       )}
     </div>
   );
@@ -93,46 +114,82 @@ export default function Account() {
   return (
     <div className="mkt">
       <MarketTopbar />
-      <div className="bk-shell" style={{ paddingTop: 24, paddingBottom: 60, maxWidth: 760 }}>
-        <Link className="btn btn-ghost btn-sm" to="/"><Icon name="left" size={15} /> {t(`nav.home`)}</Link>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '14px 0 4px' }}>
-          <h1 style={{ fontSize: 26 }}>{t(`account.appointments`)}</h1>
-          <div className="grow" style={{ flex: 1 }} />
-          <LanguageSwitcher />
-          <button className="btn btn-sm" onClick={logout}>{t(`nav.logout`)}</button>
-        </div>
-        <div className="mutetext" style={{ marginBottom: 22 }}>
-          {/* A phone-first account may have no email and no name yet, so the
-              identity line falls back to whichever of them exists. */}
-          {t('account.signedInAs', {
-            name: [user.firstName, user.lastName].filter(Boolean).join(' ') || t('account.you'),
-          })}
-          {user.email ? ` · ${user.email}` : ''}
-          {user.phone ? ` · ${user.phone}` : ''}
-        </div>
+      <div className="account-shell">
+        <aside className="account-sidebar">
+          <Link className="account-back" to="/"><Icon name="left" size={16} /> {t('nav.home')}</Link>
 
-        <ReviewPrompts />
+          <div className="account-identity">
+            <div className="account-avatar">
+              {user.avatarUrl
+                ? <img src={user.avatarUrl} alt="" />
+                : <span>{initials(user)}</span>}
+            </div>
+            <div>
+              <strong>{displayName(user, t('account.you'))}</strong>
+              <span>{user.email || user.phone}</span>
+            </div>
+          </div>
 
-        <h2 className="section-title">{t(`account.upcoming`)}</h2>
-        {appts === null ? <div className="empty">{t(`common.loading`)}</div>
-          : upcoming.length === 0
-            ? (
-              <div className="empty">
-                <Trans
-                  i18nKey="account.noUpcomingWithLink"
-                  components={{ 1: <Link to="/venues" /> }}
-                />
-              </div>
-            )
-            : upcoming.map((a) => row(a, true))}
+          <nav className="account-nav" aria-label={t('account.accountNavigation')}>
+            {TABS.map(({ id, icon }) => (
+              <button
+                key={id}
+                type="button"
+                className={tab === id ? 'active' : ''}
+                aria-current={tab === id ? 'page' : undefined}
+                onClick={() => setSearchParams(id === 'profile' ? {} : { tab: id })}
+              >
+                <Icon name={icon} size={18} />
+                <span>{t(`account.tabs.${id}`)}</span>
+              </button>
+            ))}
+          </nav>
 
-        <h2 className="section-title">{t(`account.past`)}</h2>
-        {appts !== null && (past.length === 0
-          ? <div className="empty">{t(`account.nothingYet`)}</div>
-          : past.slice(0, 15).map((a) => row(a, false)))}
+          <div className="account-sidebar-actions">
+            <button className="btn btn-sm" onClick={logout}>{t('nav.logout')}</button>
+          </div>
+        </aside>
 
-        <AccountNotifications />
-        <AccountSecurity />
+        <main className="account-main">
+          <header className="account-head">
+            <h1>{t(`account.tabs.${tab}`)}</h1>
+            <p>{t(`account.tabLead.${tab}`)}</p>
+          </header>
+
+          {tab === 'profile' && <AccountProfile />}
+
+          {tab === 'appointments' && (
+            <>
+              <ReviewPrompts />
+
+              <h2 className="section-title">{t('account.upcoming')}</h2>
+              {loadError ? (
+                <div className="empty">
+                  <p>{loadError}</p>
+                  <button className="btn btn-sm" onClick={load}>{t('common.retry')}</button>
+                </div>
+              ) : appts === null ? <div className="empty">{t('common.loading')}</div>
+                : upcoming.length === 0
+                  ? (
+                    <div className="empty">
+                      <Trans
+                        i18nKey="account.noUpcomingWithLink"
+                        components={{ 1: <Link to="/venues" /> }}
+                      />
+                    </div>
+                  )
+                  : upcoming.map((a) => row(a, true))}
+
+              <h2 className="section-title">{t('account.past')}</h2>
+              {!loadError && appts !== null && (past.length === 0
+                ? <div className="empty">{t('account.nothingYet')}</div>
+                : past.slice(0, 15).map((a) => row(a, false)))}
+            </>
+          )}
+
+          {tab === 'notifications' && <AccountNotifications />}
+          {tab === 'security' && <AccountSecurity />}
+        </main>
       </div>
 
       {moving && (
@@ -145,6 +202,16 @@ export default function Account() {
       )}
     </div>
   );
+}
+
+function displayName(user: { firstName: string; lastName: string }, fallback: string) {
+  return [user.firstName, user.lastName].filter(Boolean).join(' ') || fallback;
+}
+
+function initials(user: { firstName: string; lastName: string; email: string | null }) {
+  return `${user.firstName?.[0] ?? ''}${user.lastName?.[0] ?? ''}`.toUpperCase()
+    || user.email?.[0]?.toUpperCase()
+    || '?';
 }
 
 /**

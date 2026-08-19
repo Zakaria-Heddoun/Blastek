@@ -264,6 +264,7 @@ export default function ScheduleSettings() {
                 <label className="hours-day">
                   <input
                     type="checkbox"
+                    className="toggle-switch"
                     checked={day.working}
                     onChange={(e) => setDay(day.weekday, { working: e.target.checked })}
                   />
@@ -416,6 +417,7 @@ function ClosuresSection({
         <label className="closure-check">
           <input
             type="checkbox"
+            className="toggle-switch"
             checked={wholeDay}
             onChange={(e) => forget(setWholeDay)(e.target.checked)}
           />

@@ -57,7 +57,15 @@ export function setActiveVenue(slug: string | null) {
   else localStorage.removeItem(VENUE_KEY);
 }
 
-export async function gql<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
+interface GqlOptions {
+  signal?: AbortSignal;
+}
+
+export async function gql<T>(
+  query: string,
+  variables: Record<string, unknown> = {},
+  options: GqlOptions = {},
+): Promise<T> {
   const token = localStorage.getItem('blastek-token');
   const venue = getActiveVenue();
   let res: Response;
@@ -74,8 +82,12 @@ export async function gql<T>(query: string, variables: Record<string, unknown> =
         ...(venue ? { 'X-Venue-Slug': venue } : {}),
       },
       body: JSON.stringify({ query, variables }),
+      signal: options.signal,
     });
-  } catch {
+  } catch (error) {
+    // Cancellation is control flow for views that supersede an old request;
+    // callers must be able to distinguish it from a real network failure.
+    if (error instanceof Error && error.name === 'AbortError') throw error;
     throw new ConnectionError(i18n.t('errors.offline'));
   }
 

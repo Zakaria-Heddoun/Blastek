@@ -19,6 +19,9 @@ const PATHS: Record<string, string> = {
   search: 'M11 19a8 8 0 1 1 0-16 8 8 0 0 1 0 16z M21 21l-4.35-4.35',
   pin: 'M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z M12 12a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z',
   clock: 'M12 21a9 9 0 1 1 0-18 9 9 0 0 1 0 18z M12 7v5l3 2',
+  camera: 'M14.5 4 16 7h3a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h3l1.5-3h5z M16 13a4 4 0 1 1-8 0 4 4 0 0 1 8 0z',
+  bell: 'M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9 M13.73 21a2 2 0 0 1-3.46 0',
+  shield: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z M9 12l2 2 4-4',
   sun: 'M12 2v2 M12 20v2 M4.93 4.93l1.41 1.41 M17.66 17.66l1.41 1.41 M2 12h2 M20 12h2 M4.93 19.07l1.41-1.41 M17.66 6.34l1.41-1.41 M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0z',
   moon: 'M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z',
   globe: 'M12 21a9 9 0 1 1 0-18 9 9 0 0 1 0 18z M3.6 9h16.8 M3.6 15h16.8 M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18z',
@@ -26,6 +29,8 @@ const PATHS: Record<string, string> = {
   // conversation rather than as two opinions of equal standing.
   reply: 'M15 10 20 15 15 20 M4 4v7a4 4 0 0 0 4 4h12',
   flag: 'M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z M4 22v-7',
+  menu: 'M4 6h16 M4 12h16 M4 18h16',
+  close: 'M18 6 6 18 M6 6l12 12',
 };
 
 export function Icon({ name, size = 20 }: { name: string; size?: number }) {

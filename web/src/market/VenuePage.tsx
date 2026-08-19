@@ -7,6 +7,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { useVenue } from './MarketLayout';
+import { clearBookingDraft } from '../lib/bookingDraft';
 import { IMG } from './assets';
 import { Icon, StarRow } from '../lib/icons';
 import { useToast } from '../components/ui';
@@ -105,6 +106,7 @@ export default function VenuePage() {
   const cats = focusCat ? v.categories.filter((c) => c.id === focusCat) : v.categories;
 
   const startFlow = (serviceId: string | null) => {
+    clearBookingDraft();
     booking.setServices(serviceId ? [serviceId] : []);
     booking.setStaffId('any');
     navigate(`/v/${slug}/flow`);

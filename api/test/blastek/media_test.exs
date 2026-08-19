@@ -154,6 +154,72 @@ defmodule Blastek.MediaTest do
     end
   end
 
+  describe "customer avatars" do
+    test "uses a user-scoped key and rejects another user's finalize" do
+      owner = user_fixture("avatar-owner@example.com")
+      stranger = user_fixture("avatar-stranger@example.com")
+
+      assert {:ok, ticket} =
+               Media.request_avatar_upload(owner.id, %{
+                 content_type: "image/jpeg",
+                 byte_size: 5_000
+               })
+
+      assert ticket.attachment.user_id == owner.id
+      assert ticket.attachment.venue_id == nil
+      assert ticket.attachment.kind == "avatar"
+      assert String.starts_with?(ticket.attachment.key, "users/#{owner.id}/avatar/")
+
+      client_uploads(ticket.attachment.key, jpeg())
+
+      assert {:error, "Unknown avatar."} =
+               Media.finalize_avatar_upload(stranger.id, ticket.attachment.id)
+
+      assert {:ok, avatar} = Media.finalize_avatar_upload(owner.id, ticket.attachment.id)
+      assert Media.avatar_url(owner.id) =~ avatar.variants["thumb"]
+    end
+
+    test "keeps the old avatar until its valid replacement is ready" do
+      user = user_fixture("avatar-replace@example.com")
+
+      {:ok, first_ticket} =
+        Media.request_avatar_upload(user.id, %{content_type: "image/jpeg"})
+
+      client_uploads(first_ticket.attachment.key, jpeg())
+      {:ok, first} = Media.finalize_avatar_upload(user.id, first_ticket.attachment.id)
+      first_url = Media.avatar_url(user.id)
+
+      {:ok, bad_ticket} =
+        Media.request_avatar_upload(user.id, %{content_type: "image/jpeg"})
+
+      client_uploads(bad_ticket.attachment.key, "not an image")
+      assert {:error, _} = Media.finalize_avatar_upload(user.id, bad_ticket.attachment.id)
+      assert Media.avatar_url(user.id) == first_url
+
+      {:ok, second_ticket} =
+        Media.request_avatar_upload(user.id, %{content_type: "image/jpeg"})
+
+      client_uploads(second_ticket.attachment.key, jpeg(400, 400))
+      {:ok, second} = Media.finalize_avatar_upload(user.id, second_ticket.attachment.id)
+
+      assert Media.avatar_url(user.id) =~ second.variants["thumb"]
+      assert Repo.get(Attachment, first.id) == nil
+      assert {:error, _} = Storage.get(first.key)
+    end
+
+    test "deleting an avatar removes the row and all objects" do
+      user = user_fixture("avatar-delete@example.com")
+      {:ok, ticket} = Media.request_avatar_upload(user.id, %{content_type: "image/jpeg"})
+      client_uploads(ticket.attachment.key, jpeg())
+      {:ok, avatar} = Media.finalize_avatar_upload(user.id, ticket.attachment.id)
+      keys = [avatar.key | Map.values(avatar.variants)]
+
+      assert {:ok, true} = Media.delete_avatar(user.id)
+      assert Media.avatar_url(user.id) == nil
+      for key <- keys, do: assert({:error, _} = Storage.get(key))
+    end
+  end
+
   describe "gallery management" do
     test "set_cover moves the cover, leaving exactly one", %{venue: venue} do
       first = upload!(venue)

@@ -759,6 +759,10 @@ defmodule BlastekWeb.Schema do
     field :last_name, :string
     field :phone, :string
 
+    field :avatar_url, :string do
+      resolve(fn user, _, _ -> {:ok, Media.avatar_url(user.id)} end)
+    end
+
     @desc "Whether the phone number has been proven by a one-time code."
     field :phone_verified, :boolean do
       resolve(fn user, _, _ -> {:ok, user.phone_verified_at != nil} end)
@@ -2078,6 +2082,60 @@ defmodule BlastekWeb.Schema do
 
       resolve(fn args, %{context: %{current_user: user}} ->
         Accounts.complete_profile(user, args) |> format_errors()
+      end)
+    end
+
+    @desc "Updates the signed-in customer's editable identity fields."
+    field :update_profile, :user do
+      arg(:first_name, non_null(:string))
+      arg(:last_name, :string)
+      arg(:email, :string)
+
+      middleware(RequireAuth)
+
+      resolve(fn args, %{context: %{current_user: user}} ->
+        Accounts.complete_profile(user, args) |> format_errors()
+      end)
+    end
+
+    @desc "Reserves a signed upload for the current user's avatar."
+    field :request_avatar_upload, :upload_ticket do
+      arg(:content_type, non_null(:string))
+      arg(:byte_size, :integer)
+      middleware(RequireAuth)
+
+      resolve(fn args, %{context: %{current_user: user}} ->
+        case Media.request_avatar_upload(user.id, args) do
+          {:ok, ticket} ->
+            {:ok,
+             %{
+               photo: ticket.attachment,
+               url: ticket.url,
+               headers: header_list(ticket.headers)
+             }}
+
+          other ->
+            format_errors(other)
+        end
+      end)
+    end
+
+    @desc "Validates and installs the current user's uploaded avatar."
+    field :finalize_avatar_upload, :photo do
+      arg(:id, non_null(:id))
+      middleware(RequireAuth)
+
+      resolve(fn %{id: id}, %{context: %{current_user: user}} ->
+        Media.finalize_avatar_upload(user.id, to_int(id)) |> format_errors()
+      end)
+    end
+
+    @desc "Removes the current user's avatar."
+    field :delete_avatar, :boolean do
+      middleware(RequireAuth)
+
+      resolve(fn _, %{context: %{current_user: user}} ->
+        Media.delete_avatar(user.id) |> format_errors()
       end)
     end
 

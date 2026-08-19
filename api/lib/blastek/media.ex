@@ -103,6 +103,14 @@ defmodule Blastek.Media do
     end
   end
 
+  @doc "The small avatar URL for a user, or nil when they have not uploaded one."
+  def avatar_url(user_id) do
+    case current_avatar(user_id) do
+      nil -> nil
+      avatar -> urls(avatar)[:thumb] || urls(avatar)[:original]
+    end
+  end
+
   ## ---------- upload handshake ----------
 
   @doc """
@@ -139,6 +147,43 @@ defmodule Blastek.Media do
     end
   end
 
+  @doc "Reserves a user-scoped avatar key and returns its presigned PUT."
+  def request_avatar_upload(user_id, attrs) do
+    content_type = attrs[:content_type] || attrs["content_type"] || ""
+    byte_size = attrs[:byte_size] || attrs["byte_size"]
+
+    with :ok <- check_type(content_type),
+         :ok <- check_declared_size(byte_size) do
+      discard_avatar_uploads(user_id, ["pending", "failed"])
+
+      with {:ok, attachment} <- insert_pending_avatar(user_id, content_type),
+           {:ok, presigned} <- Storage.presign_put(attachment.key, content_type) do
+        {:ok, %{attachment: attachment, url: presigned.url, headers: presigned.headers}}
+      end
+    end
+  end
+
+  @doc "Validates an avatar and replaces the previous ready avatar atomically for readers."
+  def finalize_avatar_upload(user_id, id) do
+    case get_avatar(user_id, id) do
+      nil ->
+        {:error, "Unknown avatar."}
+
+      %Attachment{status: "ready"} = ready ->
+        {:ok, ready}
+
+      attachment ->
+        case VariantWorker.run(attachment) do
+          {:ok, ready} ->
+            discard_other_avatars(user_id, ready.id)
+            {:ok, ready}
+
+          other ->
+            other
+        end
+    end
+  end
+
   ## ---------- writes ----------
 
   @doc "Deletes a photo and every object derived from it."
@@ -154,6 +199,14 @@ defmodule Blastek.Media do
         purge_objects(attachment)
         {:ok, deleted}
     end
+  end
+
+  @doc "Deletes a user's avatar and every generated variant."
+  def delete_avatar(user_id) do
+    avatars = Repo.all(from(a in avatar_scope(user_id)))
+    Repo.delete_all(from(a in avatar_scope(user_id)))
+    Enum.each(avatars, &purge_objects/1)
+    {:ok, avatars != []}
   end
 
   @doc """
@@ -238,6 +291,49 @@ defmodule Blastek.Media do
       sort: next_sort(venue_id)
     })
     |> Repo.insert()
+  end
+
+  defp insert_pending_avatar(user_id, content_type) do
+    key = Storage.build_user_key(user_id, "avatar", Map.fetch!(@extensions, content_type))
+
+    %Attachment{}
+    |> Attachment.changeset(%{
+      user_id: user_id,
+      kind: "avatar",
+      key: key,
+      content_type: content_type,
+      status: "pending"
+    })
+    |> Repo.insert()
+  end
+
+  defp current_avatar(user_id) do
+    Repo.one(
+      from a in avatar_scope(user_id),
+        where: a.status == "ready",
+        order_by: [desc: a.id],
+        limit: 1
+    )
+  end
+
+  defp get_avatar(user_id, id) do
+    Repo.one(from a in avatar_scope(user_id), where: a.id == ^id)
+  end
+
+  defp avatar_scope(user_id) do
+    from a in Attachment, where: a.user_id == ^user_id and a.kind == "avatar"
+  end
+
+  defp discard_avatar_uploads(user_id, statuses) do
+    avatars = Repo.all(from a in avatar_scope(user_id), where: a.status in ^statuses)
+    Repo.delete_all(from a in avatar_scope(user_id), where: a.status in ^statuses)
+    Enum.each(avatars, &purge_objects/1)
+  end
+
+  defp discard_other_avatars(user_id, keep_id) do
+    avatars = Repo.all(from a in avatar_scope(user_id), where: a.id != ^keep_id)
+    Repo.delete_all(from a in avatar_scope(user_id), where: a.id != ^keep_id)
+    Enum.each(avatars, &purge_objects/1)
   end
 
   defp next_sort(venue_id) do

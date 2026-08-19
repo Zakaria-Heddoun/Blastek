@@ -99,7 +99,7 @@ export default function VenueList() {
       .catch(() => undefined);
   }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal: AbortSignal) => {
     setPage(null);
     setError('');
 
@@ -108,18 +108,23 @@ export default function VenueList() {
     const term = [q, where].filter(Boolean).join(' ').trim();
 
     try {
-      const data = await gql<{ searchVenues: VenuePage }>(SEARCH, {
-        q: term || null,
-        city: city || null,
-        category: category || null,
-        womenOnly: womenOnly || null,
-        near,
-        sort,
-        limit: PAGE_SIZE,
-        offset,
-      });
+      const data = await gql<{ searchVenues: VenuePage }>(
+        SEARCH,
+        {
+          q: term || null,
+          city: city || null,
+          category: category || null,
+          womenOnly: womenOnly || null,
+          near,
+          sort,
+          limit: PAGE_SIZE,
+          offset,
+        },
+        { signal },
+      );
       setPage(data.searchVenues);
     } catch (e) {
+      if (signal.aborted) return;
       setError((e as Error).message);
     }
   }, [q, where, city, category, womenOnly, sort, offset, near]);
@@ -129,8 +134,10 @@ export default function VenueList() {
     document.title = parts.length
       ? `Blastek — ${parts.join(' · ')}`
       : t('venues.pageTitle');
-    load();
-  }, [load, q, where, city]);
+    const controller = new AbortController();
+    load(controller.signal);
+    return () => controller.abort();
+  }, [load, q, where, city, t]);
 
   const locate = () => {
     if (!navigator.geolocation) {
@@ -211,6 +218,7 @@ export default function VenueList() {
           <label className="vfilter-check">
             <input
               type="checkbox"
+              className="toggle-switch"
               checked={womenOnly}
               onChange={(e) => update({ women: e.target.checked ? '1' : null })}
             />

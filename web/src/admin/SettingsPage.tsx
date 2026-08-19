@@ -312,6 +312,7 @@ export default function SettingsPage() {
         <label className="set-toggle">
           <input
             type="checkbox"
+            className="toggle-switch"
             disabled={busy || !venue}
             // Controlled from the server's value: an optimistic local toggle
             // would keep showing the new state after a failed write.
@@ -483,6 +484,7 @@ function BookingRulesSection({ venue, onSaved }: { venue: VenueSummary; onSaved:
         <label className="set-toggle">
           <input
             type="checkbox"
+            className="toggle-switch"
             checked={rules.instantConfirmation}
             onChange={(e) =>
               setRules((r) => ({ ...r, instantConfirmation: e.target.checked }))

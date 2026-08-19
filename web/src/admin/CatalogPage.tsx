@@ -274,7 +274,7 @@ function ServiceModal({ service, onClose, onDone }:
       <div className="checkgrid">
         {staff.filter((s) => s.active).map((st) => (
           <label key={st.id}>
-            <input type="checkbox" checked={staffIds.includes(st.id)}
+            <input type="checkbox" className="toggle-switch" checked={staffIds.includes(st.id)}
               onChange={(e) => setStaffIds(e.target.checked
                 ? [...staffIds, st.id] : staffIds.filter((x) => x !== st.id))} />
             <span className="dot" style={{ background: st.color }} />{st.name}
@@ -283,7 +283,7 @@ function ServiceModal({ service, onClose, onDone }:
       </div>
       {service && (
         <label style={{ marginTop: 14, display: 'flex', gap: 7, alignItems: 'center' }}>
-          <input type="checkbox" style={{ width: 'auto' }} checked={f.active}
+          <input type="checkbox" className="toggle-switch" checked={f.active}
             onChange={(e) => setF({ ...f, active: e.target.checked })} />
           {t('admin.catalog.bookableOnline')}
         </label>

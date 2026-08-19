@@ -1,9 +1,10 @@
 // Booking flow: 1 services → 2 professional → 3 time → 4 confirm → done.
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { gql } from '../lib/gql';
+import { clearBookingDraft, loadBookingDraft, saveBookingDraft } from '../lib/bookingDraft';
 import type { BookingResult, Slot } from '../lib/types';
 import { STEP_KEYS, useVenue } from './MarketLayout';
 import SlotPicker from './SlotPicker';
@@ -13,13 +14,21 @@ import { fmtDateLong, fmtDateShort, fmtDur, fmtMAD, fmtTime, initials, todayStr 
 
 export default function BookingFlow() {
   const { venue: v, slug, booking } = useVenue();
+  const restored = useMemo(() => loadBookingDraft(slug), [slug]);
   const { t } = useTranslation();
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [step, setStep] = useState(1);
-  const [date, setDate] = useState(booking.date || todayStr());
-  const [slot, setSlot] = useState<Slot | null>(null);
-  const [notes, setNotes] = useState('');
+  const restoredSlot = restored?.slot && v.staff.some((staff) => staff.id === restored.slot?.staffId)
+    ? restored.slot
+    : null;
+  const [step, setStep] = useState(() => {
+    if (booking.services.length === 0) return 1;
+    if (restored?.step === 4 && !restoredSlot) return 3;
+    return restored?.step ?? 1;
+  });
+  const [date, setDate] = useState(restored?.date || booking.date || todayStr());
+  const [slot, setSlot] = useState<Slot | null>(restoredSlot);
+  const [notes, setNotes] = useState(restored?.notes ?? '');
   const [err, setErr] = useState('');
   const [result, setResult] = useState<BookingResult | null>(null);
 
@@ -34,6 +43,23 @@ export default function BookingFlow() {
 
 
   useEffect(() => { window.scrollTo(0, 0); }, [step, result]);
+
+  const persistDraft = useCallback(() => {
+    if (booking.services.length === 0 || result) return;
+    saveBookingDraft({
+      slug,
+      services: booking.services,
+      staffId: booking.staffId,
+      date,
+      slot,
+      notes,
+      step,
+    });
+  }, [booking.services, booking.staffId, date, notes, result, slot, slug, step]);
+
+  useEffect(() => {
+    persistDraft();
+  }, [persistDraft]);
 
   const toggleService = (id: string) => {
     booking.setServices(booking.services.includes(id)
@@ -58,6 +84,7 @@ export default function BookingFlow() {
           staff: booking.staffId === 'any' ? String(slot!.staffId) : booking.staffId,
           date, startMin: slot!.startMin, notes,
         });
+      clearBookingDraft();
       setResult(d.book);
     } catch (e) {
       setErr((e as Error).message);
@@ -92,7 +119,14 @@ export default function BookingFlow() {
           ))}
         </div>
         <button className="btn btn-primary" style={{ padding: '11px 22px' }}
-          onClick={() => { booking.setServices([]); setResult(null); setSlot(null); setStep(1); navigate('/'); }}>
+          onClick={() => {
+            clearBookingDraft();
+            booking.setServices([]);
+            setResult(null);
+            setSlot(null);
+            setStep(1);
+            navigate('/');
+          }}>
           {t('flow.bookAnother')}
         </button>
       </div>
@@ -219,7 +253,10 @@ export default function BookingFlow() {
                 serviceIds={booking.services}
                 staffId={booking.staffId}
                 date={date}
-                onDate={setDate}
+                onDate={(nextDate) => {
+                  setDate(nextDate);
+                  booking.setDate(nextDate);
+                }}
                 selected={slot}
                 onSelect={setSlot}
                 // The suggestion only makes sense when a specific professional
@@ -270,6 +307,7 @@ export default function BookingFlow() {
                   <h2 style={{ fontSize: 17, marginBottom: 6 }}>{t('flow.signInTitle')}</h2>
                   <p className="mutetext" style={{ marginTop: 0 }}>{t('flow.signInBody')}</p>
                   <Link className="btn btn-accent" style={{ borderRadius: 999, padding: '10px 22px' }}
+                    onClick={persistDraft}
                     to={`/login?next=${encodeURIComponent(`/v/${slug}/flow`)}`}>
                     {t('flow.signInCta')}
                   </Link>

@@ -34,7 +34,9 @@ export default function MarketTopbar({ inFlow = false }: { inFlow?: boolean }) {
                 title={`${user.firstName} ${user.lastName} — ${t('nav.myAppointments')}`}
                 to="/account"
               >
-                {initials(`${user.firstName} ${user.lastName}`)}
+                {user.avatarUrl
+                  ? <img src={user.avatarUrl} alt="" />
+                  : initials(`${user.firstName} ${user.lastName}`)}
               </Link>
             ) : (
               <Link className="btn btn-ghost btn-sm" to="/login">{t('nav.login')}</Link>
